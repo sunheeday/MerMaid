@@ -1,0 +1,58 @@
+# ---- Data (raw dataset is linked, not committed) ----
+data/raw/
+data/tables/
+*.mat
+*.h5
+*.parquet
+
+# ---- Logs & replay outputs ----
+logs/
+*.log
+results/**/tmp/
+
+# ---- C/C++ build ----
+build/
+build-*/
+out/
+*.o
+*.obj
+*.a
+*.so
+*.d
+compile_commands.json
+.cache/
+pc/replay
+hub/mmhub
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
+
+# ---- Trained model files (exported header is committed) ----
+*.pkl
+*.joblib
+training/models/*.txt
+training/runs/
+
+# ---- App (JS / mobile) ----
+node_modules/
+dist/
+.expo/
+.next/
+*.apk
+*.ipa
+
+# ---- Board / secrets ----
+wpa_supplicant.conf
+
+# ---- OS / editor ----
+.DS_Store
+.vscode/
+.idea/
+*.swp

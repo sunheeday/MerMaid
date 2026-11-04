@@ -78,7 +78,7 @@ At the end of the project we want an integrated prototype that demonstrates the 
 2. **AI inference**: motion sickness risk estimated on a Raspberry Pi running QNX
 3. **Decision-making**: one of four interventions selected according to risk and passenger context
 4. **Device control**: fan, RGB LEDs, and vehicle display driven automatically
-5. **Mobile integration**: visual motion cues and symptom reporting on the passenger's phone over RF
+5. **Mobile integration**: visual motion cues and manual override on the passenger's phone over RF
 
 The main objective is to **demonstrate the feasibility of proactive, personalized, and automated motion sickness intervention in an embedded vehicle environment**. The selected dataset contains controlled one-axis motion stimuli without visual conditions or intervention outcomes. This project therefore focuses on validating **risk estimation and intervention triggers**, not on proving actual symptom reduction in real EVs.
 
@@ -119,7 +119,7 @@ The system is implemented on a **Raspberry Pi running QNX**, acting as a prototy
                         │ rest/re-exposure  │   └──────────┬───────────┘
                         └───────────────────┘              ▼
   Mobile app ◀──── RF (Wi-Fi/BT) ────┐        ┌──────────────────────┐
-  (cues, MISC report, override,      ├────────│ Intervention decision│
+  (cues, override,                   ├────────│ Intervention decision│
    screen state)                     │        │ 4-tier logic         │
                                      │        └──────────┬───────────┘
                                      │                   ▼
@@ -168,7 +168,11 @@ Passengers can **manually override** any automatic intervention. The system neve
 
 ### E. Personalized Sensitivity
 
-People differ widely in motion sickness susceptibility. The system estimates a **passenger-specific sensitivity factor** with the Oman model and adjusts it using **MISC scores reported by the passenger** in the mobile app. The updated factor is fed into later risk assessments and intervention decisions.
+People differ widely in motion sickness susceptibility. In the Oman model this appears as a **sensitivity factor K** that scales how strongly motion exposure turns into sickness.
+
+- **On the prototype**, K is fixed to a population value (K_pop) fitted on the TU Delft data, so the deployed features match the distribution the model was trained on.
+- **Offline personalization study.** Using the TU Delft sessions, we fit a per-participant K from each participant's early MISC reports and measure how much it improves risk prediction for the rest of their session compared with K_pop. This shows how much individual sensitivity matters without requiring passenger input during the ride.
+- **Future work:** feeding per-passenger feedback into K at runtime, once a suitable input channel is added.
 
 ### F. Deployment on QNX
 
@@ -182,8 +186,9 @@ Python-based ML libraries cannot be assumed to run on QNX, so training and execu
 
 ### G. Passenger-Facing Interfaces
 
-- **Mobile app:** receives intervention commands from the controller, shows visual motion cues synchronized with vehicle movement, lets the passenger report symptoms (MISC) and override interventions, and sends screen-state information back.
+- **Mobile app:** receives intervention commands from the controller, shows visual motion cues synchronized with vehicle movement, lets the passenger override interventions, and sends screen-state information (screen on, app in foreground) back.
 - **Vehicle display UI:** shows visual motion cues, acceleration guidance, and current intervention status.
+- **HUD:** a separate view of the vehicle screen app that shows the ambient acceleration-direction cue. It is drawn on a black background with an optional mirror mode, so a phone or tablet placed under a tilted acrylic sheet or the windshield works as a reflective HUD. The cue shows only the direction of vehicle acceleration, so it does not need to be registered to the road like an AR-HUD.
 - **Communication:** bidirectional RF (Wi-Fi or Bluetooth) between controller and phones, with failure detection and a fallback over a wired connection to an external wireless router.
 
 
@@ -242,7 +247,7 @@ Python-based ML libraries cannot be assumed to run on QNX, so training and execu
 | Seunghee Kim | Back-end Developer, AI Developer | Trains LR and GBM risk models, evaluates them with participant-level CV, implements inference in QNX-compatible C/C++, integrates the four-tier intervention logic |
 | Hyeokjin Lee | AI Developer, User / Customer | Defines passenger scenarios and validates requirements; preprocesses the TU Delft dataset, extracts features (RMS, MSDV), implements the Oman model and personalized sensitivity |
 | Yookyung Jung | Back-end Developer, Server Manager | IMU data acquisition, fan / RGB LED / display control, RF communication, runtime environment, communication reliability and fallback |
-| Junmin Lee | Front-end Developer, UI/UX Designer | Mobile app and vehicle display UI: visual motion cues, acceleration guidance, intervention status, MISC reporting, manual override |
+| Junmin Lee | Front-end Developer, UI/UX Designer | Mobile app and vehicle display UI: visual motion cues, acceleration guidance, intervention status, HUD view, manual override |
 
 ---
 
@@ -250,13 +255,46 @@ Python-based ML libraries cannot be assumed to run on QNX, so training and execu
 
 ```
 .
-├── README.md          # this blog
-├── docs/figures/      # diagrams, plots, screenshots
-├── data/              # preprocessing scripts (raw dataset linked, not committed)
-├── training/          # feature extraction, model training, cross-validation
-├── qnx/               # C/C++ inference + device control for QNX on Raspberry Pi
-├── app/               # mobile app and vehicle display UI
-└── results/           # evaluation tables and figures
+├── README.md                # this blog
+├── Makefile                 # make pc | make qnx | make deploy | make verify
+│
+├── core/                    # portable C++ shared by PC and QNX (no QNX headers)
+│   ├── mmcore.hpp/.cpp      # preprocessing → Oman filter → features → logistic → tier logic
+│   └── model_params.hpp     # filter + model coefficients (generated by training/export.py)
+│
+├── hub/                     # QNX daemon on Raspberry Pi 4
+│   ├── main.cpp             # 100 Hz acquisition, 1 Hz inference, 10 Hz cues, --replay mode
+│   ├── imu.cpp              # MPU-6050 over I2C (devctl)
+│   ├── net.cpp              # TCP server for apps, line-delimited JSON
+│   ├── fan_ctl.py           # fan GPIO control via stdin commands
+│   └── run.sh               # start I2C driver and the hub
+│
+├── pc/
+│   └── replay.cpp           # CSV → per-second features, risk, tiers (training table + verification)
+│
+├── training/                # Python, development PC
+│   ├── build_table.py       # TU Delft → training table
+│   ├── labels.py            # label design (horizon × MISC threshold)
+│   ├── cv.py                # leave-one-participant-out CV, nested CV
+│   ├── models/              # baselines, logistic (1A), GBM (1B), logistic + GBM residual (2)
+│   ├── personalize.py       # offline per-participant sensitivity (K) study
+│   ├── evaluate.py          # AUROC, PR-AUC, Brier, lead time, false alarms, Wilcoxon
+│   ├── export.py            # selected model → core/model_params.hpp
+│   ├── verify.py            # PC vs. QNX output consistency
+│   └── notebooks/
+│
+├── app/
+│   ├── mobile/              # phone: motion-dot cues, override, screen state
+│   └── vehicle/             # in-vehicle screen app (?view=display | hud)
+│       ├── shared/          # hub connection, message parsing, cue TTL
+│       ├── display/         # vehicle display: dots, guidance, intervention status
+│       └── hud/             # HUD: black background, direction gradient, mirror mode
+│
+├── data/                    # raw dataset linked, not committed (see data/README.md)
+├── docs/
+│   ├── protocol.md          # hub ↔ app message spec v1
+│   └── figures/             # diagrams, plots, screenshots
+└── results/                 # evaluation tables and figures
 ```
 
 ---

@@ -1,0 +1,1 @@
+// MPU-6050 I2C 읽기 (devctl DCMD_I2C_SENDRECV)
