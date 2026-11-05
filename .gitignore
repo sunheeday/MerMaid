@@ -56,3 +56,6 @@ wpa_supplicant.conf
 .vscode/
 .idea/
 *.swp
+
+# ---- Generated test fixtures (rebuilt by tests/lgbm_capi/gen.py) ----
+tests/lgbm_capi/fixtures/
