@@ -25,7 +25,7 @@
   - [A. System Architecture](#a-system-architecture)
   - [B. Feature Extraction](#b-feature-extraction)
   - [C. Risk Models](#c-risk-models)
-  - [D. Four-Tier Adaptive Intervention](#d-four-tier-adaptive-intervention)
+  - [D. Tiered Adaptive Intervention](#d-tiered-adaptive-intervention)
   - [E. Personalized Sensitivity](#e-personalized-sensitivity)
   - [F. Deployment on QNX](#f-deployment-on-qnx)
   - [G. Passenger-Facing Interfaces](#g-passenger-facing-interfaces)
@@ -40,7 +40,7 @@
 
 ## Abstract
 
-As electric and autonomous vehicles turn the car into a space for entertainment and relaxation, motion sickness is becoming a major obstacle to passenger comfort, especially for occupants focused on screens. Because motion sickness accumulates over time rather than depending only on instantaneous acceleration, the timing and type of intervention must be decided proactively. This project proposes a QNX-based embedded system, prototyped on a Raspberry Pi, that estimates motion sickness risk from vehicle acceleration and accumulated motion exposure by combining a mathematical motion sickness model with lightweight machine learning. Based on the estimated risk, passenger context, and individual sensitivity, the system selects among four interventions (airflow, acceleration guidance, ambient lighting, and visual motion cues) and coordinates in-vehicle and mobile devices through RF communication. The project aims to demonstrate the feasibility of proactive and personalized motion sickness intervention in an embedded vehicle environment.
+As electric and autonomous vehicles turn the car into a space for entertainment and relaxation, motion sickness is becoming a major obstacle to passenger comfort, especially for occupants focused on screens. Because motion sickness accumulates over time rather than depending only on instantaneous acceleration, the timing and type of intervention must be decided proactively. This project proposes a QNX-based embedded system, prototyped on a Raspberry Pi, that estimates motion sickness risk from vehicle acceleration and accumulated motion exposure using one ordinal gradient boosting model whose inputs include a mathematical motion sickness model. Based on the estimated risk, passenger context, and individual tolerance, the system escalates through three interventions (airflow, ambient direction cues, and visual motion dots) and coordinates in-vehicle and mobile devices through RF communication. The project aims to demonstrate the feasibility of proactive and personalized motion sickness intervention in an embedded vehicle environment.
 
 **Keywords:** motion sickness, proactive intervention, QNX, embedded system, lightweight machine learning
 
@@ -76,8 +76,8 @@ At the end of the project we want an integrated prototype that demonstrates the 
 
 1. **Data acquisition**: vehicle acceleration from an IMU or prerecorded signals
 2. **AI inference**: motion sickness risk estimated on a Raspberry Pi running QNX
-3. **Decision-making**: one of four interventions selected according to risk and passenger context
-4. **Device control**: fan, RGB LEDs, and vehicle display driven automatically
+3. **Decision-making**: three interventions switched on in order according to risk and passenger context
+4. **Device control**: fan, HUD, and vehicle display driven automatically
 5. **Mobile integration**: visual motion cues and manual override on the passenger's phone over RF
 
 The main objective is to **demonstrate the feasibility of proactive, personalized, and automated motion sickness intervention in an embedded vehicle environment**. The selected dataset contains controlled one-axis motion stimuli without visual conditions or intervention outcomes. This project therefore focuses on validating **risk estimation and intervention triggers**, not on proving actual symptom reduction in real EVs.
@@ -86,7 +86,10 @@ The main objective is to **demonstrate the feasibility of proactive, personalize
 
 ## II. Datasets
 
-We use the **TU Delft 2022 motion sickness dataset** for model development and evaluation. It contains repeated motion exposure experiments together with passenger-reported sickness levels.
+We use two data sources:
+
+- **Synthetic driving data** for training and structural experiments. Its labels are generated with the Oman model, so results on it show whether the structure works, not real-world accuracy.
+- **TU Delft 2022 motion sickness dataset** (17 participants) to validate the acceleration-based core against real passenger reports.
 
 > - Source / link and license
 > - Number of participants and sessions
@@ -99,7 +102,8 @@ We use the **TU Delft 2022 motion sickness dataset** for model development and e
 **Known limitations.** The dataset uses controlled **one-axis** motion stimuli. It has **no visual conditions** (e.g., screen use) and **no intervention outcomes**. As a result:
 
 - screen-ON and screen-attention information are used as **activation conditions** for interventions, not as training features;
-- the models are validated as risk estimators and trigger generators, not as proof that interventions reduce symptoms.
+- the model is validated as a risk estimator and trigger generator, not as proof that interventions reduce symptoms;
+- signals missing from the dataset (vehicle speed, CAN, navigation, and so on) come only from the simulator, so they prove that the model accepts these inputs, not that they improve accuracy.
 
 ---
 
@@ -115,17 +119,17 @@ The system is implemented on a **Raspberry Pi running QNX**, acting as a prototy
           ▼
  ┌──────────────────┐   ┌───────────────────┐   ┌──────────────────────┐
  │ Data acquisition │──▶│ Feature extraction│──▶│ Model inference      │
- └──────────────────┘   │ RMS, MSDV, time,  │   │ Oman + LR / GBM      │
-                        │ rest/re-exposure  │   └──────────┬───────────┘
+ └──────────────────┘   │ 77 features incl. │   │ Ordinal LightGBM     │
+                        │ Oman, MSDV, time  │   └──────────┬───────────┘
                         └───────────────────┘              ▼
   Mobile app ◀──── RF (Wi-Fi/BT) ────┐        ┌──────────────────────┐
   (cues, override,                   ├────────│ Intervention decision│
-   screen state)                     │        │ 4-tier logic         │
+   screen state)                     │        │ Policy layer         │
                                      │        └──────────┬───────────┘
                                      │                   ▼
                                      │        ┌──────────────────────┐
                                      └────────│ Device control       │
-                                              │ Fan · RGB LED · Display│
+                                              │ Fan · HUD · Display  │
                                               └──────────────────────┘
 ```
 
@@ -133,61 +137,40 @@ The system is implemented on a **Raspberry Pi running QNX**, acting as a prototy
 
 ### B. Feature Extraction
 
-From the acceleration signal the system extracts features that capture both **recent motion** and **accumulated exposure**:
-
-| Feature | Meaning |
-|---|---|
-| Acceleration RMS | Intensity of recent motion over a window |
-| Motion Sickness Dose Value (MSDV) | Cumulative motion exposure, the standard dose metric for motion sickness |
-| Exposure duration | How long the passenger has been exposed |
-| Rest / re-exposure information | Captures recovery during rest and faster onset on re-exposure |
-
+Features are grouped by where they come from: 77 values in 10 groups. The IMU and system clock are always available, and the rest (vehicle speed, CAN, navigation, climate, and so on) are added as far as the vehicle provides them. A missing signal is passed as NaN. Motion is measured over short and long windows, alongside values accumulated over the ride such as MSDV and the Oman model's estimated sickness score.
 
 ### C. Risk Models
 
-We combine a **mathematical model** with **lightweight machine learning**:
+There is **one model**, not one model per tier. It estimates how far the passenger's sickness is likely to go within the next 5 minutes, and the tiers are decisions made on that estimate.
 
-- **Oman model.** A physiologically motivated model of how motion sickness accumulates and recovers over time. It provides a time-dependent sickness estimate and the basis for per-passenger sensitivity.
-- **Logistic regression.** Used for initial (low-level) risk assessment. It is simple, interpretable, and trivial to implement in C.
-- **Shallow Gradient Boosting Machine (GBM).** Used for higher-level risk estimation, where non-linear interactions between features matter more. Keeping the trees shallow keeps inference cheap and easy to export to C/C++.
+- **Oman model.** A physiologically motivated model of how motion sickness accumulates and recovers over time. Its output is an input feature.
+- **Ordinal LightGBM.** Predicts the probability that the maximum MISC score reaches each level. Trees handle missing signals directly and are fast on an embedded CPU.
+- **Group dropout.** Whole feature groups are blanked during training, so the same model runs on vehicles with different equipment.
 
-**Why these models?** The target is an embedded RTOS, not a GPU server. Both models are small, fast, deterministic at inference time, and can be turned into plain C/C++ without a Python runtime. Deep models would add accuracy risk on a small dataset and deployment risk on QNX without a clear benefit.
+### D. Tiered Adaptive Intervention
 
-### D. Four-Tier Adaptive Intervention
+The higher the cost of a wrong activation, the more certainty, the longer confirmation, and the narrower conditions a tier requires.
 
-Interventions escalate from low-cost to high-cost. Higher tiers use **longer observation windows and stricter thresholds** to avoid unnecessary activation.
-
-| Tier | Intervention | Decision method | Extra condition |
-|---|---|---|---|
-| 1 | **Airflow** (fan) | Oman model + logistic regression | — |
-| 2 | **Acceleration guidance** | Rule-based acceleration analysis | — |
-| 3 | **Ambient lighting** (RGB LEDs) | GBM risk assessment | Screen ON |
-| 4 | **Visual motion cues** (display / phone) | GBM higher-risk assessment | Screen attention |
+| Tier | Intervention | Extra condition |
+|---|---|---|
+| 1 | **Airflow** (fan) | None |
+| 3 | **Ambient direction cue** (HUD) | Screen on |
+| 4 | **Visual motion dots** (display / phone) | Screen on and attention |
 
 Passengers can **manually override** any automatic intervention. The system never controls steering, braking, or other safety-critical driving functions.
 
 ### E. Personalized Sensitivity
 
-People differ widely in motion sickness susceptibility. In the Oman model this appears as a **sensitivity factor K** that scales how strongly motion exposure turns into sickness.
-
-- **On the prototype**, K is fixed to a population value (K_pop) fitted on the TU Delft data, so the deployed features match the distribution the model was trained on.
-- **Offline personalization study.** Using the TU Delft sessions, we fit a per-participant K from each participant's early MISC reports and measure how much it improves risk prediction for the rest of their session compared with K_pop. This shows how much individual sensitivity matters without requiring passenger input during the ride.
-- **Future work:** feeding per-passenger feedback into K at runtime, once a suitable input channel is added.
+People differ in both how easily they get sick and how much intervention they will accept. A sensitivity value in the passenger's profile is a model input. If a passenger quickly turns off an intervention, that tier's threshold rises for future activations, without changing the model.
 
 ### F. Deployment on QNX
 
-Python-based ML libraries cannot be assumed to run on QNX, so training and execution are separated:
-
-1. Train and validate models on a **development PC** (Python).
-2. Export the trained inference logic (LR coefficients, GBM trees) to **QNX-compatible C/C++**.
-3. Cross-compile for the Raspberry Pi target and deploy.
-4. Run real-time inference, decision-making, and device control on QNX.
-5. Verify that **PC and QNX inference results match** on the same inputs.
+Training runs on a development PC (Python, LightGBM). The trained model files are copied to the Raspberry Pi, where a LightGBM library built from source on QNX runs inference alongside decision-making and device control. PC and QNX results are compared on identical inputs; on a small test model they matched.
 
 ### G. Passenger-Facing Interfaces
 
 - **Mobile app:** receives intervention commands from the controller, shows visual motion cues synchronized with vehicle movement, lets the passenger override interventions, and sends screen-state information (screen on, app in foreground) back.
-- **Vehicle display UI:** shows visual motion cues, acceleration guidance, and current intervention status.
+- **Vehicle display UI:** shows visual motion dots and current intervention status.
 - **HUD:** a separate view of the vehicle screen app that shows the ambient acceleration-direction cue. It is drawn on a black background with an optional mirror mode, so a phone or tablet placed under a tilted acrylic sheet or the windshield works as a reflective HUD. The cue shows only the direction of vehicle acceleration, so it does not need to be registered to the road like an AR-HUD.
 - **Communication:** bidirectional RF (Wi-Fi or Bluetooth) between controller and phones, with failure detection and a fallback over a wired connection to an external wireless router.
 
@@ -198,26 +181,26 @@ Python-based ML libraries cannot be assumed to run on QNX, so training and execu
 
 **Evaluation plan.**
 
-- **Participant-level cross-validation**: no participant appears in both training and test folds, which measures generalization to unseen passengers.
-- **Classification metrics**: accuracy, precision, recall, F1, ROC-AUC for each risk model.
-- **Baselines**: Oman model alone vs. Oman + LR vs. GBM.
-- **Deployment consistency**: compare PC (Python) and QNX (C/C++) outputs on identical inputs.
-- **System behavior**: intervention activation timeline on prerecorded drives (how often each tier fires, false activations).
+- **Person-level cross-validation**: no person appears in both training and test folds, which measures generalization to unseen passengers.
+- **Classification metrics**: PR-AUC and ROC-AUC, plus precision and recall for each tier.
+- **Robustness**: performance with feature groups blanked, compared with a model trained on the IMU and clock alone, and across EV and combustion vehicles.
+- **Real-data check**: the acceleration-based core against the TU Delft reports.
+- **Deployment consistency**: compare PC (Python) and QNX (LightGBM C API) outputs on identical inputs.
+- **System behavior**: replay journeys through the policy layer and measure detection rate, lead time, and false activations per hour for each tier.
 
 ---
 
 ## V. Related Work
 
-**Commercial solutions.** Apple's **Vehicle Motion Cues** uses device sensors to detect vehicle motion and shows animated dots along the edges of the iPhone or iPad screen to reduce sensory conflict. Our system takes a **vehicle-centered** approach instead: a central controller evaluates risk and coordinates several interventions (airflow, guidance, lighting, cues), and it accounts for accumulated exposure and individual sensitivity rather than applying the same response to everyone.
+**Commercial solutions.** Apple's **Vehicle Motion Cues** uses device sensors to detect vehicle motion and shows animated dots along the edges of the iPhone or iPad screen to reduce sensory conflict. Our system takes a **vehicle-centered** approach instead: a central controller evaluates risk and coordinates several interventions (airflow, ambient cues, motion dots), and it accounts for accumulated exposure and individual sensitivity rather than applying the same response to everyone.
 
-**Research.** Irmak et al. studied how acceleration amplitude and exposure duration relate to motion sickness development in controlled motion experiments. Their findings show time-dependent accumulation and recovery dynamics and the importance of individual sensitivity, which supports combining the Oman model with lightweight ML.
+**Research.** Irmak et al. studied how acceleration amplitude and exposure duration relate to motion sickness development in controlled motion experiments. Their findings show time-dependent accumulation and recovery dynamics and the importance of individual sensitivity, which supports using the Oman model's output as an input to lightweight ML.
 
 **Tools and libraries used.**
 
-> - Python, NumPy, pandas, scikit-learn (LR, GBM), matplotlib
-> - Model export tool for GBM → C (if any)
+> - Python, NumPy, pandas, scikit-learn, LightGBM, matplotlib
 > - QNX Software Development Platform, Raspberry Pi
-> - IMU sensor model, fan / RGB LED drivers
+> - IMU sensor model, fan driver
 > - Mobile app framework
 > - Blogs / documentation consulted
 
@@ -229,7 +212,8 @@ Python-based ML libraries cannot be assumed to run on QNX, so training and execu
 
 **Limitations.**
 
-- The training data uses one-axis, controlled lab motion, not real multi-axis driving.
+- Training labels on the synthetic data are generated by the Oman model, so those results do not show real-world accuracy.
+- The real data uses one-axis, controlled lab motion, not real multi-axis driving.
 - No visual conditions or intervention outcomes are in the data, so we validate risk estimation and triggers rather than actual symptom reduction.
 
 **Future work: EV-specific mitigation.**
@@ -244,10 +228,10 @@ Python-based ML libraries cannot be assumed to run on QNX, so training and execu
 
 | Name | Role | Responsibilities |
 |---|---|---|
-| Seunghee Kim | Back-end Developer, AI Developer | Trains LR and GBM risk models, evaluates them with participant-level CV, implements inference in QNX-compatible C/C++, integrates the four-tier intervention logic |
+| Seunghee Kim | Back-end Developer, AI Developer | Trains the ordinal GBM risk model, evaluates it with person-level CV, deploys inference with LightGBM on QNX, integrates the tiered intervention policy |
 | Hyeokjin Lee | AI Developer, User / Customer | Defines passenger scenarios and validates requirements; preprocesses the TU Delft dataset, extracts features (RMS, MSDV), implements the Oman model and personalized sensitivity |
-| Yookyung Jung | Back-end Developer, Server Manager | IMU data acquisition, fan / RGB LED / display control, RF communication, runtime environment, communication reliability and fallback |
-| Junmin Lee | Front-end Developer, UI/UX Designer | Mobile app and vehicle display UI: visual motion cues, acceleration guidance, intervention status, HUD view, manual override |
+| Yookyung Jung | Back-end Developer, Server Manager | IMU data acquisition, fan / display control, RF communication, runtime environment, communication reliability and fallback |
+| Junmin Lee | Front-end Developer, UI/UX Designer | Mobile app and vehicle display UI: visual motion dots, intervention status, HUD view, manual override |
 
 ---
 
@@ -259,27 +243,27 @@ Python-based ML libraries cannot be assumed to run on QNX, so training and execu
 ├── Makefile                 # make pc | make qnx | make deploy | make verify
 │
 ├── core/                    # portable C++ shared by PC and QNX (no QNX headers)
-│   ├── mmcore.hpp/.cpp      # preprocessing → Oman filter → features → logistic → tier logic
-│   └── model_params.hpp     # filter + model coefficients (generated by training/export.py)
+│   └── mmcore.hpp/.cpp      # preprocessing → Oman filter → features → policy layer
 │
 ├── hub/                     # QNX daemon on Raspberry Pi 4
-│   ├── main.cpp             # 100 Hz acquisition, 1 Hz inference, 10 Hz cues, --replay mode
+│   ├── bringup/             # standalone hardware tests (MPU-6050)
+│   ├── main.cpp             # 100 Hz acquisition, 10 s inference and policy, 10 Hz cues, --replay mode
 │   ├── imu.cpp              # MPU-6050 over I2C (devctl)
 │   ├── net.cpp              # TCP server for apps, line-delimited JSON
 │   ├── fan_ctl.py           # fan GPIO control via stdin commands
 │   └── run.sh               # start I2C driver and the hub
 │
 ├── pc/
-│   └── replay.cpp           # CSV → per-second features, risk, tiers (training table + verification)
+│   └── replay.cpp           # CSV → 10 s features (training table + verification)
 │
 ├── training/                # Python, development PC
-│   ├── build_table.py       # TU Delft → training table
-│   ├── labels.py            # label design (horizon × MISC threshold)
-│   ├── cv.py                # leave-one-participant-out CV, nested CV
-│   ├── models/              # baselines, logistic (1A), GBM (1B), logistic + GBM residual (2)
-│   ├── personalize.py       # offline per-participant sensitivity (K) study
-│   ├── evaluate.py          # AUROC, PR-AUC, Brier, lead time, false alarms, Wilcoxon
-│   ├── export.py            # selected model → core/model_params.hpp
+│   ├── build_table.py       # synthetic data and TU Delft → training table
+│   ├── labels.py            # max MISC within 5 minutes ≥ k (k = 2 to 6)
+│   ├── cv.py                # person-level cross-validation
+│   ├── models/              # baselines, ordinal GBM
+│   ├── personalize.py       # sensitivity update experiment on TU Delft reports
+│   ├── evaluate.py          # PR-AUC, ROC-AUC, lead time, false activations per hour
+│   ├── export.py            # model files + policy settings for the Pi
 │   ├── verify.py            # PC vs. QNX output consistency
 │   └── notebooks/
 │
@@ -287,8 +271,12 @@ Python-based ML libraries cannot be assumed to run on QNX, so training and execu
 │   ├── mobile/              # phone: motion-dot cues, override, screen state
 │   └── vehicle/             # in-vehicle screen app (?view=display | hud)
 │       ├── shared/          # hub connection, message parsing, cue TTL
-│       ├── display/         # vehicle display: dots, guidance, intervention status
+│       ├── display/         # vehicle display: dots, intervention status
 │       └── hud/             # HUD: black background, direction gradient, mirror mode
+│
+├── tests/
+│   ├── portability/         # C++17, threads, timer check on the Pi
+│   └── lgbm_capi/           # LightGBM on QNX vs. Python predictions
 │
 ├── data/                    # raw dataset linked, not committed (see data/README.md)
 ├── docs/
