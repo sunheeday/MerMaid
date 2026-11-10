@@ -15,6 +15,10 @@ python3 ml/simulator/build_dataset.py
 ```
 
 ```bash
+python3 ml/train/train.py
+```
+
+```bash
 python3 -m pytest ml/tests
 ```
 
@@ -22,6 +26,13 @@ python3 -m pytest ml/tests
 |---|---|---|
 | S1 Oman 검증 | `oman.py`, `verify/oman_tudelft.py` | K0, MAE, LOPO 기준선 (`verify/out/`) |
 | S3 합성 데이터 | `simulator/sim.py`, `simulator/build_dataset.py` | `out/dataset.npz`, `out/dataset_report.json`, `data/trips/ride_*.bin` |
+| S4 학습 | `train/train.py`, `train/policy.py` | `out/train/report.md`, `out/models/model_2~6.txt`, `controller/config/thresholds.json` |
+
+## 학습 요약
+
+- 사람 단위 5-fold. 학습 쪽 사람의 15%를 떼어 조기 종료와 문턱 선택에 씁니다. 학습에 쓴 행으로 문턱을 고르면 확률이 과하게 높게 나와서입니다.
+- 학습 데이터 = 원본 + 그룹 드롭아웃 복사본 1벌 (탑승 단위로 그룹을 통째로, 그 위에 칸 단위 2%). G1, G9, 차량 유형은 지우지 않습니다.
+- 정책 재생(`train/policy.py`)은 P4 규칙을 Python으로 옮긴 것으로, 게이트는 항상 열리고 수동 조작은 없다고 봅니다.
 
 ## 시뮬레이터 요약
 
