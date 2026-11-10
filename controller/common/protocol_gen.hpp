@@ -234,5 +234,8 @@ constexpr double kMssqSd = 9.9;
 constexpr double kSensCoef = 0.3;
 constexpr double kSensMin = 0.5;
 constexpr double kSensMax = 2.0;
+constexpr const char* kDeviceAirflow = "airflow-01";
+constexpr const char* kDeviceDisplay = "display-01";
+constexpr const char* kDeviceHud = "hud-01";
 
 }  // namespace mm::proto
