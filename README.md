@@ -261,8 +261,12 @@ Training runs on a development PC (Python, LightGBM). The trained model files ar
 ├── ml/                      # Python, development PC
 │   ├── oman.py, wf.py       # reference Oman model and ISO Wf filter
 │   ├── trip.py              # trip.bin / features.bin I/O, runs featurize
+│   ├── simulator/           # synthetic trips, passengers, Oman labels → dataset.npz
 │   ├── tests/               # unit tests and C++ vs Python golden tests
 │   └── verify/              # Oman reproduction on TU Delft, lateral slalom check
+│
+├── tools/
+│   └── csv2bin.py           # MPU-6050 recording CSV → trip.bin
 │
 ├── tests/
 │   ├── portability/         # C++17, threads, timer check on the Pi
