@@ -4,7 +4,7 @@
   "feature_period_s": 10,
   "mot_period_ms": 100,
   "oman": {
-    "K0": 51.3,
+    "K0": 51.4,
     "beta_fast_s": 66.2,
     "beta_slow_s": 502.4,
     "exponent": 0.4,
@@ -12,7 +12,16 @@
     "input_lowpass_hz": 0.63,
     "input_lowpass_order": 2,
     "discretization": "exact: alpha = exp(-dt / beta)",
-    "note": "K0 = median per-person K on TU Delft with the 0.63 Hz input low-pass (48.7 without it). ml/verify/oman_tudelft.py, refit at 100 Hz in S1"
+    "note": "K0 = median per-person K on TU Delft at 100 Hz with the 0.63 Hz input low-pass (48.7 without it). Checked by ml/verify/oman_tudelft.py"
+  },
+  "wf": {
+    "standard": "ISO 2631-1:1997 Wf (motion sickness), applied to x, y, z for features",
+    "f1_hz": 0.08, "f2_hz": 0.63, "q1": 0.7071067811865476,
+    "f4_hz": 0.25, "q4": 0.86,
+    "f5_hz": 0.0625, "q5": 0.80, "f6_hz": 0.1, "q6": 0.80,
+    "sections": "Hh = s^2/(s^2+w1 s/q1+w1^2); Hl = w2^2/(s^2+w2 s/q1+w2^2); Ht = w4^2/(s^2+w4 s/q4+w4^2); Hs = (s^2+w5 s/q5+w5^2)/(s^2+w6 s/q6+w6^2); f3 = infinity",
+    "discretization": "bilinear s = 2 fs (1 - z^-1)/(1 + z^-1) per section, no prewarp, sections in order Hh, Hl, Ht, Hs",
+    "note": "high-pass at 0.08 Hz removes gravity and sensor tilt from the weighted features; the Oman input is not weighted"
   },
   "events": {
     "hard_accel_x_mps2": 1.5,
