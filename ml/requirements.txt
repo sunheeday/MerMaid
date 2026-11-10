@@ -1,0 +1,8 @@
+# Python 3.12, LightGBM은 QNX 쪽과 같은 4.6.0으로 고정
+lightgbm==4.6.0
+numpy
+pandas
+scipy
+scikit-learn
+jsonschema
+matplotlib
