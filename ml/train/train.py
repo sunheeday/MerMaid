@@ -25,28 +25,39 @@ import common as C  # noqa: E402
 import policy  # noqa: E402
 
 OUT = C.REPO / "ml" / "out"
-RULES = {"1": ("recall", 0, 0.90), "2": ("precision", 2, 0.70), "3": ("precision", 2, 0.80)}  # (규칙, P 열, 목표)
+# 문턱은 행 단위 재현율/정밀도가 아니라 정책 재생으로 고른다. 양성 행 대부분이 이미 멀미가 온 뒤라
+# 행 규칙은 문턱을 0.99 근처로 올려 증상 전에 켜지지 않게 만든다 (PRD 규칙에서 바꾼 부분)
+TARGETS = {"1": ("detection_rate", ">=", 0.85),             # 송풍: 85% 이상 미리 켜지는 가장 높은 문턱
+           "2": ("false_activations_per_hour", "<=", 0.50),  # 디스플레이: 시간당 오경보 0.5회 이하인 가장 낮은 문턱
+           "3": ("false_activations_per_hour", "<=", 0.25)}  # 폰: 0.25회 이하
+GRID = np.round(np.arange(0.05, 0.9501, 0.01), 2)
 OPTIONAL = ["G2", "G3a", "G3b", "G4", "G5", "G6", "G7", "G10"]
 EVAL_K = [3, 4]  # Tier 입력. 강건성은 이 둘만 본다
 
 
-def select_threshold(p, y, rule, target):
-    """recall: 재현율 >= target인 가장 큰 문턱 / precision: 정밀도 >= target인 가장 작은 문턱"""
-    order = np.argsort(-p)
-    ps, ys = p[order], y[order]
-    tp = np.cumsum(ys)
-    last = np.r_[np.where(np.diff(ps) != 0)[0], len(ps) - 1]  # 같은 값의 마지막 위치 = 그 값을 문턱으로 쓸 때
-    th, tp, n = ps[last], tp[last], last + 1
-    if rule == "recall":
-        ok = tp / max(ys.sum(), 1) >= target
-        return float(th[ok][0]) if ok.any() else float(ps[-1])
-    ok = tp / n >= target
-    return float(th[ok][-1]) if ok.any() else 1.0
+def pick_threshold(grid, vals, op, target):
+    """grid 오름차순. >=: 그 문턱과 그 아래가 모두 목표를 넘는 가장 큰 문턱 (없으면 grid[0])
+    <=: 그 문턱과 그 위가 모두 목표 이하인 가장 작은 문턱 (없으면 1.0 = 켜지지 않음). 값이 None/NaN이면 실패로 본다."""
+    v = np.array([np.nan if x is None else x for x in vals], float)
+    if op == ">=":
+        ok = np.cumprod(np.nan_to_num(v, nan=-np.inf) >= target).astype(bool)
+        return float(grid[ok][-1]) if ok.any() else float(grid[0])
+    ok = np.cumprod((np.nan_to_num(v, nan=np.inf) <= target)[::-1])[::-1].astype(bool)
+    return float(grid[ok][0]) if ok.any() else 1.0
 
 
-def thresholds_from(P, Y):
-    return {t: select_threshold(P[:, col], Y[:, C.K.index(3 if col == 0 else 4)], rule, tgt)
-            for t, (rule, col, tgt) in RULES.items()}
+def thresholds_from(P, misc, future_max, t, ride):
+    """문턱 고르기용 사람(학습에 안 쓴 15%)의 탑승을 GRID의 문턱마다 재생 → Tier별 문턱, 훑은 곡선"""
+    rides = policy.split_rides(ride)
+    th, sweep = {}, {}
+    for tier, (metric, op, target) in TARGETS.items():
+        cfg = policy.POLICY["tiers"][tier]
+        k = cfg["input_k"]
+        r = P[:, C.K.index(k)]
+        res = [policy.evaluate_tier(r, misc, future_max, t, rides, g, k, cfg["hold_cycles"]) for g in GRID]
+        th[tier] = pick_threshold(GRID, [x[metric] for x in res], op, target)
+        sweep[tier] = {m: [x[m] for x in res] for m in ("detection_rate", "median_lead_s", "false_activations_per_hour")}
+    return th, sweep
 
 
 def scores(y, s):
@@ -101,7 +112,7 @@ def main():
         tf = time.time()
         models, va_mask = fit_all(X[tr], Y[tr], person[tr], ride[tr], rng)
         va = tr[va_mask]
-        th = thresholds_from(predict(models, X[va]), Y[va])
+        th, _ = thresholds_from(predict(models, X[va]), d["misc"][va], d["future_max"][va], d["t"][va], ride[va])
         P = predict(models, X[te])
         res = {"fold": f, "test_persons": int(len(np.unique(person[te]))), "test_rows": int(len(te)),
                "best_iter": {k: models[k].best_iteration for k in C.K}, "thresholds": th, "k": {}}
@@ -131,10 +142,10 @@ def main():
         "k": {k: {"rate": mean(lambda r: r["k"][k]["rate"]),
                   **{f"{src}_{m}": mean(lambda r: r["k"][k][src][m]) for src in ("model", "oman_only", "ride_time_only")
                      for m in ("pr_auc", "roc_auc")}} for k in C.K},
-        "thresholds_mean": {t: mean(lambda r: r["thresholds"][t]) for t in RULES},
+        "thresholds_mean": {t: mean(lambda r: r["thresholds"][t]) for t in TARGETS},
         "policy": {t: {m: mean(lambda r: r["policy"][t][m] if r["policy"][t][m] is not None else np.nan)
                        for m in ("detection_rate", "on_within_2min_after_rate", "median_lead_s", "false_activations_per_hour", "false_activation_share",
-                                 "on_time_share")} for t in RULES},
+                                 "on_time_share")} for t in TARGETS},
         "robustness_pr_auc": {c: {k: mean(lambda r: r["robustness_pr_auc"][c][k]) for k in EVAL_K}
                               for c in folds[0]["robustness_pr_auc"]},
         "g8": "G8 is enabled=false in feature_order v1 (always NaN), so with / without G8 are the same model",
@@ -143,7 +154,8 @@ def main():
     final = None
     if not a.no_final:
         models, va = fit_all(X, Y, person, ride, rng)
-        th = thresholds_from(predict(models, X[va]), Y[va])
+        vi = np.where(va)[0]
+        th, sweep = thresholds_from(predict(models, X[vi]), d["misc"][vi], d["future_max"][vi], d["t"][vi], ride[vi])
         mdir = OUT / "models"
         mdir.mkdir(parents=True, exist_ok=True)
         files = {}
@@ -156,11 +168,11 @@ def main():
                                                        "k": C.K, "models": files}, indent=1))
         (C.REPO / "controller" / "config" / "thresholds.json").write_text(json.dumps({
             "placeholder": False, "feature_order_version": C.FO["version"],
-            "source": "ml/train/train.py final model, chosen on a 15% person holdout of the synthetic data",
-            "rule": {"1": "largest P(>=3) threshold with recall >= 0.90", "2": "smallest P(>=4) threshold with precision >= 0.70",
-                     "3": "smallest P(>=4) threshold with precision >= 0.80"},
+            "source": "ml/train/train.py final model, policy replay on a 15% person holdout of the synthetic data",
+            "rule": {t: f"{'largest' if op == '>=' else 'smallest'} threshold with {m} {op} {v} (replay, grid step 0.01)"
+                     for t, (m, op, v) in TARGETS.items()},
             "base_th": {t: round(v, 4) for t, v in th.items()}}, indent=2) + "\n")
-        final = {"thresholds": th, "models": files}
+        final = {"thresholds": th, "models": files, "grid": GRID.tolist(), "sweep": sweep}
 
     report = {"summary": summary, "final": final, "folds": folds, "seconds": round(time.time() - t0, 1)}
     (OUT / "train").mkdir(parents=True, exist_ok=True)
@@ -178,6 +190,7 @@ def markdown(r):
         L.append(f"| {k} | {v['rate']:.3f} | **{v['model_pr_auc']:.3f}** | {v['oman_only_pr_auc']:.3f} | "
                  f"{v['ride_time_only_pr_auc']:.3f} | {v['model_roc_auc']:.3f} | {v['oman_only_roc_auc']:.3f} |")
     L += ["", "## 정책 재생 (AC-05, 게이트 항상 열림, 수동 조작 없음)", "",
+          "문턱은 학습 쪽 15% 사람의 재생으로 고름: " + ", ".join(f"Tier {t} {m} {op} {v}" for t, (m, op, v) in TARGETS.items()), "",
           "| Tier | 문턱 (fold 평균) | 탐지율 | 도달 후 2분 안 ON | 중앙 리드타임 | 시간당 오경보 | 오경보 비율 | ON 시간 비율 |", "|---|---|---|---|---|---|---|---|"]
     for t, v in s["policy"].items():
         L.append(f"| {t} | {s['thresholds_mean'][t]:.3f} | {v['detection_rate']:.2f} | {v['on_within_2min_after_rate']:.2f} | {v['median_lead_s'] / 60:.1f}분 | "

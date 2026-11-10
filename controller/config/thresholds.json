@@ -1,15 +1,15 @@
 {
   "placeholder": false,
   "feature_order_version": 1,
-  "source": "ml/train/train.py final model, chosen on a 15% person holdout of the synthetic data",
+  "source": "ml/train/train.py final model, policy replay on a 15% person holdout of the synthetic data",
   "rule": {
-    "1": "largest P(>=3) threshold with recall >= 0.90",
-    "2": "smallest P(>=4) threshold with precision >= 0.70",
-    "3": "smallest P(>=4) threshold with precision >= 0.80"
+    "1": "largest threshold with detection_rate >= 0.85 (replay, grid step 0.01)",
+    "2": "smallest threshold with false_activations_per_hour <= 0.5 (replay, grid step 0.01)",
+    "3": "smallest threshold with false_activations_per_hour <= 0.25 (replay, grid step 0.01)"
   },
   "base_th": {
-    "1": 0.9899,
-    "2": 0.5262,
-    "3": 0.8082
+    "1": 0.63,
+    "2": 0.65,
+    "3": 0.77
   }
 }

@@ -35,42 +35,49 @@ def replay_ride(r, th, hold, off_margin, off_hold):
     return state, starts
 
 
+def split_rides(ride_id):
+    """탑승별 행 번호 (데이터셋은 탑승 안에서 시간순)"""
+    return [np.where(ride_id == r)[0] for r in np.unique(ride_id)]
+
+
+def evaluate_tier(r, misc, future_max, t, rides, th, k, hold):
+    """한 Tier의 재생 지표. r: 그 Tier 입력 확률, rides: split_rides 결과"""
+    events = detected = late = alarms = false_alarms = on_rows = 0
+    leads = []
+    for idx in rides:
+        state, starts = replay_ride(r[idx], th, hold, POLICY["off_margin"], POLICY["off_hold_cycles"])
+        on_rows += state.sum()
+        mi, fm, tt = misc[idx], future_max[idx], t[idx]
+        hit = np.where(mi >= k)[0]
+        if len(hit):
+            events += 1
+            before = [s for s in starts if s <= hit[0]]
+            if before:
+                detected += 1
+                leads.append(tt[hit[0]] - tt[before[0]])
+            elif any(s <= hit[0] + 12 for s in starts):  # 도달 후 2분 안에 켜짐
+                late += 1
+        for s in starts:
+            alarms += 1
+            false_alarms += max(mi[s], fm[s]) < k
+    hours = len(t) * 10 / 3600
+    return {
+        "input_k": k, "threshold": th, "rides_reaching_k": events,
+        "detection_rate": detected / events if events else None,
+        "on_within_2min_after_rate": late / events if events else None,
+        "median_lead_s": float(np.median(leads)) if leads else None,
+        "activations": alarms, "false_activations_per_hour": false_alarms / hours,
+        "false_activation_share": false_alarms / alarms if alarms else None,
+        "on_time_share": float(on_rows / len(t)),
+    }
+
+
 def evaluate(P, misc, future_max, t, ride_id, thresholds, k_list):
     """P: monotone_fix를 거친 확률 (열 = k_list). thresholds: {"1": th, "2": th, "3": th}"""
+    rides = split_rides(ride_id)
     out = {}
-    hours = len(t) * 10 / 3600
     for tier in ("1", "2", "3"):
         cfg = POLICY["tiers"][tier]
         k = cfg["input_k"]
-        col = k_list.index(k)
-        th = thresholds[tier]
-        events = detected = late = alarms = false_alarms = 0
-        leads = []
-        on_rows = 0
-        for rid in np.unique(ride_id):
-            m = ride_id == rid
-            state, starts = replay_ride(P[m, col], th, cfg["hold_cycles"], POLICY["off_margin"], POLICY["off_hold_cycles"])
-            on_rows += state.sum()
-            mi, fm, tt = misc[m], future_max[m], t[m]
-            hit = np.where(mi >= k)[0]
-            if len(hit):
-                events += 1
-                before = [s for s in starts if s <= hit[0]]
-                if before:
-                    detected += 1
-                    leads.append(tt[hit[0]] - tt[before[0]])
-                elif any(s <= hit[0] + 12 for s in starts):  # 도달 후 2분 안에 켜짐
-                    late += 1
-            for s in starts:
-                alarms += 1
-                false_alarms += max(mi[s], fm[s]) < k
-        out[tier] = {
-            "input_k": k, "threshold": th, "rides_reaching_k": events,
-            "detection_rate": detected / events if events else None,
-            "on_within_2min_after_rate": late / events if events else None,
-            "median_lead_s": float(np.median(leads)) if leads else None,
-            "activations": alarms, "false_activations_per_hour": false_alarms / hours,
-            "false_activation_share": false_alarms / alarms if alarms else None,
-            "on_time_share": float(on_rows / len(t)),
-        }
+        out[tier] = evaluate_tier(P[:, k_list.index(k)], misc, future_max, t, rides, thresholds[tier], k, cfg["hold_cycles"])
     return out
