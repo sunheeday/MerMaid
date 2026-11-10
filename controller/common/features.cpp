@@ -1,0 +1,252 @@
+#include "features.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
+namespace mm {
+using namespace proto;
+
+namespace {
+constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+constexpr size_t W10S = 1000, W1M = 6000, W5M = 30000;  // 100 Hz 기준 샘플 수
+constexpr double kStopSpeed = 0.1;                       // m/s, 정차로 보는 속도
+
+size_t avail(const Ring& r, size_t w) { return std::min(r.size(), w); }
+
+// NaN을 건너뛴 평균, 제곱평균, 표준편차, 최댓값
+struct Stats {
+    double sum = 0, sum2 = 0, maxv = -std::numeric_limits<double>::infinity();
+    size_t n = 0;
+};
+Stats stats(const Ring& r, size_t w) {
+    Stats s;
+    for (size_t i = 0, m = avail(r, w); i < m; i++) {
+        const double x = r.back(i);
+        if (std::isnan(x)) continue;
+        s.sum += x; s.sum2 += x * x; s.maxv = std::max(s.maxv, x); s.n++;
+    }
+    return s;
+}
+double mean(const Ring& r, size_t w) { auto s = stats(r, w); return s.n ? s.sum / s.n : NaN; }
+double rms(const Ring& r, size_t w) { auto s = stats(r, w); return s.n ? std::sqrt(s.sum2 / s.n) : NaN; }
+double stdev(const Ring& r, size_t w) {
+    auto s = stats(r, w);
+    if (!s.n) return NaN;
+    const double m = s.sum / s.n;
+    return std::sqrt(std::max(0.0, s.sum2 / s.n - m * m));
+}
+double maxv(const Ring& r, size_t w) { auto s = stats(r, w); return s.n ? s.maxv : NaN; }
+
+// 음(sign<0) 또는 양(sign>0) 구간의 에너지를 창 전체 길이로 나눈 RMS
+double semi_rms(const Ring& r, size_t w, int sign) {
+    const size_t m = avail(r, w);
+    if (!m) return NaN;
+    double s2 = 0;
+    for (size_t i = 0; i < m; i++) {
+        const double x = r.back(i);
+        if ((sign < 0 && x < 0) || (sign > 0 && x > 0)) s2 += x * x;
+    }
+    return std::sqrt(s2 / m);
+}
+}  // namespace
+
+FeatureExtractor::FeatureExtractor(double oman_k)
+    : dt_(1.0 / kSampleRateHz),
+      wfx_(kSampleRateHz, kWf_f1, kWf_f2, kWf_q1, kWf_f4, kWf_q4, kWf_f5, kWf_q5, kWf_f6, kWf_q6),
+      wfy_(wfx_), wfz_(wfx_),
+      lpx_(butter2_lowpass(kOmanInputLowpassHz, kSampleRateHz)), lpy_(lpx_),
+      oman_(oman_k, kOmanBetaFast, kOmanBetaSlow, kOmanExponent, 1.0 / kSampleRateHz) {
+    for (auto& c : ch_) c = Ring(W5M);
+    reset();
+}
+
+void FeatureExtractor::reset() {
+    wfx_.reset(); wfy_.reset(); wfz_.reset();
+    lpx_.reset(); lpy_.reset();
+    oman_.reset();
+    for (auto& c : ch_) c.clear();
+    has_prev_ = false;
+    n_ = 0;
+    t0_ = t_ = 0;
+    awx_ = awy_ = awz_ = 0;
+    msdv2_ = 0;
+    msdv_hist_.clear(); score_hist_.clear();
+    events_.clear();
+    in_accel_ = in_brake_ = in_turn_ = false;
+    still_time_ = rest_end_ = 0;
+    rest_ = reexp_ = had_rest_ = false;
+    out_.fill(NaN);
+}
+
+bool FeatureExtractor::push(const Row& r) {
+    t_ = r[C_T];
+    if (n_ == 0) t0_ = t_;
+
+    // 가중 가속도, jerk
+    const double wx = wfx_.step(r[C_AX]), wy = wfy_.step(r[C_AY]), wz = wfz_.step(r[C_AZ]);
+    const double jx = has_prev_ ? (wx - awx_) / dt_ : 0.0;
+    const double jy = has_prev_ ? (wy - awy_) / dt_ : 0.0;
+    awx_ = wx; awy_ = wy; awz_ = wz;
+
+    // MSDV: 수평 합성 가중 가속도
+    const double h = std::hypot(wx, wy);
+    msdv2_ += h * h * dt_;
+
+    // Oman: 가중 전 수평 가속도, 0.63 Hz 저역통과 후 크기
+    const double lx = lpx_.step(r[C_AX]), ly = lpy_.step(r[C_AY]);
+    oman_.step(std::hypot(lx, ly));
+
+    // 이벤트: 저역통과 가속도가 기준을 넘는 순간 (상승 에지)
+    const bool acc = lx > kHardAccelX, brk = lx < kHardBrakeX, trn = std::fabs(ly) > kHardTurnAbsY;
+    if (acc && !in_accel_) events_.push_back({t_, 0});
+    if (brk && !in_brake_) events_.push_back({t_, 1});
+    if (trn && !in_turn_) events_.push_back({t_, 2});
+    in_accel_ = acc; in_brake_ = brk; in_turn_ = trn;
+    while (!events_.empty() && events_.front().t <= t_ - 300.0) events_.pop_front();
+
+    // 차량 신호 파생값
+    const double v = r[C_SPEED];
+    const double dv = (has_prev_ && !std::isnan(v)) ? (v - last_[C_SPEED]) / dt_ : (std::isnan(v) ? NaN : 0.0);
+    const double ped = r[C_ACCEL_PEDAL] - r[C_BRAKE_PEDAL];
+    const double prate = has_prev_ ? (ped - (last_[C_ACCEL_PEDAL] - last_[C_BRAKE_PEDAL])) / dt_ : (std::isnan(ped) ? NaN : 0.0);
+    const double trate = has_prev_ ? (r[C_MOTOR_TORQUE] - last_[C_MOTOR_TORQUE]) / dt_
+                                   : (std::isnan(r[C_MOTOR_TORQUE]) ? NaN : 0.0);
+
+    ch_[AWX].push(wx); ch_[AWY].push(wy); ch_[AWZ].push(wz);
+    ch_[JX].push(jx); ch_[JY].push(jy); ch_[GZ].push(r[C_GZ]);
+    ch_[RAX].push(r[C_AX]); ch_[RAZ].push(r[C_AZ]);
+    ch_[SPEED].push(v);
+    ch_[APED].push(r[C_ACCEL_PEDAL]); ch_[BPED].push(r[C_BRAKE_PEDAL]); ch_[PRATE].push(prate);
+    ch_[REGEN].push(r[C_REGEN_DECEL]);
+    ch_[DECEL].push(std::isnan(dv) ? NaN : std::max(-dv, 0.0));
+    ch_[BPOW].push(r[C_BATT_POWER]); ch_[TRATE].push(trate);
+
+    // 휴식: 차속이 있으면 정차, 없으면 수평 가중 가속도가 작은 상태가 3분
+    const bool still = std::isnan(v) ? (h < kRestStillAccel) : (v < kStopSpeed);
+    still_time_ = still ? still_time_ + dt_ : 0.0;
+    if (!rest_ && still_time_ >= kRestStillTimeS) rest_ = true;
+    if (rest_ && !still) { rest_ = false; rest_end_ = t_; reexp_ = true; had_rest_ = true; }
+
+    last_ = r;
+    has_prev_ = true;
+    n_++;
+    if (n_ % static_cast<long>(kFeaturePeriodS * kSampleRateHz) != 0) return false;
+    emit();
+    return true;
+}
+
+void FeatureExtractor::emit() {
+    VehicleVec& o = out_;
+    o.fill(NaN);
+    const Ring* acc[3] = {&ch_[AWX], &ch_[AWY], &ch_[AWZ]};
+    const size_t W[3] = {W10S, W1M, W5M};
+
+    // ---- G1 ----
+    for (int a = 0; a < 3; a++)
+        for (int w = 0; w < 3; w++) o[F_RMS_X_10S + a * 3 + w] = rms(*acc[a], W[w]);
+    o[F_DECEL_RMS_X_1M] = semi_rms(ch_[AWX], W1M, -1);
+    o[F_DECEL_RMS_X_5M] = semi_rms(ch_[AWX], W5M, -1);
+    o[F_ACCEL_RMS_X_1M] = semi_rms(ch_[AWX], W1M, +1);
+    o[F_ACCEL_RMS_X_5M] = semi_rms(ch_[AWX], W5M, +1);
+    o[F_JERK_RMS_X_10S] = rms(ch_[JX], W10S);
+    o[F_JERK_RMS_X_1M] = rms(ch_[JX], W1M);
+    o[F_JERK_RMS_Y_10S] = rms(ch_[JY], W10S);
+    o[F_JERK_RMS_Y_1M] = rms(ch_[JY], W1M);
+    o[F_YAW_RMS_10S] = rms(ch_[GZ], W10S);
+    o[F_YAW_RMS_1M] = rms(ch_[GZ], W1M);
+
+    int cnt[3][2] = {};
+    std::vector<double> times;
+    for (const auto& e : events_) {
+        cnt[e.type][1]++;
+        if (e.t > t_ - 60.0) cnt[e.type][0]++;
+        times.push_back(e.t);
+    }
+    o[F_HARD_ACCEL_COUNT_1M] = cnt[0][0]; o[F_HARD_ACCEL_COUNT_5M] = cnt[0][1];
+    o[F_HARD_BRAKE_COUNT_1M] = cnt[1][0]; o[F_HARD_BRAKE_COUNT_5M] = cnt[1][1];
+    o[F_HARD_TURN_COUNT_1M] = cnt[2][0];  o[F_HARD_TURN_COUNT_5M] = cnt[2][1];
+    if (times.size() >= 2) {
+        std::sort(times.begin(), times.end());
+        double s = 0, s2 = 0;
+        const size_t k = times.size() - 1;
+        for (size_t i = 0; i < k; i++) { const double d = times[i + 1] - times[i]; s += d; s2 += d * d; }
+        const double m = s / k;
+        o[F_EVENT_IRREGULARITY_5M] = m > 0 ? std::sqrt(std::max(0.0, s2 / k - m * m)) / m : NaN;
+    }
+    o[F_PITCH_MEAN_1M] = std::atan2(mean(ch_[RAX], W1M), mean(ch_[RAZ], W1M));
+
+    const double msdv = std::sqrt(msdv2_);
+    const double score = oman_.score();
+    const size_t k = msdv_hist_.size();  // 지금까지 낸 벡터 수
+    o[F_MSDV] = msdv;
+    o[F_MSDV_INC_5M] = msdv - (k >= 30 ? msdv_hist_[k - 30] : 0.0);
+    o[F_OMAN_SCORE] = score;
+    o[F_OMAN_DELTA_2M] = score - (k >= 12 ? score_hist_[k - 12] : 0.0);
+    o[F_SENSITIZATION] = oman_.S;
+    // F_SVC_CONFLICT: v1 비활성 (NaN)
+    msdv_hist_.push_back(msdv);
+    score_hist_.push_back(score);
+
+    const Row& r = last_;
+    // ---- G2 ----
+    if (!std::isnan(r[C_SPEED])) {
+        o[F_SPEED_MEAN_10S] = mean(ch_[SPEED], W10S);
+        o[F_SPEED_MEAN_1M] = mean(ch_[SPEED], W1M);
+        o[F_SPEED_MEAN_5M] = mean(ch_[SPEED], W5M);
+        o[F_SPEED_STD_1M] = stdev(ch_[SPEED], W1M);
+        o[F_SPEED_STD_5M] = stdev(ch_[SPEED], W5M);
+        size_t stop = 0, m = avail(ch_[SPEED], W5M);
+        for (size_t i = 0; i < m; i++) stop += ch_[SPEED].back(i) < kStopSpeed;
+        o[F_STOP_RATIO_5M] = m ? double(stop) / m : NaN;
+        o[F_SPEED_MAX_5M] = maxv(ch_[SPEED], W5M);
+    }
+    // ---- G3a ----
+    if (!std::isnan(r[C_ACCEL_PEDAL])) {
+        o[F_ACCEL_PEDAL_RMS_1M] = rms(ch_[APED], W1M);
+        o[F_BRAKE_PEDAL_RMS_1M] = rms(ch_[BPED], W1M);
+        o[F_PEDAL_RATE_RMS_1M] = rms(ch_[PRATE], W1M);
+    }
+    o[F_DRIVE_MODE] = r[C_DRIVE_MODE];
+    o[F_CRUISE_ON] = r[C_CRUISE_ON];
+    // ---- G3b ----
+    if (!std::isnan(r[C_REGEN_DECEL])) {
+        o[F_REGEN_DECEL_RMS_1M] = rms(ch_[REGEN], W1M);
+        o[F_REGEN_DECEL_RMS_5M] = rms(ch_[REGEN], W5M);
+        const auto rg = stats(ch_[REGEN], W5M), de = stats(ch_[DECEL], W5M);
+        if (de.n && de.sum > 1e-6) o[F_REGEN_SHARE_5M] = std::min(1.0, rg.sum / de.sum);
+    }
+    o[F_REGEN_LEVEL] = r[C_REGEN_LEVEL];
+    o[F_ONE_PEDAL] = r[C_ONE_PEDAL];
+    o[F_SOC] = r[C_SOC];
+    if (!std::isnan(r[C_BATT_POWER])) {
+        o[F_BATT_POWER_MEAN_1M] = mean(ch_[BPOW], W1M);
+        o[F_BATT_POWER_STD_1M] = stdev(ch_[BPOW], W1M);
+    }
+    if (!std::isnan(r[C_MOTOR_TORQUE])) o[F_MOTOR_TORQUE_RATE_RMS_1M] = rms(ch_[TRATE], W1M);
+    // ---- G4 ~ G7: 현재 값 ----
+    o[F_DIST_NEXT_TURN] = r[C_DIST_NEXT_TURN];
+    o[F_ANGLE_NEXT_TURN] = r[C_ANGLE_NEXT_TURN];
+    o[F_PRED_AX_10S] = r[C_PRED_AX_10S];
+    o[F_PRED_AY_10S] = r[C_PRED_AY_10S];
+    o[F_CURVATURE_AHEAD] = r[C_CURVATURE_AHEAD];
+    o[F_CABIN_TEMP] = r[C_CABIN_TEMP];
+    o[F_SET_TEMP] = r[C_SET_TEMP];
+    o[F_FAN_LEVEL] = r[C_FAN_LEVEL];
+    o[F_AC_ON] = r[C_AC_ON];
+    o[F_SEAT_ROW] = r[C_SEAT_ROW];
+    o[F_SEATBACK_ANGLE] = r[C_SEATBACK_ANGLE];
+    o[F_WINDOW_OPEN] = r[C_WINDOW_OPEN];
+    o[F_NOISE_LEVEL] = r[C_NOISE_LEVEL];
+    o[F_NOISE_LOWFREQ_LEVEL] = r[C_NOISE_LOWFREQ_LEVEL];
+    // ---- G9 ----
+    o[F_RIDE_TIME] = t_ - t0_;
+    o[F_REEXPOSURE] = reexp_ ? 1.0 : 0.0;
+    o[F_TIME_SINCE_REST] = had_rest_ ? t_ - rest_end_ : NaN;
+
+    // enabled=false는 항상 NaN
+    for (int i = 0; i < kNumVehicle; i++)
+        if (!kFeatureEnabled[i]) o[i] = NaN;
+}
+
+}  // namespace mm

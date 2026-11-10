@@ -244,16 +244,24 @@ Training runs on a development PC (Python, LightGBM). The trained model files ar
 │   ├── PROTOCOL.md          # UART frames, BLE GATT, messages M00–M07, device IDs
 │   ├── messages.schema.json # JSON Schema for the messages
 │   ├── uuids.json           # BLE service / characteristic UUIDs
-│   ├── constants.json       # Oman, event, rest and MSSQ constants
+│   ├── constants.json       # Oman, Wf, event, rest and MSSQ constants
+│   ├── trip_format.json     # columns of the 100 Hz trip.bin
 │   ├── feature_order.json   # 77 features: order, group, unit, window, monotone, enabled
+│   ├── gen_cpp.py           # JSON → controller/common/protocol_gen.hpp
 │   └── check.py             # validates the files above
 │
 ├── controller/              # QNX C++ on Raspberry Pi 4 (P1–P6 to come)
+│   ├── CMakeLists.txt       # cmake -S controller -B build (Mac and Pi)
+│   ├── common/              # portable C++: filters, Oman, 71 vehicle features
+│   ├── tools/featurize.cpp  # trip.bin → features.bin, shared by training and P2
+│   ├── tests/               # feature unit tests (ctest)
 │   ├── bringup/             # standalone hardware tests (MPU-6050)
 │   └── config/              # policy.json, thresholds.json
 │
 ├── ml/                      # Python, development PC
-│   ├── requirements.txt
+│   ├── oman.py, wf.py       # reference Oman model and ISO Wf filter
+│   ├── trip.py              # trip.bin / features.bin I/O, runs featurize
+│   ├── tests/               # unit tests and C++ vs Python golden tests
 │   └── verify/              # Oman reproduction on TU Delft, lateral slalom check
 │
 ├── tests/

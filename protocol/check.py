@@ -75,6 +75,15 @@ c = load(ROOT / "constants.json")
 check(c["device_ids"]["airflow"] == pol["tiers"]["1"]["device"], "airflow 기기 ID 불일치")
 check(c["device_ids"]["display"] == pol["tiers"]["2"]["device"], "display 기기 ID 불일치")
 
+tf = load(ROOT / "trip_format.json")
+names = [x["name"] for x in tf["columns"]]
+check(names[:7] == ["t", "ax", "ay", "az", "gx", "gy", "gz"], "trip_format 앞 7열은 t, ax..gz")
+check(len(set(names)) == len(names), "trip_format 열 이름 중복")
+
+import subprocess  # noqa: E402
+gen = subprocess.run([sys.executable, str(ROOT / "gen_cpp.py"), "--check"], capture_output=True, text=True)
+check(gen.returncode == 0, gen.stdout.strip())
+
 if errors:
     print("\n".join("FAIL: " + e for e in errors))
     sys.exit(1)
