@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "sample_rate_hz": 100,
+  "feature_period_s": 10,
+  "mot_period_ms": 100,
+  "oman": {
+    "K0": 51.3,
+    "beta_fast_s": 66.2,
+    "beta_slow_s": 502.4,
+    "exponent": 0.4,
+    "input": "abs of horizontal acceleration (ax, ay), not frequency weighted",
+    "input_lowpass_hz": 0.63,
+    "input_lowpass_order": 2,
+    "discretization": "exact: alpha = exp(-dt / beta)",
+    "note": "K0 = median per-person K on TU Delft with the 0.63 Hz input low-pass (48.7 without it). ml/verify/oman_tudelft.py, refit at 100 Hz in S1"
+  },
+  "events": {
+    "hard_accel_x_mps2": 1.5,
+    "hard_brake_x_mps2": -0.75,
+    "hard_turn_abs_y_mps2": 2.0,
+    "note": "hard_turn threshold is a guess in the PRD"
+  },
+  "rest": {
+    "still_time_s": 180,
+    "still_weighted_accel_mps2": 0.05
+  },
+  "mssq": {
+    "norm_mean": 12.90,
+    "norm_sd": 9.90,
+    "sens_coef": 0.3,
+    "sens_min": 0.5,
+    "sens_max": 2.0,
+    "default_profile": { "mssq": 12.90, "sens": 1.0 },
+    "note": "sens = clip(exp(sens_coef * (mssq - norm_mean) / norm_sd), sens_min, sens_max). Golding 2006 norms. TU Delft LOPO MAE: 1.32 without MSSQ, 1.26 with this rule"
+  },
+  "device_ids": {
+    "airflow": "airflow-01",
+    "display": "display-01",
+    "hud": "hud-01"
+  }
+}

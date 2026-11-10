@@ -1,0 +1,7 @@
+{
+  "placeholder": true,
+  "feature_order_version": 1,
+  "source": "preliminary experiment values from the paper; replaced by ml/train (S4)",
+  "rule": { "1": "largest P(>=3) threshold with recall >= 0.90", "2": "smallest P(>=4) threshold with precision >= 0.70", "3": "smallest P(>=4) threshold with precision >= 0.80" },
+  "base_th": { "1": 0.62, "2": 0.24, "3": 0.34 }
+}
