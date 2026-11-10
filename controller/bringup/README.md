@@ -1,6 +1,6 @@
-# hub/bringup — 하드웨어 동작 확인용 테스트
+# controller/bringup — 하드웨어 동작 확인용 테스트
 
-허브(`hub/main.cpp`)와 별개로, 보드에서 센서·장치가 동작하는지 따로 확인하는 독립 프로그램을 둡니다.
+컨트롤러(P1~P6)와 별개로, 보드에서 센서·장치가 동작하는지 따로 확인하는 독립 프로그램을 둡니다.
 
 ## mpu_test.c — MPU-6050 (I2C)
 
@@ -26,7 +26,7 @@ QSTI 이미지에 `gcc`가 있어(`/system/bin/gcc`) 보드에서 바로 빌드�
 Mac에서 SSH로 보내 실행 (Mac 인터넷 공유로 연결 시 Pi = `192.168.2.2`):
 
 ```sh
-scp hub/bringup/mpu_test.c qnxuser@192.168.2.2:mermaid/
+scp controller/bringup/mpu_test.c qnxuser@192.168.2.2:mermaid/
 ssh qnxuser@192.168.2.2 'cd ~/mermaid && gcc -Wall -o mpu mpu_test.c && ./mpu'   # Ctrl+C로 종료
 ```
 

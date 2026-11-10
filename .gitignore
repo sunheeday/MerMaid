@@ -21,8 +21,6 @@ out/
 *.d
 compile_commands.json
 .cache/
-pc/replay
-hub/mmhub
 
 # ---- Python ----
 __pycache__/
@@ -34,11 +32,13 @@ venv/
 *.egg-info/
 .pytest_cache/
 
-# ---- Trained model files (exported header is committed) ----
+# ---- ML outputs (models, tables, verify results) ----
 *.pkl
 *.joblib
-training/models/*.txt
-training/runs/
+*.npy
+ml/out/
+ml/verify/out/
+data/trips/
 
 # ---- App (JS / mobile) ----
 node_modules/

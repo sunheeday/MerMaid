@@ -239,50 +239,30 @@ Training runs on a development PC (Python, LightGBM). The trained model files ar
 
 ```
 .
-├── README.md                # this blog
-├── Makefile                 # make pc | make qnx | make deploy | make verify
+├── README.md
+├── protocol/                # the only contract shared by QNX, bridge, app and HUD
+│   ├── PROTOCOL.md          # UART frames, BLE GATT, messages M00–M07, device IDs
+│   ├── messages.schema.json # JSON Schema for the messages
+│   ├── uuids.json           # BLE service / characteristic UUIDs
+│   ├── constants.json       # Oman, event, rest and MSSQ constants
+│   ├── feature_order.json   # 77 features: order, group, unit, window, monotone, enabled
+│   └── check.py             # validates the files above
 │
-├── core/                    # portable C++ shared by PC and QNX (no QNX headers)
-│   └── mmcore.hpp/.cpp      # preprocessing → Oman filter → features → policy layer
-│
-├── hub/                     # QNX daemon on Raspberry Pi 4
+├── controller/              # QNX C++ on Raspberry Pi 4 (P1–P6 to come)
 │   ├── bringup/             # standalone hardware tests (MPU-6050)
-│   ├── main.cpp             # 100 Hz acquisition, 10 s inference and policy, 10 Hz cues, --replay mode
-│   ├── imu.cpp              # MPU-6050 over I2C (devctl)
-│   ├── net.cpp              # TCP server for apps, line-delimited JSON
-│   ├── fan_ctl.py           # fan GPIO control via stdin commands
-│   └── run.sh               # start I2C driver and the hub
+│   └── config/              # policy.json, thresholds.json
 │
-├── pc/
-│   └── replay.cpp           # CSV → 10 s features (training table + verification)
-│
-├── training/                # Python, development PC
-│   ├── build_table.py       # synthetic data and TU Delft → training table
-│   ├── labels.py            # max MISC within 5 minutes ≥ k (k = 2 to 6)
-│   ├── cv.py                # person-level cross-validation
-│   ├── models/              # baselines, ordinal GBM
-│   ├── personalize.py       # sensitivity update experiment on TU Delft reports
-│   ├── evaluate.py          # PR-AUC, ROC-AUC, lead time, false activations per hour
-│   ├── export.py            # model files + policy settings for the Pi
-│   ├── verify.py            # PC vs. QNX output consistency
-│   └── notebooks/
-│
-├── app/
-│   ├── mobile/              # phone: motion-dot cues, override, screen state
-│   └── vehicle/             # in-vehicle screen app (?view=display | hud)
-│       ├── shared/          # hub connection, message parsing, cue TTL
-│       ├── display/         # vehicle display: dots, intervention status
-│       └── hud/             # HUD: black background, direction gradient, mirror mode
+├── ml/                      # Python, development PC
+│   ├── requirements.txt
+│   └── verify/              # Oman reproduction on TU Delft, lateral slalom check
 │
 ├── tests/
 │   ├── portability/         # C++17, threads, timer check on the Pi
 │   └── lgbm_capi/           # LightGBM on QNX vs. Python predictions
 │
-├── data/                    # raw dataset linked, not committed (see data/README.md)
-├── docs/
-│   ├── protocol.md          # hub ↔ app message spec v1
-│   └── figures/             # diagrams, plots, screenshots
-└── results/                 # evaluation tables and figures
+├── data/                    # raw dataset and trip files not committed (see data/README.md)
+├── docs/figures/
+└── results/
 ```
 
 ---
