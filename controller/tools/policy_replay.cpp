@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 
+#include "json_min.hpp"
 #include "policy.hpp"
 #include "protocol_gen.hpp"
 
@@ -21,7 +22,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     mm::PolicyConfig cfg = mm::load_policy_config(MM_CONFIG_DIR "/policy.json", MM_CONFIG_DIR "/thresholds.json");
-    cfg.base_th[tier - 1] = std::atof(argv[2]);
+    cfg.base_th[tier - 1] = mm::json::parse(argv[2]).number();  // strtod를 피해 Mac과 같은 값으로
     mm::Policy pol(cfg);
     const std::string phone = "replay-phone";
     pol.set_hud_connected(true);
@@ -41,7 +42,7 @@ int main(int argc, char** argv) {
             continue;
         }
         mm::Risk r{};
-        r[col] = std::atof(line.c_str());
+        r[col] = mm::json::parse(line).number();
         pol.on_risk(t, {{phone, r}});
         t += 10;
         std::cout << (pol.is_on(device) ? 1 : 0) << "\n";

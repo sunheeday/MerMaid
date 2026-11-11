@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "json_min.hpp"
 #include "policy.hpp"
 #include "protocol_gen.hpp"
 
@@ -247,7 +248,23 @@ static void test_config() {
     CHECK(ok.base_th[2] == 0.7, "inline config parsed");
 }
 
+// QNX strtod는 소수 일부를 1~2 ULP 다르게 읽으므로 설정 숫자는 직접 읽는다: 컴파일러가 읽은 리터럴과 비트 단위로 같아야 함
+static void test_json_numbers() {
+    const char* text[] = {"0.7", "0.63", "0.1", "1.15", "0.0625", "12.9", "9.9", "0.7071067811865476", "-0.75",
+                          "1e-3", "2.5E2", "0.9899", "300", "-4", "0", "0.30000000000000004", "1e300"};
+    const double want[] = {0.7, 0.63, 0.1, 1.15, 0.0625, 12.9, 9.9, 0.7071067811865476, -0.75,
+                           1e-3, 2.5E2, 0.9899, 300, -4, 0, 0.30000000000000004, 1e300};
+    for (size_t i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+        const double got = json::parse(text[i]).number();
+        CHECK(got == want[i], "%s parsed as %.17g", text[i], got);
+    }
+    bool threw = false;
+    try { json::parse("1."); json::parse("-"); } catch (const std::runtime_error&) { threw = true; }
+    CHECK(threw, "malformed number must be refused");
+}
+
 int main() {
+    test_json_numbers();
     test_quick_off();
     test_late_off();
     test_manual_on();

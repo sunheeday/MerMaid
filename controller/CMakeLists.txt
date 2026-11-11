@@ -32,3 +32,20 @@ add_executable(test_policy tests/test_policy.cpp)
 target_link_libraries(test_policy mmcommon)
 target_compile_definitions(test_policy PRIVATE MM_CONFIG_DIR="${MM_CONFIG_DIR}")
 add_test(NAME policy COMMAND test_policy)
+
+# P3 추론 (lib_lightgbm 4.6.0). 경로를 주면 빌드:
+#   Pi:  -DMM_LIGHTGBM_INCLUDE=$HOME/mermaid/LightGBM/include -DMM_LIGHTGBM_LIB=$HOME/mermaid/LightGBM/lib_lightgbm.so
+#   Mac: pip lightgbm의 lib/lib_lightgbm.dylib + 같은 버전 헤더
+set(MM_LIGHTGBM_INCLUDE "" CACHE PATH "LightGBM include directory (contains LightGBM/c_api.h)")
+set(MM_LIGHTGBM_LIB "" CACHE FILEPATH "lib_lightgbm shared library")
+if(MM_LIGHTGBM_INCLUDE AND MM_LIGHTGBM_LIB)
+  add_library(mminfer STATIC common/inference.cpp)
+  target_include_directories(mminfer PUBLIC ${MM_LIGHTGBM_INCLUDE})
+  target_link_libraries(mminfer PUBLIC mmcommon ${MM_LIGHTGBM_LIB})
+  get_filename_component(MM_LIGHTGBM_LIBDIR ${MM_LIGHTGBM_LIB} DIRECTORY)
+  add_executable(verify_model tools/verify_model.cpp)
+  target_link_libraries(verify_model mminfer)
+  set_target_properties(verify_model PROPERTIES BUILD_RPATH ${MM_LIGHTGBM_LIBDIR})
+else()
+  message(STATUS "MM_LIGHTGBM_INCLUDE / MM_LIGHTGBM_LIB not set: skipping P3 (inference) targets")
+endif()

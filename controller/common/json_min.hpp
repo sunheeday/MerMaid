@@ -2,6 +2,7 @@
 // 객체, 배열, 숫자, 문자열, true/false/null. 문자열의 \uXXXX는 ASCII 범위만 지원.
 // 숫자는 strtod로 읽는다. 설정 값이라 1~2 ULP 차이는 상관없음 (trip 데이터는 바이너리라 해당 없음).
 #pragma once
+#include <algorithm>
 #include <cstdlib>
 #include <map>
 #include <memory>
@@ -119,15 +120,60 @@ private:
         if (literal("false")) { v.type = Value::Bool; return v; }
         if (literal("null")) return v;
         if (c == '-' || (c >= '0' && c <= '9')) {
-            const char* begin = s_.c_str() + i_;
-            char* end = nullptr;
             v.type = Value::Number;
-            v.num = std::strtod(begin, &end);
-            if (end == begin) fail("bad number");
-            i_ += static_cast<size_t>(end - begin);
+            v.num = number_lit();
             return v;
         }
         fail("unexpected character");
+    }
+    // QNX strtod는 소수 문자열의 일부를 1~2 ULP 다르게 읽는다. 설정 값처럼 유효숫자 15자리 이하,
+    // 10의 지수 22 이하인 수는 정수 가수 / 10^k 한 번의 연산으로 정확히 반올림해 읽는다
+    // (Clinger fast path). 그 밖의 수만 strtod로.
+    double number_lit() {
+        const size_t start = i_;
+        bool neg = false;
+        if (s_[i_] == '-') { neg = true; i_++; }
+        unsigned long long mant = 0;
+        int digits = 0, exp10 = 0;
+        bool any = false;
+        auto digit = [&](bool frac) {
+            const int d = s_[i_++] - '0';
+            any = true;
+            if (mant == 0 && d == 0) {  // 앞쪽 0은 유효숫자가 아님
+                if (frac) exp10--;
+                return;
+            }
+            if (digits < 19) {
+                mant = mant * 10 + static_cast<unsigned long long>(d);
+                digits++;
+                if (frac) exp10--;
+            } else {
+                digits++;  // 19자리 초과: 아래에서 strtod로
+                if (!frac) exp10++;
+            }
+        };
+        while (i_ < s_.size() && s_[i_] >= '0' && s_[i_] <= '9') digit(false);
+        if (i_ < s_.size() && s_[i_] == '.') {
+            i_++;
+            while (i_ < s_.size() && s_[i_] >= '0' && s_[i_] <= '9') digit(true);
+        }
+        if (!any) fail("bad number");
+        if (i_ < s_.size() && (s_[i_] == 'e' || s_[i_] == 'E')) {
+            i_++;
+            int sign = 1, e = 0;
+            if (i_ < s_.size() && (s_[i_] == '+' || s_[i_] == '-')) sign = s_[i_++] == '-' ? -1 : 1;
+            if (i_ >= s_.size() || s_[i_] < '0' || s_[i_] > '9') fail("bad exponent");
+            while (i_ < s_.size() && s_[i_] >= '0' && s_[i_] <= '9') e = std::min(e * 10 + (s_[i_++] - '0'), 100000);
+            exp10 += sign * e;
+        }
+        static const double pow10[] = {1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,  1e10, 1e11,
+                                       1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22};
+        if (digits <= 15 && mant <= (1ULL << 53) && exp10 >= -22 && exp10 <= 22) {
+            double x = static_cast<double>(mant);
+            x = exp10 < 0 ? x / pow10[-exp10] : x * pow10[exp10];
+            return neg ? -x : x;
+        }
+        return std::strtod(s_.substr(start, i_ - start).c_str(), nullptr);
     }
     std::string string_lit() {
         expect('"');

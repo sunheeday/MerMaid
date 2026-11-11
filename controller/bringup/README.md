@@ -57,3 +57,27 @@ ssh qnxuser@192.168.2.2 'cd ~/mermaid && gcc -Wall -o mpu mpu_test.c && ./mpu'  
 - 보드의 `vi`가 st 터미널에서 잘 동작하지 않음 → `cat > file << 'EOF'`로 작성하거나 PC에서 `scp`로 전송
 - `qcc`는 보드에 없음 (PC SDP용). 보드에서는 `gcc` 사용
 - QNX `sed`는 `-i`를 지원하지 않음 → `sed '...' a.c > b.c && mv b.c a.c`
+
+## P3 추론과 AC-01 / Q9 (2026-11-11, QNX 8.0, clang 22.1.8, lib_lightgbm 4.6.0 보드 빌드)
+
+Mac에서 코드, `ml/out/models`, 벡터를 보낸 뒤 보드에서 빌드합니다.
+
+```bash
+python3 ml/verify/model_parity.py make
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - controller protocol ml/out/models ml/verify/out/parity/vectors.bin | ssh qnxuser@192.168.2.2 'mkdir -p ~/mermaid/repo && cd ~/mermaid/repo && tar xzf -'
+ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && L=$HOME/mermaid/LightGBM && cmake -S controller -B build -DMM_LIGHTGBM_INCLUDE=$L/include -DMM_LIGHTGBM_LIB=$L/lib_lightgbm.so && cmake --build build && ctest --test-dir build && ./build/verify_model ml/out/models ml/verify/out/parity/vectors.bin ml/verify/out/parity/actual_pi.bin mem'
+scp qnxuser@192.168.2.2:mermaid/repo/ml/verify/out/parity/actual_pi.bin ml/verify/out/parity/ && python3 ml/verify/model_parity.py check ml/verify/out/parity/actual_pi.bin
+```
+
+| 항목 | 결과 | 기준 |
+|---|---|---|
+| AC-01 확률 차이 (4,202행: 데이터 2,000, NaN 201, 0 201, 분기 기준값 ±1e-9와 정확히 그 값 1,800) | 최대 2.2e-16 | < 1e-6 |
+| AC-01 Tier 결정 | 100% 일치 | 100% |
+| Q9 모델 5개 로드 (트리 146, 98, 54, 17, 271) | 126 ms | 1초 이내 |
+| Q9 한 주기 추론 (폰 9대 = 9행 × 모델 5개) | 중앙값 1.48 ms, 최대 2.0 ms | 10 ms 이내 |
+| Q9 메모리 (pidin: 코드 + 데이터 + 스택, 테스트 벡터 2.6 MB 포함) | 약 13 MB | 200 MB 이내 |
+| C++ 단위 테스트 (피처, 정책) | 통과 | – |
+
+- 한 행씩 부르면 약 320 µs로, 행을 모아 부를 때(행당 약 130 µs)보다 느립니다. P3는 한 주기의 폰들을 한 번에 넘깁니다.
+- QNX에서 `getrusage`의 `ru_maxrss`는 0이라 메모리는 `pidin -p <pid> mem`으로 잽니다.
+- QNX `strtod`가 일부 소수를 1~2 ULP 다르게 읽어서, 설정 JSON의 숫자는 `json_min.hpp`가 직접 읽습니다. LightGBM 모델 파일은 영향이 없었습니다(기준값과 정확히 같은 행까지 일치).
