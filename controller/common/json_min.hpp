@@ -1,6 +1,6 @@
 // 설정 파일(policy.json, thresholds.json)용 최소 JSON 읽기. 표준 C++17만 사용.
 // 객체, 배열, 숫자, 문자열, true/false/null. 문자열의 \uXXXX는 ASCII 범위만 지원.
-// 숫자는 strtod로 읽는다. 설정 값이라 1~2 ULP 차이는 상관없음 (trip 데이터는 바이너리라 해당 없음).
+// 숫자는 15자리 이하면 정확히 직접 읽고(QNX strtod가 1~2 ULP 틀려서), 그보다 길면 strtod.
 #pragma once
 #include <algorithm>
 #include <cstdlib>

@@ -81,3 +81,44 @@ scp qnxuser@192.168.2.2:mermaid/repo/ml/verify/out/parity/actual_pi.bin ml/verif
 - 한 행씩 부르면 약 320 µs로, 행을 모아 부를 때(행당 약 130 µs)보다 느립니다. P3는 한 주기의 폰들을 한 번에 넘깁니다.
 - QNX에서 `getrusage`의 `ru_maxrss`는 0이라 메모리는 `pidin -p <pid> mem`으로 잽니다.
 - QNX `strtod`가 일부 소수를 1~2 ULP 다르게 읽어서, 설정 JSON의 숫자는 `json_min.hpp`가 직접 읽습니다. LightGBM 모델 파일은 영향이 없었습니다(기준값과 정확히 같은 행까지 일치).
+
+## P1→P4 프로세스 파이프라인과 AC-02 (2026-11-11, BLE 없이)
+
+P1 수집(trip.bin 재생), P2 피처, P3 추론, P4 정책이 각각 별도 프로세스이고 QNX 메시지 전달(`name_attach` / `MsgSend` / `MsgReceive`)로 이어집니다. 코드는 `controller/qnx/`, 메시지 정의는 `messages.hpp`입니다.
+
+- 받는 쪽은 메시지를 복사하자마자 회신하고 처리합니다. 그래서 100 Hz로 보내는 P1이 뒤 단계의 계산을 기다리지 않습니다.
+- 각 프로세스는 다음 단계에 연결된 뒤에 자기 이름을 붙입니다 (P4 → P3 → P2 → P1 순서). 이름이 보이면 받을 준비가 끝난 것입니다.
+- 주행 경계(RIDE_START/END)는 샘플과 같은 길로 P2 → P3 → P4에 전달되어 순서가 섞이지 않습니다.
+- P3는 주기마다 P4에 등록된 폰과 프로필을 묻습니다. 폰이 하나도 없으면 승객 피처를 NaN으로 둔 `default` 한 행으로 추론합니다.
+- P4는 허용도와 프로필이 바뀔 때마다 `--state` 아래에 저장합니다 (임시 파일 → fsync → rename). 시작할 때 저장된 값을 읽어 옵니다.
+- BLE(P5)가 붙기 전까지 HUD, 폰, 프로필은 P4 명령행으로 줍니다. 화면은 켜짐, 주의는 있음으로 고정합니다. 정책 시각은 주행 시각입니다.
+
+Mac에서 보내고 실행한 뒤 비교합니다 (폰 2대: 데이터셋 탑승 1과 0의 승객 피처, 재생 trip은 탑승 1).
+
+```bash
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - controller protocol ml/out/models data/trips/ride_0001.bin | ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && tar xzf - && cmake --build build'
+```
+
+```bash
+ssh qnxuser@192.168.2.2 "cd ~/mermaid/repo && controller/qnx/run_pipeline.sh data/trips/ride_0001.bin out/fast 0 $(python3 ml/verify/pipeline_check.py spec 1 0)"
+```
+
+```bash
+scp qnxuser@192.168.2.2:mermaid/repo/out/fast/cycles.csv ml/verify/out/pipeline/cycles_fast.csv && python3 ml/verify/pipeline_check.py check data/trips/ride_0001.bin ml/verify/out/pipeline/cycles_fast.csv 1 0
+```
+
+실시간은 세 번째 인자를 `1`로 줍니다 (33분 걸림).
+
+| 항목 | 빠른 재생 (쉬지 않고) | 실시간 (1배속) | 기준 |
+|---|---|---|---|
+| 샘플 (P1 보냄 → P2 받음) | 200,535 → 200,535, 빠짐 0 | 200,535 → 200,535, 빠짐 0, 전송 실패 0 | AC-02: 100 Hz 샘플 손실 없음 |
+| 걸린 시간 | 2.4초 | 2,005.34초 (샘플 수 × 10 ms = 2,005.35초) | – |
+| P1 깨어남 지연 | – | 중앙값 973 µs, 최대 995 µs | 간격이 10 ms로 유지되면 됨 |
+| 10초 주기 (P2 벡터 → P4 정책 끝) | 200주기, 중앙값 0.81 ms, 최대 0.94 ms | 200주기, 중앙값 0.78 ms, 최대 1.84 ms | AC-02: 10초 주기 안에 끝남 |
+| P2 샘플 하나 처리 최대 (10초 경계의 피처 계산 포함) | 2.5 ms | 2.6 ms | 10 ms 미만 |
+| P3 추론 최대 (폰 2대) | 0.80 ms | 0.80 ms | – |
+| Mac featurize + Python과 비교 | 확률 최대 차이 1.1e-16, 기기 4개 ON/OFF 200주기 모두 일치 | 같음 | 차이 < 1e-6, 100% 일치 |
+
+- P1은 늘 약 1 ms 늦게 깨어납니다. QNX 타이머가 1 ms 틱 단위로 올림하기 때문입니다. 늦는 양이 일정해서 샘플 간격은 10 ms로 유지됩니다.
+- `pidin`에서 P2~P4가 P1과 같은 우선순위 40으로 보이는 것은 정상입니다. QNX에서는 메시지를 받는 서버가 보낸 쪽의 우선순위를 물려받습니다.
+- 처음 실행에서는 P2가 P3에 연결되기 전에 이름을 붙였습니다. 그래서 P3가 모델을 읽는 동안 P1의 RIDE_START가 5 ms 시간 초과로 빠졌습니다. 이름을 붙이는 순서를 바꿔 고쳤습니다.
