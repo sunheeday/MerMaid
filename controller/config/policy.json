@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "tiers": {
+    "1": { "device": "airflow-01", "input_k": 3, "shared": true,  "hold_cycles": 1,  "gate": "none" },
+    "2": { "device": "display-01", "input_k": 4, "shared": true,  "hold_cycles": 6,  "gate": "hud_screen_on" },
+    "3": { "device": "phone",      "input_k": 4, "shared": false, "hold_cycles": 12, "gate": "screen_on_and_att" }
+  },
+  "off_margin": 0.10,
+  "off_hold_cycles": 6,
+  "cooldown_s": 300,
+  "quick_off_s": 30,
+  "max_quick_offs": 3,
+  "tolerance": { "scale": 0.4, "divisor": 6, "n_min": -4 },
+  "sensitivity": { "on_step": 1.15, "max": 2.0, "ride_end_return": 0.10 },
+  "safety_timeout_s": 30
+}

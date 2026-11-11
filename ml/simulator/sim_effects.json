@@ -1,0 +1,8 @@
+{
+ "version": 1,
+ "note": "Multipliers on the Oman gain K for the synthetic label (PRD 4.1). Literature gives direction only; every magnitude is a guess and is drawn per ride from the range so the model cannot fit one value. Tier 1 airflow is never included.",
+ "rear_seat": {"range": [1.1, 1.5], "source": "Schmidt et al. 2020 (3,999 survey); Turner and Griffin 1999; Irmak et al. 2021"},
+ "cabin_temp": {"start_c": 24.0, "full_c": 35.0, "max_range": [1.05, 1.2], "source": "Arnold et al. 2019 (n = 13, VR)"},
+ "fan": {"min_level": 2, "range": [0.85, 1.0], "source": "D'Amour et al. 2017 (n = 82, visually induced)"},
+ "noise": {"factor": 1.0, "source": "Gu et al. 2025; no evidence for ordinary cabin noise"}
+}

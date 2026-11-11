@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mermaid/messages.schema.json",
+  "title": "MerMaid BLE messages v1",
+  "description": "JSON payload of one line. The 512-byte frame limit is checked by the sender, not by this schema.",
+  "oneOf": [
+    { "$ref": "#/$defs/HELLO" },
+    { "$ref": "#/$defs/INT" },
+    { "$ref": "#/$defs/MOT" },
+    { "$ref": "#/$defs/SCR" },
+    { "$ref": "#/$defs/OVR" },
+    { "$ref": "#/$defs/PROF" },
+    { "$ref": "#/$defs/HB" }
+  ],
+  "$defs": {
+    "HELLO": {
+      "description": "M00, device -> controller",
+      "type": "object",
+      "properties": {
+        "t": { "const": "HELLO" },
+        "role": { "enum": ["app", "hud"] },
+        "dev": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "v": { "const": 1 }
+      },
+      "required": ["t", "role", "dev", "v"],
+      "additionalProperties": false
+    },
+    "INT": {
+      "description": "M01, controller -> device",
+      "type": "object",
+      "properties": {
+        "t": { "const": "INT" },
+        "tier": { "enum": [1, 2, 3] },
+        "on": { "type": "boolean" }
+      },
+      "required": ["t", "tier", "on"],
+      "additionalProperties": false
+    },
+    "MOT": {
+      "description": "M02, controller -> device, 10 Hz, weighted acceleration in m/s^2. pax/pay only when a route preview exists",
+      "type": "object",
+      "properties": {
+        "t": { "const": "MOT" },
+        "ax": { "type": "number" },
+        "ay": { "type": "number" },
+        "pax": { "type": "number" },
+        "pay": { "type": "number" }
+      },
+      "required": ["t", "ax", "ay"],
+      "dependentRequired": { "pax": ["pay"], "pay": ["pax"] },
+      "additionalProperties": false
+    },
+    "SCR": {
+      "description": "M03, device -> controller. The HUD always sends att=false",
+      "type": "object",
+      "properties": {
+        "t": { "const": "SCR" },
+        "on": { "type": "boolean" },
+        "att": { "type": "boolean" }
+      },
+      "required": ["t", "on", "att"],
+      "additionalProperties": false
+    },
+    "OVR": {
+      "description": "M05, device -> controller. dev is the target device: airflow-01, display-01, or a phone device ID. The sender is identified by its connection",
+      "type": "object",
+      "properties": {
+        "t": { "const": "OVR" },
+        "dev": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "on": { "type": "boolean" }
+      },
+      "required": ["t", "dev", "on"],
+      "additionalProperties": false
+    },
+    "PROF": {
+      "description": "M06, app <-> controller. MSSQ-Short raw score and survey sensitivity",
+      "type": "object",
+      "properties": {
+        "t": { "const": "PROF" },
+        "mssq": { "type": "number", "minimum": 0, "maximum": 54 },
+        "sens": { "type": "number", "minimum": 0.5, "maximum": 2.0 }
+      },
+      "required": ["t", "mssq", "sens"],
+      "additionalProperties": false
+    },
+    "HB": {
+      "description": "M07, both directions, every 1 s",
+      "type": "object",
+      "properties": {
+        "t": { "const": "HB" },
+        "seq": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["t", "seq"],
+      "additionalProperties": false
+    }
+  }
+}
