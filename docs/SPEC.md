@@ -77,7 +77,7 @@ P1은 **재생 모드만** 있습니다 (`data/trips/*.bin`을 100 Hz로 흘림)
 | C14 | 주행 시작·끝 전달 | 명시 없음 | P1 → P2 → P3 → P4로 RIDE_START / RIDE_END 메시지를 차례로 넘김 | P2 창 초기화와 P4 주행별 상태 초기화를 같은 시점에 | `controller/qnx/messages.hpp` |
 | C15 | 프로필 전달 | P3가 프로필을 앎 (§P3) | P3가 매 주기 P4에 PROFILES를 요청 (P4가 프로필과 허용도의 주인) | 민감도와 허용도가 P4에서 바뀌므로 | `controller/qnx/p3_infer.cpp` |
 | C16 | 프로필 파일 | `profiles/<ID>.json`에 설문 MSSQ, 설문 민감도, 현재 민감도, EV 경험, 차량 유형 (Q7) | mssq, sens_mssq, sens만 저장. **EV 경험, 차량 유형 없음** | P6(폰 연결) 전이라 받을 곳이 없음. **[TODO]** | `controller/common/store.cpp` |
-| C17 | 폰이 없을 때 | 기본 프로필 MSSQ 12.90, 민감도 1.0 (§P3, Q5) | **G10을 NaN으로 둔 "default" 한 행**으로 추론 | 구현 실수에 가까움. 학습에 G10 10% 드롭아웃이 있어 동작은 하지만 PRD와 다름. **[TODO] 고칠 것** | `controller/qnx/p3_infer.cpp` |
+| C17 | 폰이 없을 때 | 기본 프로필 MSSQ 12.90, 민감도 1.0 (§P3, Q5). EV 경험은 정하지 않음 | PRD대로 MSSQ 12.90, 민감도 1.0 (`constants.json` default_profile). **EV 경험은 NaN**(모름), 차량 유형은 그대로 | EV 경험을 0으로 두면 "EV를 안 타 봤다"고 단정하는 셈이라 모름으로 둠. 자체 결정 (2026-11-11 수정, 그 전에는 G10 전체가 NaN이었음) | `controller/qnx/p3_infer.cpp` |
 | C18 | G1 svc_conflict, G8 허용도 | 피처로 사용 | v1에서 `enabled=false` (항상 NaN) | SVC 식이 정의되지 않음. 허용도는 실제 사용 기록이 있어야 의미가 있어 합성 데이터로 학습 불가 | `protocol/feature_order.json` |
 | C19 | 설정 JSON 숫자 읽기 | – | `json_min.hpp`가 직접 파싱 | QNX `strtod`가 일부 소수를 1~2 ULP 다르게 읽어 Mac과 Pi 결과가 달라짐 | `controller/common/json_min.hpp` |
 | C20 | P2 기준 구현 언어 | Python (`ml/features`) | C++ 하나, Python은 `featurize` 실행 파일을 부름 | 학습과 보드가 같은 코드를 써서 피처 불일치를 없앰 | `controller/common/features.cpp` |
@@ -196,7 +196,7 @@ sens = clip( e^(0.3·z), 0.5, 2.0 )                       # z = 1이면 1.35배
 |---|---|
 | 채점식, 규준 평균 12.90, 표준편차 9.90 (n = 257) | 문헌 (Golding 2006), PRD Q5 |
 | 계수 0.3, 범위 0.5~2.0 | PRD §P4 개인화 (paper_v2 FR-05). **근거 문헌 없음** |
-| 기본 프로필 MSSQ 12.90, 민감도 1.0 | PRD §P3, Q5 (P3는 아직 다름: C17) |
+| 기본 프로필 MSSQ 12.90, 민감도 1.0, EV 경험 NaN | PRD §P3, Q5. EV 경험 NaN은 자체 결정 (C17) |
 
 TU Delft에서 한 사람씩 빼고 예측(LOPO)한 MISC MAE: K0만 1.32, K0 × sens 1.26. 17명이라 개선 폭은 참고 수준입니다. MSA/MSB 채점 코드는 아직 없습니다 (앱 S9에서 구현 예정, [미구현]). 저장소에는 MSSQ → sens 변환만 있습니다 (`ml/oman.py`의 `sensitivity`, C++ 쪽은 `constants.json`의 같은 상수 사용).
 
@@ -351,7 +351,7 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | 시간 제한 | `TimerTimeout`으로 보내기와 회신에 제한. 샘플 기본 5 ms, 주행 시작·끝 1 s. 상대가 죽으면 1초에 한 번까지 재연결 |
 | 우선순위 (SCHED_RR) | P1 40, P2 30, P3 20, P4 15. 서버 우선순위 상속으로 pidin에서는 P2~P4도 40으로 보일 수 있음 |
 | P1 주기 | `clock_nanosleep` 절대 시각. QNX 1 ms 틱 때문에 깨어남이 약 1 ms 늦음 (중앙값 973 µs) |
-| P3 입력 | VEH 71개 + 폰마다 G8(tol, 비활성이라 NaN) + G10 = 77개. `enabled=false` 칸은 NaN |
+| P3 입력 | VEH 71개 + 폰마다 G8(tol, 비활성이라 NaN) + G10 = 77개. `enabled=false` 칸은 NaN. 폰이 없으면 기본 프로필 "default" 한 행 (C17) |
 | 폰 수 | 최대 9대 (`kMaxPhones`, Q9) |
 
 실행: `controller/qnx/run_pipeline.sh <trip> <out> <speed> <vtype> [phones]`. 절차는 `controller/bringup/README.md`.
@@ -471,13 +471,13 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | AC-02 | Pi 파이프라인 vs Mac featurize + Python 추론 + 재생 | 확률 차이 1.1e-16, ON/OFF 불일치 0 (200주기 × 4기기) | – | `ml/verify/pipeline_check.py` |
 | AC-03 | 사람 단위 5-fold PR-AUC (모델 / Oman만) | k3 0.941 / 0.936, k4 0.710 / 0.671, k5 0.389 / 0.364, k6 0.185 / 0.186 | 보고 | `ml/out/train/report.md` |
 | AC-03 | G8 포함 / 제외 | G8이 v1에서 꺼져 있어 같은 모델 | 둘 다 보고 | 같음 |
-| AC-04 | 그룹 결측 강건성 (P(≥4) PR-AUC) | 어떤 그룹을 지워도 0.709~0.712, G10을 지우면 0.661. G1+G9로 학습한 모델 0.670 | G1+G9 모델 이상 | 같음 |
+| AC-04 | 그룹 결측 강건성 (P(≥3) / P(≥4) PR-AUC) | G2~G7 중 하나를 지워도 0.941 / 0.709~0.712. G10을 NaN으로 0.936 / 0.661, 기본 프로필(폰 없음)로 0.937 / 0.668. G1+G9로 학습한 모델 0.936 / 0.670 | G1+G9 모델 이상 | 같음 |
 | AC-05 | 정책 재생 (시험 fold 평균) | Tier 1 탐지 80%, 리드 3.9분, 오경보 0.86/h. Tier 2 28%, 4.2분, 0.47/h. Tier 3 17%, 4.0분, 0.30/h | 보고 | 같음 |
 | AC-09 | 개인화 4가지 경우 | 통과 | 통과 | `controller/tests/test_policy.cpp` |
 | Q9 | 모델 5개 로드, 한 주기 추론 (폰 9대), 메모리 | 126 ms, 중앙값 1.48 ms (최대 2.0), 약 13 MB | 1 s, 10 ms, 200 MB | `controller/bringup/README.md` |
 | AC-06/07/08 | 다중 연결, 안전 차단, 재연결 | [미구현] (S10) | – | – |
 
-**AC-04 주의.** G10을 지웠을 때(0.661)가 G1+G9 모델(0.670)보다 약간 낮습니다. 엄밀히는 합격선 아래이고, G10이 결측일 때 기본 프로필을 넣는 C17 수정과 함께 다시 확인해야 합니다 (T-16).
+**AC-04 주의.** 승객 프로필이 없을 때 P(≥4)는 G1+G9 모델보다 조금 낮습니다. G10을 NaN으로 두면 0.661, P3가 실제로 넣는 기본 프로필(C17)로는 0.668이고, 기준(0.670)과의 차이는 0.002입니다. P(≥3)는 기본 프로필로 기준 이상입니다(0.937 대 0.936). 기본 프로필은 사람 차이를 모르는 상태라 예상할 수 있는 결과입니다. 엄밀히 맞추려면 G10 드롭아웃 복사본에 NaN 대신 기본 프로필을 넣어 학습하는 방법이 있습니다 (T-21).
 
 **AC-05 주의.** Tier 2·3 탐지율이 낮습니다 (28%, 17%). 오경보 목표를 낮게 잡은 결과이며, 목표값 자체가 팀 합의 대상입니다 (T-12).
 
@@ -502,7 +502,8 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | T-13 | 중간 | 의심 피처와 쓰지 않는 피처 | ev_experience, seatback_angle이 라벨 효과 없이 쓰임. 27개 이득 0 | 피처 순열 중요도로 확인, 필요하면 시뮬레이터에 효과를 넣거나 제외. 실차 라벨 확보 후 다시 평가 | `train.py`, `feature_order.json` |
 | T-14 | 중간 | 시뮬레이터 수치 전반 | 거의 [추측] | 실차 녹화 몇 회와 가속도·속도·저크 분포 비교 후 조정 | `sim_config.json` |
 | T-15 | 낮음 | 시야 항 (바깥을 봄 / 화면을 봄) | 모델에 없음. 슬라롬 확인에서 바깥 보는 조건을 설명 못 함 | 폰 화면 ON·응시 신호(P6)를 라벨과 피처에 반영할지 결정 | `sim.py`, `feature_order.json` |
-| T-16 | 높음 | 폰이 없을 때 P3 기본 프로필 (C17) | G10 NaN | mssq 12.90, sens 1.0 (그리고 ev_experience, vehicle_type 기본값)으로 채우기. 그 뒤 AC-04의 G10 결측 조건 다시 확인 | `controller/qnx/p3_infer.cpp` |
+| T-16 | – | 폰이 없을 때 P3 기본 프로필 (C17) | **해결 (2026-11-11)**. AC-04에 "기본 프로필" 조건 추가, Pi에서 폰 없이 돌린 결과가 Mac과 같음 | – | – |
+| T-21 | 중간 | 기본 프로필일 때 AC-04 P(≥4) | 0.668으로 G1+G9 모델(0.670)보다 0.002 낮음 | 학습의 G10 드롭아웃 일부를 NaN 대신 기본 프로필 값으로 채워 학습하고 다시 비교 | `ml/train/common.py` group_dropout |
 | T-17 | 높음 | 프로필의 EV 경험, 차량 유형 (C16) | 저장 안 함 | 프로필 파일과 PROFILES 메시지에 ev, vtype 추가 (P6에서 받음) | `store.cpp`, `messages.hpp` |
 | T-18 | 높음 | 빠른 끄기 3번 규칙 (C12) | 빠른 끄기만 셈 | 팀 확인 후 필요하면 `policy.cpp`와 AC-09 테스트 수정 | `policy.cpp`, `POLICY.md` |
 | T-19 | 높음 | P5 기기 관리, P6 통신, HEARTBEAT, MOT (100 ms) | [미구현] | PRD §P5, §P6, §5 그대로 구현 (S10) | `controller/qnx/` |

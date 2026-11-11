@@ -66,6 +66,8 @@ def render():
         f"constexpr double kSensCoef = {num(c['mssq']['sens_coef'])};",
         f"constexpr double kSensMin = {num(c['mssq']['sens_min'])};",
         f"constexpr double kSensMax = {num(c['mssq']['sens_max'])};",
+        f"constexpr double kDefaultMssq = {num(c['mssq']['default_profile']['mssq'])};",
+        f"constexpr double kDefaultSens = {num(c['mssq']['default_profile']['sens'])};",
         f"constexpr const char* kDeviceAirflow = \"{c['device_ids']['airflow']}\";",
         f"constexpr const char* kDeviceDisplay = \"{c['device_ids']['display']}\";",
         f"constexpr const char* kDeviceHud = \"{c['device_ids']['hud']}\";",

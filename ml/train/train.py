@@ -33,6 +33,16 @@ TARGETS = {"1": ("detection_rate", ">=", 0.85),             # 송풍: 85% 이상
 GRID = np.round(np.arange(0.05, 0.9501, 0.01), 2)
 OPTIONAL = ["G2", "G3a", "G3b", "G4", "G5", "G6", "G7", "G10"]
 EVAL_K = [3, 4]  # Tier 입력. 강건성은 이 둘만 본다
+DEFAULT = json.loads((C.REPO / "protocol" / "constants.json").read_text())["mssq"]["default_profile"]
+
+
+def default_profile(X):
+    """폰이 없을 때 P3가 넣는 승객 피처: MSSQ 12.90, 민감도 1.0, EV 경험은 모름(NaN). 차량 유형은 그대로"""
+    Xd = X.copy()
+    Xd[:, C.NAMES.index("mssq")] = DEFAULT["mssq"]
+    Xd[:, C.NAMES.index("sensitivity")] = DEFAULT["sens"]
+    Xd[:, C.NAMES.index("ev_experience")] = np.nan
+    return Xd
 
 
 def pick_threshold(grid, vals, op, target):
@@ -128,6 +138,8 @@ def main():
         for name, keep in conds.items():
             Pb = P if keep is None else predict(models, blank(X[te], keep))
             rob[name] = {k: float(average_precision_score(Y[te, C.K.index(k)], Pb[:, C.K.index(k)])) for k in EVAL_K}
+        Pd = predict(models, default_profile(X[te]))
+        rob["default profile (no phone)"] = {k: float(average_precision_score(Y[te, C.K.index(k)], Pd[:, C.K.index(k)])) for k in EVAL_K}
         base, _ = fit_all(X[tr], Y[tr], person[tr], ride[tr], rng, ks=EVAL_K, keep_groups=["G1", "G9"])
         Pg = np.column_stack([base[k].predict(blank(X[te], ["G1", "G9"]), num_iteration=base[k].best_iteration) for k in EVAL_K])
         rob["trained on G1+G9"] = {k: float(average_precision_score(Y[te, C.K.index(k)], Pg[:, i])) for i, k in enumerate(EVAL_K)}
