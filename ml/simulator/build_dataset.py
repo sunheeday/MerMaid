@@ -82,7 +82,7 @@ def main():
     ap.add_argument("--jobs", type=int, default=mp.cpu_count())
     ap.add_argument("--out", default=str(OUT / "dataset.npz"))
     a = ap.parse_args()
-    OUT.mkdir(parents=True, exist_ok=True)
+    pathlib.Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     TRIPS.mkdir(parents=True, exist_ok=True)
 
     rng = np.random.default_rng(a.seed)
@@ -116,8 +116,10 @@ def main():
         "ev_rides": int(sum(m["vehicle_type"] for m in meta)),
         "K_median": float(np.median([m["K"] for m in meta])),
     }
-    (OUT / "dataset_report.json").write_text(json.dumps(report, indent=1))
-    (OUT / "rides.json").write_text(json.dumps(meta, indent=0))
+    od = pathlib.Path(a.out).parent  # 보고서는 --out 옆에 (빠른 보정 실행이 ml/out을 덮지 않게)
+    stem = pathlib.Path(a.out).stem
+    (od / ("dataset_report.json" if stem == "dataset" else f"{stem}_report.json")).write_text(json.dumps(report, indent=1))
+    (od / ("rides.json" if stem == "dataset" else f"{stem}_rides.json")).write_text(json.dumps(meta, indent=0))
     print(json.dumps(report, indent=1))
 
 

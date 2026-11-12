@@ -34,6 +34,17 @@ def test_motion_is_physical(ride):
     assert np.all(np.diff(motion["s"]) >= 0)
 
 
+def test_sway_and_road_profile(ride):
+    # T-23: 차로 유지 흔들림은 a_lat와 yaw에 같이 들어가고(a_lat = v·ω), 노면 굴곡은 수직 운동을 만든다
+    _, motion, rows, _ = ride
+    v = motion["v"]
+    m = v > 5
+    assert np.allclose(motion["yaw_rate"][m] * v[m], motion["a_lat"][m])
+    straight = m & (np.abs(motion["kappa"]) < 1e-5)
+    assert straight.any() and np.std(motion["a_lat"][straight]) > 0.02
+    assert 0.005 < np.std(motion["a_vert"][m]) < 0.5
+
+
 def test_rows_follow_trip_format(ride):
     _, motion, rows, mult = ride
     C = trip.COL
