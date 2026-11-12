@@ -215,6 +215,14 @@ def ride_rows(route, motion, ride, rng):
     s_grid = np.arange(len(route["kappa"])) * DS
     rows[:, C["curvature_ahead"]] = np.interp(motion["s"] + 50, s_grid, route["kappa"])
 
+    mult = cabin_rows(rows, t, v, ride, rng)
+    return rows, float(mult)
+
+
+def cabin_rows(rows, t, v, ride, rng):
+    """공조·좌석·소음 칸을 rows에 채우고 Oman 이득 배수 m을 돌려준다 (실차 데이터 변환에도 쓴다)."""
+    C, CB = tripio.COL, CFG["cabin"]
+    n = len(t)
     # 공조, 좌석, 소음
     temp = ride["set_c"] + (ride["start_c"] - ride["set_c"]) * np.exp(-t / CB["tau_s"])
     rows[:, C["cabin_temp"]] = temp
@@ -238,7 +246,7 @@ def ride_rows(route, motion, ride, rng):
     if ride["fan_level"] >= EFF["fan"]["min_level"]:
         mult *= U(rng, EFF["fan"]["range"])
     mult *= EFF["noise"]["factor"]
-    return rows, float(mult)
+    return float(mult)
 
 
 def gen_ride(rng, vehicle_type):

@@ -27,6 +27,7 @@ python3 -m pytest ml/tests
 | S1 Oman 검증 | `oman.py`, `verify/oman_tudelft.py` | K0, MAE, LOPO 기준선 (`verify/out/`) |
 | S3 합성 데이터 | `simulator/sim.py`, `simulator/build_dataset.py` | `out/dataset.npz`, `out/dataset_report.json`, `data/trips/ride_*.bin` |
 | S4 학습 | `train/train.py`, `train/policy.py` | `out/train/report.md`, `out/models/model_2~6.txt`, `controller/config/thresholds.json` |
+| 실차 비교 | `realdata/` (comma2k19, BATON 변환) | `out/real_*.npz`, `out/compare_*.md`. 설명은 `docs/REALDATA.md` |
 | S6 AC-01 모델 동등성 | `verify/model_parity.py` (+ 보드의 `verify_model`) | `verify/out/parity/result.json`. 절차는 `controller/bringup/README.md` |
 | S6 P1→P4 파이프라인 | `verify/pipeline_check.py` (+ 보드의 `controller/qnx/run_pipeline.sh`) | Pi 결과와 Mac featurize + Python 비교. 절차는 같은 문서 |
 

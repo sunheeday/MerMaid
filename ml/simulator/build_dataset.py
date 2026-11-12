@@ -28,6 +28,30 @@ OUT = tripio.REPO / "ml" / "out"
 TRIPS = tripio.REPO / "data" / "trips"
 
 
+def ride_record(ride_id, trip_id, pax, vtype, ride, motion, rows, mult, t, Xv, rng):
+    """차량 피처(Xv) + 승객 피처 → 77개 X, Oman 라벨. 실차 변환(ml/realdata)도 같은 함수를 쓴다."""
+    emit = np.arange(999, len(rows), 1000)
+    assert len(emit) == len(t)
+    K = sim.oman.OMAN["K0"] * pax["true_sens"] * mult
+    score, misc, fut, y, valid = sim.label(motion, K, rng, emit)
+    X = np.full((len(t), 77), np.nan)
+    X[:, :NV] = Xv
+    X[:, 73], X[:, 74], X[:, 75], X[:, 76] = pax["mssq"], pax["sens"], pax["ev_experience"], vtype
+    for i, f in enumerate(FEAT):  # enabled=false (G8, SVC)는 NaN
+        if not f["enabled"]:
+            X[:, i] = np.nan
+    v = valid
+    return {
+        "ride_id": ride_id, "trip_id": trip_id, "person_id": pax["pid"],
+        "t": t[v], "X": X[v], "score": score[v], "misc": misc[v], "future_max": fut[v],
+        "y": np.column_stack([y[k][v] for k in sim.CFG["label"]["k"]]),
+        "meta": {"ride_id": ride_id, "trip_id": trip_id, "person_id": pax["pid"], "vehicle_type": vtype,
+                 "regen_level": ride["regen_level"], "seat_row": ride["seat_row"], "m": mult, "K": K,
+                 "true_sens": pax["true_sens"], "sens": pax["sens"], "mssq": pax["mssq"],
+                 "minutes": len(rows) / sim.FS / 60, "max_misc": float(misc.max())},
+    }
+
+
 def one_trip(args):
     trip_id, seed, riders, keep = args
     rng = np.random.default_rng([seed, trip_id])
@@ -44,26 +68,7 @@ def one_trip(args):
             path = (TRIPS / f"ride_{ride_id:04d}.bin") if ride_id < keep else pathlib.Path(td) / "trip.bin"
             tripio.write_trip(path, rows)
             t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
-            emit = np.arange(999, len(rows), 1000)
-            assert len(emit) == len(t)
-            K = sim.oman.OMAN["K0"] * pax["true_sens"] * mult
-            score, misc, fut, y, valid = sim.label(motion, K, rng, emit)
-            X = np.full((len(t), 77), np.nan)
-            X[:, :NV] = Xv
-            X[:, 73], X[:, 74], X[:, 75], X[:, 76] = pax["mssq"], pax["sens"], pax["ev_experience"], vtype
-            for i, f in enumerate(FEAT):  # enabled=false (G8, SVC)는 NaN
-                if not f["enabled"]:
-                    X[:, i] = np.nan
-            v = valid
-            out.append({
-                "ride_id": ride_id, "trip_id": trip_id, "person_id": pax["pid"],
-                "t": t[v], "X": X[v], "score": score[v], "misc": misc[v], "future_max": fut[v],
-                "y": np.column_stack([y[k][v] for k in sim.CFG["label"]["k"]]),
-                "meta": {"ride_id": ride_id, "trip_id": trip_id, "person_id": pax["pid"], "vehicle_type": vtype,
-                         "regen_level": ride["regen_level"], "seat_row": ride["seat_row"], "m": mult, "K": K,
-                         "true_sens": pax["true_sens"], "sens": pax["sens"], "mssq": pax["mssq"],
-                         "minutes": len(rows) / sim.FS / 60, "max_misc": float(misc.max())},
-            })
+            out.append(ride_record(ride_id, trip_id, pax, vtype, ride, motion, rows, mult, t, Xv, rng))
     return out
 
 

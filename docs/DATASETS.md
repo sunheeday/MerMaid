@@ -74,7 +74,7 @@
 
 새 모듈 `ml/realdata/`를 만들어 데이터셋마다 trip.bin 변환기를 둡니다.
 
-1. **좌표 맞추기**: x 앞, y 왼쪽, z 위, 중력 포함 (`protocol/trip_format.json`). comma2k19와 CANTraj(openpilot)는 앞·오른쪽·아래라 y, z 부호를 뒤집습니다.
+1. **좌표 맞추기**: x 앞, y 왼쪽, z 위, 중력 포함 (`protocol/trip_format.json`). comma2k19와 CANTraj(openpilot)는 대략 앞·오른쪽·아래입니다. 실제 구현은 축을 가정하지 않고 데이터에서 추정합니다 (`ml/realdata/convert.py`).
 2. **100 Hz로 맞추기**: 100 Hz 데이터는 그대로 씁니다. 10 Hz(L2D)는 올려서 Oman·Wf용으로만 쓰고, 저크·진동 피처는 신뢰도가 낮다고 표시합니다.
 3. **없는 열은 NaN**: CAN이 없으면 G2~G7이 NaN이 됩니다. 학습의 그룹 드롭아웃이 이미 이 경우를 다룹니다.
 4. **라벨 입력은 속도와 yaw에서**: a_long = dv/dt, a_lat = v·ω_z를 0.63 Hz로 거릅니다. 라벨과 피처가 서로 다른 입력을 쓰는 지금 구조를 지키기 위해서입니다 (C3).
@@ -89,8 +89,8 @@
 
 | 순서 | 할 일 | 비고 |
 |---|---|---|
-| 1 | comma2k19 한 chunk(약 10 GB)로 변환기 만들고 피처·라벨 분포를 시뮬레이터와 비교 | 바로 가능, MIT |
-| 2 | CANTraj 접근 신청 | 연구 목적 기재, 수동 승인 |
+| 1 | comma2k19 한 chunk(약 10 GB)로 변환기 만들고 피처·라벨 분포를 시뮬레이터와 비교 | 완료: [REALDATA.md](REALDATA.md) (신호만 140 MB로 받음) |
+| 2 | CANTraj 접근 신청 | 연구 목적 기재, 수동 승인. BATON-Sample은 약관 동의만으로 자동 승인. 변환기 `ml/realdata/baton.py` 준비됨 |
 | 3 | KAIST Complex Urban의 urban05 이후 시퀀스 한두 개로 국내 도심 분포 확인 | 사용 조건을 연구실에 확인 |
 | 4 | TCar_hyu 올린 사람(기관) 확인 | 한양대라면 CAN 해석과 장시간 원본을 물어볼 수 있음 |
 | 5 | TU Delft에 Talsma 2023 실차 데이터 요청 | 실제 MISC 검증용 |
