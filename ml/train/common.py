@@ -18,11 +18,13 @@ NEVER = sorted(set(GROUPS["G1"]) | set(GROUPS["G9"]) | {i for i, f in enumerate(
 K = [2, 3, 4, 5, 6]
 
 PARAMS = {
-    "objective": "binary", "learning_rate": 0.05, "num_leaves": 31,  # PRD 시작값 [추측]
-    "min_data_in_leaf": 50, "feature_fraction": 0.9, "bagging_fraction": 0.8, "bagging_freq": 1,
+    "objective": "binary", "learning_rate": 0.03, "num_leaves": 7,  # T-24: 드문 k(5, 6)가 과적합하지 않게 강한 규제
+    "min_data_in_leaf": 1000, "lambda_l2": 10.0, "feature_fraction": 0.9, "bagging_fraction": 0.8, "bagging_freq": 1,
     "verbosity": -1, "seed": 0, "deterministic": True, "force_row_wise": True, "num_threads": 8,
 }
-MAX_ROUNDS, EARLY_STOP = 2000, 50
+# 조기 종료: 검증 사람이 15%(약 18명)라 드문 k에서는 손실이 흔들려 트리 1개에서 멈추기도 했다 (T-24).
+# MIN_ROUNDS 전에는 멈추지 않고, 그 뒤 EARLY_STOP 라운드 동안 나아지지 않으면 멈춘다.
+MAX_ROUNDS, EARLY_STOP, MIN_ROUNDS = 2000, 50, 100
 
 
 def load(path=REPO / "ml" / "out" / "dataset.npz"):
@@ -47,12 +49,33 @@ def group_dropout(X, ride_id, rng):
     return X
 
 
+def early_stop_after(min_rounds, patience):
+    """min_rounds 전에는 멈추지 않는 조기 종료. 가장 좋은 라운드도 min_rounds 이상에서만 고른다."""
+    best = {"score": float("inf"), "it": min_rounds, "res": None}
+
+    def cb(env):
+        it = env.iteration + 1
+        if it < min_rounds:
+            return
+        score = env.evaluation_result_list[0][2]  # binary_logloss, 낮을수록 좋음
+        if score < best["score"]:
+            best.update(score=score, it=it, res=env.evaluation_result_list)
+        elif it - best["it"] >= patience:
+            raise lgb.callback.EarlyStopException(best["it"] - 1, best["res"])
+    cb.order = 30
+    cb.best = best
+    return cb
+
+
 def train_binary(Xtr, ytr, Xva, yva, monotone=MONOTONE):
     ds = lgb.Dataset(Xtr, ytr, params={"monotone_constraints": monotone}, free_raw_data=True)
     dv = lgb.Dataset(Xva, yva, reference=ds)
     params = dict(PARAMS, monotone_constraints=monotone)
-    return lgb.train(params, ds, MAX_ROUNDS, valid_sets=[dv],
-                     callbacks=[lgb.early_stopping(EARLY_STOP, verbose=False)])
+    stop = early_stop_after(MIN_ROUNDS, EARLY_STOP)
+    b = lgb.train(params, ds, MAX_ROUNDS, valid_sets=[dv], callbacks=[stop])
+    if not b.best_iteration:  # MAX_ROUNDS까지 멈추지 않은 경우
+        b.best_iteration = stop.best["it"]
+    return b
 
 
 def monotone_fix(P):
