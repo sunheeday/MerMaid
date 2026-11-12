@@ -32,7 +32,10 @@ OUT = tripio.REPO / "ml" / "out"
 def one(args):
     src, route_dir, segs, trip_id, riders, seed, keep_dir = args
     reader = __import__(READERS[src])
-    rows0, motion, info = convert.to_trip(reader.read(pathlib.Path(route_dir), segs))
+    raw = reader.read(pathlib.Path(route_dir), segs)
+    if raw is None:  # 너무 짧은 경로
+        return None, []
+    rows0, motion, info = convert.to_trip(raw)
     rng = np.random.default_rng([seed, trip_id])
     vtype = 0  # 두 데이터셋 모두 EV 신호(G3b)가 없다
     out = []
@@ -49,6 +52,11 @@ def one(args):
             t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
             rec = build_dataset.ride_record(ride_id, trip_id, pax, vtype, ride, motion, rows, mult, t, Xv, rng)
             rec["meta"]["route"] = info["name"]
+            emit = np.arange(999, len(rows), 1000)[:len(rec["t"])]
+            for k_, x in motion["tags"].items():  # 주기마다 지난 1분 평균 (피처 1m 창과 같은 범위)
+                cs = np.concatenate([[0.0], np.cumsum(x)])
+                lo = np.maximum(emit + 1 - 6000, 0)
+                rec["tag_" + k_] = (cs[emit + 1] - cs[lo]) / (emit + 1 - lo)
             out.append(rec)
     return info, out
 
@@ -78,7 +86,7 @@ def main():
              for i, (d, segs) in enumerate(found)]
     with mp.Pool(a.jobs) as pool:
         res = pool.map(one, tasks)
-    infos = [r[0] for r in res]
+    infos = [r[0] for r in res if r[0] is not None]
     rides = sorted([x for r in res for x in r[1]], key=lambda r: r["ride_id"])
     rides = [r for r in rides if len(r["t"])]
     cat = lambda key: np.concatenate([r[key] for r in rides])
@@ -88,6 +96,8 @@ def main():
             "person_id": rep("person_id"), "k": np.array(sim.CFG["label"]["k"]),
             "feature_names": np.array([f["name"] for f in tripio.FEATURES["features"]]),
             "feature_version": np.array(tripio.FEATURES["version"])}
+    for key in {k_ for r in rides for k_ in r if k_.startswith("tag_")}:
+        data[key] = np.concatenate([r.get(key, np.full(len(r["t"]), np.nan)) for r in rides])
     OUT.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(OUT / f"real_{a.source}.npz", **data)
     y = data["y"]

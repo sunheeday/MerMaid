@@ -507,7 +507,7 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | T-16 | – | 폰이 없을 때 P3 기본 프로필 (C17) | **해결 (2026-11-11)**. AC-04에 "기본 프로필" 조건 추가, Pi에서 폰 없이 돌린 결과가 Mac과 같음 | – | – |
 | T-21 | 중간 | 기본 프로필일 때 AC-04 P(≥4) | 0.667으로 G1+G9 모델(0.669)보다 0.002 낮음 | 학습의 G10 드롭아웃 일부를 NaN 대신 기본 프로필 값으로 채워 학습하고 다시 비교 | `ml/train/common.py` group_dropout |
 | T-22 | 해결 | featurize 시작 1분 rms_z | 2026-11-12 해결: Wf와 0.63 Hz 저역통과를 첫 샘플의 정상상태로 시작 (C++ `Biquad::prime`, Python `wf.weight`, `oman.input_signal(prime=True)`). 시뮬레이터 첫 1분 rms_z_1m 중앙값 1.02 → 0.005. 데이터셋·모델 다시 만듦, 최종 문턱은 그대로(0.63/0.65/0.77). Mac AC-01 통과 | **Pi에서 다시 빌드하고 AC-01, AC-02 재실행** (보드 연결 안 됨) | `controller/bringup/README.md` |
-| T-23 | 중간 | 시뮬레이터를 실차 분포에 맞추기 | comma2k19 비교에서 시뮬레이터가 종방향으로 1.4~2배 거칠고, 고속도로가 없고, 저주파 횡·수직 흔들림이 없음 ([REALDATA.md](REALDATA.md)) | `sim_config.json` 보정: 고속도로 구간, 가감속·정차 빈도, 저주파 흔들림. 국내 도심은 KAIST·직접 녹화로 | `ml/simulator/`, `ml/realdata/compare.py` |
+| T-23 | 중간 | 시뮬레이터를 실차 분포에 맞추기 | comma2k19와 BATON-Sample(운전자 2명) 비교에서 시뮬레이터가 종방향으로 약 2배 거칠고(rms_x 0.35 대 0.16~0.25), 고속도로·긴 정차가 없고, 저주파 횡·수직 흔들림이 없음. P(≥4) 0.37 대 0.20 ([REALDATA.md](REALDATA.md)) | `sim_config.json` 보정: 고속도로 구간, 가감속·정차 빈도, 저주파 흔들림. 국내 도심은 KAIST·직접 녹화로 | `ml/simulator/`, `ml/realdata/compare.py` |
 | T-17 | 높음 | 프로필의 EV 경험, 차량 유형 (C16) | 저장 안 함 | 프로필 파일과 PROFILES 메시지에 ev, vtype 추가 (P6에서 받음) | `store.cpp`, `messages.hpp` |
 | T-18 | 높음 | 빠른 끄기 3번 규칙 (C12) | 빠른 끄기만 셈 | 팀 확인 후 필요하면 `policy.cpp`와 AC-09 테스트 수정 | `policy.cpp`, `POLICY.md` |
 | T-19 | 높음 | P5 기기 관리, P6 통신, HEARTBEAT, MOT (100 ms) | [미구현] | PRD §P5, §P6, §5 그대로 구현 (S10) | `controller/qnx/` |

@@ -7,7 +7,8 @@
      "acc": (t, xyz),   # 비력 m/s², 중력 포함
      "gyr": (t, xyz),   # rad/s
      "speed": (t, v),   # m/s
-     "extra": {trip 칸 이름: (t, x)}}   # 있으면 (페달, 크루즈 등)
+     "extra": {trip 칸 이름: (t, x)},   # 있으면 (페달, 크루즈 등)
+     "tags": {이름: (t, x)}}            # 있으면. trip.bin에는 안 들어가는 분석용 신호 (예: 운전 보조 작동)
 
 정렬 (T-04 장착 보정과 같은 문제):
  1. 정차(속도 < 0.1 m/s) 구간의 평균 가속도를 중력으로 보고, 그 방향을 +z로 돌린다.
@@ -112,7 +113,8 @@ def to_trip(raw):
         rows[:, C[name]] = resample(src, grid)[:, 0]
     # 라벨 입력: 시뮬레이터 label()과 같이 중력 없는 운동학 가속도. 속도 미분과 v·ω_z
     t = rows[:, C["t"]]
-    motion = {"t": t, "v": v, "a_long": np.gradient(v, DT), "a_lat": v * w[:, 2]}
+    motion = {"t": t, "v": v, "a_long": np.gradient(v, DT), "a_lat": v * w[:, 2],
+              "tags": {k: resample(src, grid)[:, 0] for k, src in raw.get("tags", {}).items()}}
     info.update(name=raw["name"], minutes=len(grid) / FS / 60,
                 speed_mean=float(v.mean()), speed_max=float(v.max()))
     return rows, motion, info
