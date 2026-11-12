@@ -28,7 +28,7 @@ hf auth login
 ```
 
 ```bash
-hf download HenryYHW/BATON-Sample --repo-type dataset --include "*.csv" --local-dir data/raw/baton
+hf download HenryYHW/BATON-Sample --repo-type dataset --include "*imu.csv" "*vehicle_dynamics.csv" --local-dir data/raw/baton
 ```
 
 ```bash
@@ -36,6 +36,13 @@ python3 ml/realdata/build_real.py --source baton --root data/raw/baton && python
 ```
 
 BATON 리더(`ml/realdata/baton.py`)는 BATON 베이스라인 코드의 열 이름을 기준으로 썼습니다. 실제 파일로는 아직 확인하지 못했습니다.
+
+HF 저장소 목록(공개 API)으로 확인한 크기입니다. 영상이 대부분이라 위 명령처럼 두 파일만 받습니다. 저장소 폴더는 `driver_N/route_M/`입니다(README의 3단 구조와 다름).
+
+| | 전체 | imu.csv + vehicle_dynamics.csv | 승인 |
+|---|---|---|---|
+| BATON-Sample | 92.8 GB | 2.1 GB (경로 35~41개) | 자동 (약관 동의) |
+| BATON | 1,604 GB | 41 GB (1,558개) | 수동 |
 
 ## 2. 변환 방법 (`ml/realdata/`)
 
