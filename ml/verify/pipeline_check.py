@@ -3,6 +3,7 @@
     python3 ml/verify/pipeline_check.py spec <ride_id>...          # Pi 실행 인자 (폰 프로필, 차량 유형)
     (Pi)    controller/qnx/run_pipeline.sh data/trips/ride_XXXX.bin <out> <speed> <vtype> <폰들>
     python3 ml/verify/pipeline_check.py check <trip.bin> <cycles.csv> <ride_id>...
+    python3 ml/verify/pipeline_check.py check <trip.bin> <cycles.csv> default:<vtype>   # 폰 없이 돌린 경우
 
 폰 i의 승객 피처(MSSQ, 민감도, EV 경험)는 데이터셋의 ride_id 탑승에서 가져온다. 값은 15자리로 반올림해
 양쪽에 같은 수가 들어가게 한다. 재생 조건: HUD 연결, 화면 켜짐, 주의 있음, 수동 조작 없음, 허용도 0.
@@ -25,9 +26,12 @@ import policy  # noqa: E402
 from model_parity import boosters, predict  # noqa: E402
 
 ENABLED = np.array([f["enabled"] for f in C.FEATS])
+DEFAULT = json.loads((REPO / "protocol" / "constants.json").read_text())["mssq"]["default_profile"]
 
 
 def g10(ride_ids):
+    if len(ride_ids) == 1 and str(ride_ids[0]).startswith("default:"):  # P3 기본 프로필, EV 경험은 모름
+        return [[DEFAULT["mssq"], DEFAULT["sens"], np.nan, float(ride_ids[0].split(":")[1])]]
     d = C.load()
     out = []
     for r in ride_ids:
@@ -72,8 +76,11 @@ def check(trip, cycles_csv, ride_ids):
     col = lambda tier: C.K.index(tiers[tier]["input_k"])
     want = {"airflow-01": rep(P[:, :, col("1")].max(axis=0), "1"),
             "display-01": rep(P[:, :, col("2")].max(axis=0), "2")}
+    default = str(ride_ids[0]).startswith("default:")
+    names = ["default"] if default else [f"phone-{i}" for i in range(len(g))]
     for i in range(len(g)):
-        want[f"phone-{i}"] = rep(P[i, :, col("3")], "3")
+        if not default:  # 기본 프로필 행은 폰 기기(Tier 3)가 없다
+            want[f"phone-{i}"] = rep(P[i, :, col("3")], "3")
 
     rows = list(csv.DictReader(open(cycles_csv)))
     n_ph = len(g)
@@ -91,7 +98,7 @@ def check(trip, cycles_csv, ride_ids):
             got = np.array([int(r[d]) for r in rows[::n_ph]], bool)
             res["devices"][d] = {"on_cycles_mac": int(w.sum()), "on_cycles_pi": int(got.sum()),
                                  "mismatch": int((got != w).sum())}
-        ok = (ids == [f"phone-{i}" for i in range(n_ph)] and res["t_max_diff"] < 1e-9 and res["prob_max_abs_diff"] < 1e-6
+        ok = (ids == names and res["t_max_diff"] < 1e-9 and res["prob_max_abs_diff"] < 1e-6
               and all(v["mismatch"] == 0 for v in res["devices"].values()))
         lat = np.array([float(r["latency_ms"]) for r in rows[::n_ph]])
         res["latency_ms_median"], res["latency_ms_max"] = float(np.median(lat)), float(lat.max())
@@ -104,7 +111,8 @@ if __name__ == "__main__":
     if sys.argv[1:2] == ["spec"] and len(sys.argv) > 2:
         spec([int(x) for x in sys.argv[2:]])
     elif sys.argv[1:2] == ["check"] and len(sys.argv) > 4:
-        sys.exit(check(sys.argv[2], sys.argv[3], [int(x) for x in sys.argv[4:]]))
+        rides = sys.argv[4:] if sys.argv[4].startswith("default:") else [int(x) for x in sys.argv[4:]]
+        sys.exit(check(sys.argv[2], sys.argv[3], rides))
     else:
         print(__doc__)
         sys.exit(2)

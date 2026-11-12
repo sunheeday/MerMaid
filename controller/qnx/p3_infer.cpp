@@ -1,8 +1,9 @@
 // P3 추론: 차량 피처 71개 + 폰마다 승객 피처 → 77개 벡터 → LightGBM 5개 → RISK를 P4로.
 //   p3_infer --models DIR [--vehicle-type 0|1] [--once] [--prio P]
-// 주기마다 P4에 등록된 폰과 프로필을 묻는다 (PROFILES). 폰이 없으면 승객 피처를 NaN으로 둔
-// "default" 한 행만 추론한다 (공용 기기 Tier 1·2는 그 값으로 동작). feature_order에서 enabled=false인
-// 칸(v1: svc_conflict, G8 허용도)은 학습 때처럼 NaN.
+// 주기마다 P4에 등록된 폰과 프로필을 묻는다 (PROFILES). 폰이 없으면 기본 프로필(PRD §P3:
+// MSSQ 12.90, 민감도 1.0, constants.json default_profile) "default" 한 행만 추론한다 (공용 기기
+// Tier 1·2는 그 값으로 동작). 기본 프로필의 EV 경험은 모르므로 NaN, 폰 허용도도 NaN.
+// feature_order에서 enabled=false인 칸(v1: svc_conflict, G8 허용도)은 학습 때처럼 NaN.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -70,8 +71,8 @@ int main(int argc, char** argv) {
                     const bool have = pr.n > 0;
                     x[proto::F_TOL_DISPLAY] = pr.tol_display;
                     x[proto::F_TOL_PHONE] = have ? pr.e[r].tol : nan;
-                    x[proto::F_MSSQ] = have ? pr.e[r].mssq : nan;
-                    x[proto::F_SENSITIVITY] = have ? pr.e[r].sens : nan;
+                    x[proto::F_MSSQ] = have ? pr.e[r].mssq : proto::kDefaultMssq;
+                    x[proto::F_SENSITIVITY] = have ? pr.e[r].sens : proto::kDefaultSens;
                     x[proto::F_EV_EXPERIENCE] = have ? pr.e[r].ev : nan;
                     x[proto::F_VEHICLE_TYPE] = vtype;
                     for (int f = 0; f < proto::kNumFeatures; f++)
