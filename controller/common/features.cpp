@@ -81,7 +81,13 @@ void FeatureExtractor::reset() {
 
 bool FeatureExtractor::push(const Row& r) {
     t_ = r[C_T];
-    if (n_ == 0) t0_ = t_;
+    if (n_ == 0) {
+        t0_ = t_;
+        // 첫 샘플의 정상상태에서 시작 (T-22). 0에서 시작하면 중력 9.81이 계단 입력이 되어
+        // Wf 고역통과가 1분 가까이 울리고 rms_z_1m이 1 m/s^2 안팎까지 튄다.
+        wfx_.prime(r[C_AX]); wfy_.prime(r[C_AY]); wfz_.prime(r[C_AZ]);
+        lpx_.prime(r[C_AX]); lpy_.prime(r[C_AY]);
+    }
 
     // 가중 가속도, jerk
     const double wx = wfx_.step(r[C_AX]), wy = wfy_.step(r[C_AY]), wz = wfz_.step(r[C_AZ]);

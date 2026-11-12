@@ -70,6 +70,18 @@ static void test_constant_input_msdv() {
     CHECK(v[F_SENSITIZATION] > 0 && v[F_SENSITIZATION] < 0.5, "sensitization %.3f", v[F_SENSITIZATION]);
 }
 
+static void test_start_has_no_transient() {
+    // T-22: 중력 9.81과 기울기 0.3 m/s^2로 시작해도 첫 10초·1분 가중 RMS가 0 근처, 급가속도 없음
+    FeatureExtractor fx;
+    auto v = run(fx, 10, [](double t) { return imu_row(t, 0.3, -0.2); });
+    CHECK(v[F_RMS_Z_10S] < 1e-6 && v[F_RMS_X_10S] < 1e-6 && v[F_RMS_Y_10S] < 1e-6, "10s rms x %.3g y %.3g z %.3g",
+          v[F_RMS_X_10S], v[F_RMS_Y_10S], v[F_RMS_Z_10S]);
+    v = run(fx, 50, [](double t) { return imu_row(t, 0.3, -0.2); }, 10);
+    CHECK(v[F_RMS_Z_1M] < 1e-6 && v[F_JERK_RMS_X_1M] < 1e-6, "1m rms_z %.3g jerk_x %.3g", v[F_RMS_Z_1M],
+          v[F_JERK_RMS_X_1M]);
+    CHECK(v[F_HARD_ACCEL_COUNT_1M] == 0 && v[F_HARD_BRAKE_COUNT_1M] == 0, "no events");
+}
+
 static void test_rest_without_speed() {
     FeatureExtractor fx;
     auto shake = [](double t) { return imu_row(t, 1.5 * std::sin(2 * kPi * 0.3 * t), 0); };
@@ -150,6 +162,7 @@ static void test_reset() {
 int main() {
     test_sine_rms();
     test_constant_input_msdv();
+    test_start_has_no_transient();
     test_rest_without_speed();
     test_rest_short_stop_is_not_rest();
     test_rest_with_speed();
