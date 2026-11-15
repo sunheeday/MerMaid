@@ -38,6 +38,15 @@ target_link_libraries(test_store mmcommon)
 target_compile_definitions(test_store PRIVATE MM_CONFIG_DIR="${MM_CONFIG_DIR}")
 add_test(NAME store COMMAND test_store)
 
+# P6 통신 코어: UART 줄 ↔ QNX 메시지 번역 (표준 C++). 메시지 구조체는 qnx/rf_messages.hpp
+add_library(mmcomm STATIC common/comm.cpp)
+target_include_directories(mmcomm PUBLIC common qnx)
+target_link_libraries(mmcomm PUBLIC mmcommon)
+
+add_executable(test_comm tests/test_comm.cpp)
+target_link_libraries(test_comm mmcomm)
+add_test(NAME comm COMMAND test_comm)
+
 # P3 추론 (lib_lightgbm 4.6.0). 경로를 주면 빌드:
 #   Pi:  -DMM_LIGHTGBM_INCLUDE=$HOME/mermaid/LightGBM/include -DMM_LIGHTGBM_LIB=$HOME/mermaid/LightGBM/lib_lightgbm.so
 #   Mac: pip lightgbm의 lib/lib_lightgbm.dylib + 같은 버전 헤더
