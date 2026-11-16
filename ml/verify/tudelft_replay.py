@@ -29,6 +29,7 @@ ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML))
 sys.path.insert(0, str(ML / "train"))
 import oman  # noqa: E402
+import runs  # noqa: E402
 import trip as tripio  # noqa: E402
 from common import monotone_fix  # noqa: E402
 
@@ -37,7 +38,6 @@ AMPS = {"C1": 1.0, "C2": 1.5, "C3": 2.0, "C4": 2.5}  # oman_tudelft.py에서 확
 F_STIM = 0.3
 KS = [2, 3, 4, 5, 6]
 IMU = json.loads((ML / "simulator" / "sim_config.json").read_text())["imu"]
-OUT = ML / "verify" / "out"
 NAMES = [f["name"] for f in tripio.FEATURES["features"]]
 arr = lambda x: np.atleast_1d(x).astype(float)
 
@@ -119,11 +119,13 @@ def main():
     ap.add_argument("mat")
     ap.add_argument("--v0-kmh", type=float, default=50.0)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--models", help="모델 버전 (기본 CURRENT)")
     a_ = ap.parse_args()
     A = sio.loadmat(a_.mat, squeeze_me=True, struct_as_record=False)["ATDOMS"]
     persons = list(A._fieldnames)
-    models = {k: lgb.Booster(model_file=str(ML / "out" / "models" / f"model_{k}.txt")) for k in KS}
-    th = json.loads((ML.parent / "controller" / "config" / "thresholds.json").read_text())["base_th"]
+    run = runs.resolve(a_.models) if a_.models else runs.current_models()
+    models = {k: lgb.Booster(model_file=str(run / "models" / f"model_{k}.txt")) for k in KS}
+    th = json.loads((run / "thresholds.json").read_text())["base_th"]
     tiers = json.loads((ML.parent / "controller" / "config" / "policy.json").read_text())["tiers"]
     v0 = a_.v0_kmh / 3.6
 
@@ -198,7 +200,7 @@ def main():
     res["between_person"] = {k: {"per_condition": v, "mean": float(np.mean(v))} for k, v in bp.items()}
 
     # 피처가 학습 범위 밖인지: 시뮬레이터 데이터셋 최대값과 비교
-    D = np.load(ML / "out" / "dataset.npz", allow_pickle=False)
+    D = np.load(runs.dataset_for(run), allow_pickle=False)
     Xall = cat("X")
     res["out_of_range"] = {}
     for f in ["rms_x_1m", "jerk_rms_x_1m", "decel_rms_x_1m", "hard_brake_count_5m", "hard_accel_count_5m", "msdv", "oman_score"]:
@@ -235,7 +237,9 @@ def main():
                               "on_in_first_minute": int(np.sum(np.array(ons) <= 60))}
     res["personal_K"] = {f"{r['p']} {r['c']}": r["Kp"] for r in rows_all}
 
+    OUT = run / "verify"
     OUT.mkdir(exist_ok=True)
+    res["run"] = run.name
     (OUT / "tudelft_replay.json").write_text(json.dumps(res, indent=1, ensure_ascii=False))
     fmt = lambda x: "—" if x is None else f"{x[0]:.2f} / {x[1]:.2f}"
     L = [f"# TU Delft 재생 ({res['persons']}명, 세션 {res['sessions']}개, {res['rows']}행, v0 {a_.v0_kmh:g} km/h)", "",

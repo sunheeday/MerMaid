@@ -27,8 +27,14 @@ PARAMS = {
 MAX_ROUNDS, EARLY_STOP, MIN_ROUNDS = 2000, 50, 100
 
 
-def load(path=REPO / "ml" / "out" / "dataset.npz"):
-    d = dict(np.load(path))
+def load(path=None):
+    """기본: 배포 중인 모델(ml/runs.py CURRENT)이 학습한 데이터셋"""
+    if path is None:
+        import sys
+        sys.path.insert(0, str(REPO / "ml"))
+        import runs
+        path = runs.dataset_for(runs.current_models())
+    d = dict(np.load(path, allow_pickle=False))
     assert int(d["feature_version"]) == FO["version"], "dataset이 다른 feature_order version으로 만들어짐"
     assert list(d["feature_names"]) == NAMES
     return d

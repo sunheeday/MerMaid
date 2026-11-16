@@ -60,13 +60,13 @@ ssh qnxuser@192.168.2.2 'cd ~/mermaid && gcc -Wall -o mpu mpu_test.c && ./mpu'  
 
 ## P3 추론과 AC-01 / Q9 (2026-11-11, QNX 8.0, clang 22.1.8, lib_lightgbm 4.6.0 보드 빌드)
 
-Mac에서 코드, `ml/out/models`, 벡터를 보낸 뒤 보드에서 빌드합니다.
+Mac에서 코드, 배포 중인 모델 버전(`ml/runs.py`의 CURRENT), 벡터를 보낸 뒤 보드에서 빌드합니다. `V`는 그 버전 폴더입니다.
 
 ```bash
-python3 ml/verify/model_parity.py make
-COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - controller protocol ml/out/models ml/verify/out/parity/vectors.bin | ssh qnxuser@192.168.2.2 'mkdir -p ~/mermaid/repo && cd ~/mermaid/repo && tar xzf -'
-ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && L=$HOME/mermaid/LightGBM && cmake -S controller -B build -DMM_LIGHTGBM_INCLUDE=$L/include -DMM_LIGHTGBM_LIB=$L/lib_lightgbm.so && cmake --build build && ctest --test-dir build && ./build/verify_model ml/out/models ml/verify/out/parity/vectors.bin ml/verify/out/parity/actual_pi.bin mem'
-scp qnxuser@192.168.2.2:mermaid/repo/ml/verify/out/parity/actual_pi.bin ml/verify/out/parity/ && python3 ml/verify/model_parity.py check ml/verify/out/parity/actual_pi.bin
+V=$(python3 ml/runs.py current) && python3 ml/verify/model_parity.py make
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - controller protocol ml/out/runs/CURRENT $V/models $V/parity/vectors.bin | ssh qnxuser@192.168.2.2 'mkdir -p ~/mermaid/repo && cd ~/mermaid/repo && tar xzf -'
+ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && L=$HOME/mermaid/LightGBM && cmake -S controller -B build -DMM_LIGHTGBM_INCLUDE=$L/include -DMM_LIGHTGBM_LIB=$L/lib_lightgbm.so && cmake --build build && ctest --test-dir build && ./build/verify_model $V/models $V/parity/vectors.bin $V/parity/actual_pi.bin mem'
+scp qnxuser@192.168.2.2:mermaid/repo/$V/parity/actual_pi.bin $V/parity/ && python3 ml/verify/model_parity.py check $V/parity/actual_pi.bin
 ```
 
 | 항목 | 결과 | 기준 |
@@ -93,18 +93,19 @@ P1 수집(trip.bin 재생), P2 피처, P3 추론, P4 정책이 각각 별도 프
 - P4는 허용도와 프로필이 바뀔 때마다 `--state` 아래에 저장합니다 (임시 파일 → fsync → rename). 시작할 때 저장된 값을 읽어 옵니다.
 - BLE(P5)가 붙기 전까지 HUD, 폰, 프로필은 P4 명령행으로 줍니다. 화면은 켜짐, 주의는 있음으로 고정합니다. 정책 시각은 주행 시각입니다.
 
-Mac에서 보내고 실행한 뒤 비교합니다 (폰 2대: 데이터셋 탑승 1과 0의 승객 피처, 재생 trip은 탑승 1).
+Mac에서 보내고 실행한 뒤 비교합니다 (폰 2대: 데이터셋 탑승 1과 0의 승객 피처, 재생 trip은 탑승 1). `V`는 모델 버전, `D`는 그 모델의 데이터셋 버전 폴더입니다.
 
 ```bash
-COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - controller protocol ml/out/models data/trips/ride_0001.bin | ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && tar xzf - && cmake --build build'
+V=$(python3 ml/runs.py current); D=$(python3 ml/runs.py dataset)
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - controller protocol ml/out/runs/CURRENT $V/models $D/trips/ride_0001.bin | ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && tar xzf - && cmake --build build'
 ```
 
 ```bash
-ssh qnxuser@192.168.2.2 "cd ~/mermaid/repo && controller/qnx/run_pipeline.sh data/trips/ride_0001.bin out/fast 0 $(python3 ml/verify/pipeline_check.py spec 1 0)"
+ssh qnxuser@192.168.2.2 "cd ~/mermaid/repo && controller/qnx/run_pipeline.sh $D/trips/ride_0001.bin out/fast 0 $(python3 ml/verify/pipeline_check.py spec 1 0)"
 ```
 
 ```bash
-scp qnxuser@192.168.2.2:mermaid/repo/out/fast/cycles.csv ml/verify/out/pipeline/cycles_fast.csv && python3 ml/verify/pipeline_check.py check data/trips/ride_0001.bin ml/verify/out/pipeline/cycles_fast.csv 1 0
+scp qnxuser@192.168.2.2:mermaid/repo/out/fast/cycles.csv ml/verify/out/pipeline/cycles_fast.csv && python3 ml/verify/pipeline_check.py check $D/trips/ride_0001.bin ml/verify/out/pipeline/cycles_fast.csv 1 0
 ```
 
 실시간은 세 번째 인자를 `1`로 줍니다 (33분 걸림).

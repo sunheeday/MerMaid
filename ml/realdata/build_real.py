@@ -7,7 +7,8 @@
 같은 seed)이 각자 공조·좌석 설정(sim.gen_ride, sim.cabin_rows)으로 탄다. 라벨은 sim.label을
 그대로 쓴다. 입력은 CAN 속도 미분(a_long)과 v·ω_z(a_lat).
 데이터셋에 없는 칸(comma2k19: 페달·EV·내비 전부)은 NaN → featurize가 그 피처를 NaN으로 낸다.
-출력: ml/out/real_<source>.npz, ml/out/real_<source>_report.json, data/trips/real/<source>/*.bin (--keep-trips)
+출력: 새 버전 폴더 ml/out/runs/vNNN/ (ml/runs.py): real_<source>.npz, real_<source>_report.json,
+      trips/real/<source>/*.bin (--keep-trips)
 """
 import argparse
 import json
@@ -23,10 +24,10 @@ sys.path.insert(0, str(HERE))
 import convert  # noqa: E402
 import build_dataset  # noqa: E402  (convert가 ml/simulator를 sys.path에 넣는다)
 import sim  # noqa: E402
+import runs  # noqa: E402
 import trip as tripio  # noqa: E402
 
 READERS = {"comma2k19": "comma2k19", "baton": "baton"}
-OUT = tripio.REPO / "ml" / "out"
 
 
 def one(args):
@@ -69,6 +70,7 @@ def main():
     ap.add_argument("--passengers", type=int, default=sim.CFG["scale"]["passengers"])
     ap.add_argument("--keep-trips", action="store_true", help="주행마다 첫 탑승 trip.bin을 data/trips/real/에 남긴다")
     ap.add_argument("--jobs", type=int, default=mp.cpu_count())
+    ap.add_argument("--note", default="", help="run.json에 남길 설명")
     a = ap.parse_args()
     reader = __import__(READERS[a.source])
     found = reader.routes(a.root)
@@ -78,9 +80,10 @@ def main():
     pax = [sim.gen_passenger(rng, i) for i in range(a.passengers)]  # build_dataset과 같은 승객 풀
     prng = np.random.default_rng([a.seed, 1])
     k = sim.CFG["scale"]["riders_per_trip"]
+    OUT = runs.new(f"real-{a.source}", a.note, params={"root": a.root, "seed": a.seed, "passengers": a.passengers})
     keep = None
     if a.keep_trips:
-        keep = tripio.REPO / "data" / "trips" / "real" / a.source
+        keep = OUT / "trips" / "real" / a.source
         keep.mkdir(parents=True, exist_ok=True)
     tasks = [(a.source, str(d), segs, i, [pax[j] for j in prng.choice(a.passengers, k, replace=False)], a.seed, keep)
              for i, (d, segs) in enumerate(found)]
@@ -98,7 +101,6 @@ def main():
             "feature_version": np.array(tripio.FEATURES["version"])}
     for key in {k_ for r in rides for k_ in r if k_.startswith("tag_")}:
         data[key] = np.concatenate([r.get(key, np.full(len(r["t"]), np.nan)) for r in rides])
-    OUT.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(OUT / f"real_{a.source}.npz", **data)
     y = data["y"]
     report = {"source": a.source, "trips": len(infos), "rides": len(rides), "rows": int(len(y)),

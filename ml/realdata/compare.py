@@ -1,12 +1,13 @@
 """실차(real_<source>.npz) vs 시뮬레이터(dataset.npz) 비교
 
-    python3 ml/realdata/compare.py --source comma2k19
+    python3 ml/realdata/compare.py --source comma2k19 [--models vNNN] [--real vNNN] [--sim dataset.npz]
 
 1. 운동 피처 분포 (p10/p50/p90, KS 거리). 누적형 피처(MSDV, Oman, 시간)가 공정하도록 시뮬레이터는
    실차 행이 있는 탑승 시간(t ≤ 실차 최대 t)만 쓴다.
 2. 라벨 비율 P(>=k)와 Oman 점수: 같은 시간 범위끼리.
-3. 시뮬레이터로 학습한 모델(ml/out/models)을 실차 행에 그대로 적용한 PR/ROC-AUC와 보정(평균 P vs 실제 비율).
-출력: ml/out/compare_<source>.json, ml/out/compare_<source>.md
+3. 시뮬레이터로 학습한 모델을 실차 행에 그대로 적용한 PR/ROC-AUC와 보정(평균 P vs 실제 비율).
+기본값 (ml/runs.py): 모델은 CURRENT, 실차는 real_<source>.npz가 있는 최신 버전, 시뮬레이터는 그 모델의 학습 데이터셋.
+출력: <모델 버전>/compare/<source>_<실차 버전>.json, .md
 """
 import argparse
 import json
@@ -22,7 +23,8 @@ ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML / "train"))
 import common as C  # noqa: E402  (ml/train/common.py)
 
-OUT = C.REPO / "ml" / "out"
+sys.path.insert(0, str(ML))
+import runs  # noqa: E402
 MOTION = ["rms_x_1m", "rms_y_1m", "rms_z_1m", "decel_rms_x_1m", "accel_rms_x_1m", "jerk_rms_x_1m",
           "jerk_rms_y_1m", "yaw_rms_1m", "hard_accel_count_5m", "hard_brake_count_5m", "hard_turn_count_5m",
           "pitch_mean_1m", "msdv", "oman_score", "speed_mean_1m", "speed_std_1m", "stop_ratio_5m"]
@@ -40,16 +42,22 @@ SUBSETS = {"tag_das": [("사람 운전 (지난 1분 운전 보조 꺼짐)", lamb
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", required=True)
-    ap.add_argument("--sim", default=str(OUT / "dataset.npz"))
+    ap.add_argument("--models", help="모델 버전 (기본 CURRENT)")
+    ap.add_argument("--real", help="실차 데이터셋 버전 (기본: 최신)")
+    ap.add_argument("--sim", help="시뮬레이터 dataset.npz (기본: 그 모델의 학습 데이터셋)")
     a = ap.parse_args()
-    Rz = np.load(OUT / f"real_{a.source}.npz", allow_pickle=False)
+    mrun = runs.resolve(a.models) if a.models else runs.current_models()
+    real = runs.resolve(a.real) / f"real_{a.source}.npz" if a.real else runs.latest_with(f"real_{a.source}.npz")
+    a.sim = a.sim or runs.dataset_for(mrun)
+    print(f"models {mrun.name}, real {real.parent.name}, sim {runs.rel(a.sim)}", file=sys.stderr)
+    Rz = np.load(real, allow_pickle=False)
     R = {k: Rz[k] for k in Rz.files}
     S = np.load(a.sim, allow_pickle=False)
     names = list(S["feature_names"])
-    mj = json.loads((OUT / "models" / "models.json").read_text())
-    boosters = [lgb.Booster(model_file=str(OUT / "models" / mj["models"][str(k)]["file"])) for k in C.K]
+    mj = json.loads((mrun / "models" / "models.json").read_text())
+    boosters = [lgb.Booster(model_file=str(mrun / "models" / mj["models"][str(k)]["file"])) for k in C.K]
     R["P"] = C.monotone_fix(np.column_stack([b.predict(R["X"]) for b in boosters]))
-    sim_rep = json.loads((OUT / "train" / "report.json").read_text())["summary"]["k"]
+    sim_rep = json.loads((mrun / "train" / "report.json").read_text())["summary"]["k"]
     tmax = float(R["t"].max())
     parts = [("전체", np.ones(len(R["t"]), bool))]
     for tag, subs in SUBSETS.items():
@@ -60,9 +68,12 @@ def main():
         r = compare({k: (v[m] if v.ndim and len(v) == len(m) else v) for k, v in R.items()}, S, names, sim_rep, tmax)
         r.update(source=a.source, subset=nm)
         out.append(r)
-    (OUT / f"compare_{a.source}.json").write_text(json.dumps(out, indent=1))
+    od = mrun / "compare"
+    od.mkdir(exist_ok=True)
+    stem = f"{a.source}_{real.parent.name}"
+    (od / f"{stem}.json").write_text(json.dumps(out, indent=1))
     md = "\n".join(markdown(r) for r in out)
-    (OUT / f"compare_{a.source}.md").write_text(md)
+    (od / f"{stem}.md").write_text(md)
     print(md)
 
 

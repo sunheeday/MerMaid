@@ -47,7 +47,7 @@ PRD §10.2 작업 순서 기준입니다. 트랙 B(브리지, HUD, 앱)는 이 �
 | S1 | `ml/oman.py` + TU Delft 재현 | [구현] | 필터 없이 MAE 0.97 (기준 0.97 ± 0.05). 필터 넣고 K0 = 51.4 |
 | S2 | P2 피처 | [구현] [PRD와 다름] | PRD는 Python 기준 구현이었으나 C++ 하나(`controller/common/features.cpp`)로 만들고 Python은 `featurize` 도구를 부름. 단위 테스트 통과 |
 | S3 | 시뮬레이터 + 데이터셋 | [구현] | 탑승 1,920회, 286,788행, 미래 5분 MISC ≥ 4 비율 20.9% (실차 보정 후, T-23) |
-| S4 | 학습, 문턱, 내보내기 | [구현] [PRD와 다름] | AC-03/04/05 리포트 (`ml/out/train/report.md`). 문턱 고르는 방식 바뀜 |
+| S4 | 학습, 문턱, 내보내기 | [구현] [PRD와 다름] | AC-03/04/05 리포트 (`<모델 버전>/train/report.md`, 3.12). 문턱 고르는 방식 바뀜 |
 | S5 | C++ 피처 + 정책 | [구현] | 골든 피처 테스트, AC-09 정책 테스트 통과 |
 | S6 | Pi: P1 재생, P2, P3, P4 (BLE 없음) | [구현] | AC-01, AC-02, Q9 통과 (5장) |
 | S7 | ESP32 BLE 브리지 | [미구현] | – |
@@ -264,7 +264,7 @@ y_k(t)     = 1 if max MISC(t+10 s … t+300 s) ≥ k,  k = 2..6   (C6)
 | m_noise | 1.0 (효과 없음) | PRD §4.1 (근거 부족, Gu 2025) |
 | ε 표준편차 | 0.5, 60초마다 새로 | 크기 PRD Q6 [추측], 1분 묶음은 자체 결정 |
 
-결과 (`ml/out/dataset_report.json`): 286,788행, P(≥2..6) = 0.910 / 0.555 / 0.209 / 0.059 / 0.012, K 중앙값 55.2. 보정(T-23) 전에는 0.953 / 0.711 / 0.374 / 0.146 / 0.047이었습니다. 보정 뒤 비율은 BATON-Sample 사람 운전에 같은 라벨 식을 적용한 값(0.898 / 0.530 / 0.203 / 0.064 / 0.018)과 비슷합니다.
+결과 (데이터셋 버전의 `dataset_report.json`): 286,788행, P(≥2..6) = 0.910 / 0.555 / 0.209 / 0.059 / 0.012, K 중앙값 55.2. 보정(T-23) 전에는 0.953 / 0.711 / 0.374 / 0.146 / 0.047이었습니다. 보정 뒤 비율은 BATON-Sample 사람 운전에 같은 라벨 식을 적용한 값(0.898 / 0.530 / 0.203 / 0.064 / 0.018)과 비슷합니다.
 
 **주의.** 라벨이 Oman 식으로 만들어지므로, 이 데이터로 잰 성능은 "구조가 의도대로 도는가"의 근거일 뿐 실제 정확도가 아닙니다 (PRD §4.1). 모델이 G1의 Oman 피처와 G10 프로필에 거의 다 기대는 것(4장)도 이 때문입니다.
 
@@ -287,7 +287,7 @@ y_k(t)     = 1 if max MISC(t+10 s … t+300 s) ≥ k,  k = 2..6   (C6)
 | 검증용 사람 | 학습 쪽 사람의 15% (조기 종료 + 문턱) | 자체 결정 (C10) |
 | 최종 모델 트리 수 | k = 2..6: 190, 102, 101, 100, 102. T-24 전 65, 52, 25, 4, 1 (k5·k6는 조기 종료가 거의 바로 멈춘 빈 모델) | – |
 
-결과는 `ml/out/models/model_2~6.txt` (LightGBM 텍스트 형식, 보드도 이 파일을 그대로 읽음).
+결과는 `ml/out/runs/<버전>/models/model_2~6.txt` (LightGBM 텍스트 형식, 보드도 이 파일을 그대로 읽음). 버전 규칙은 3.12.
 
 ### 3.9 Tier 문턱과 정책 재생 [구현] [PRD와 다름: C8~C11]
 
@@ -360,6 +360,22 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | 폰 수 | 최대 9대 (`kMaxPhones`, Q9) |
 
 실행: `controller/qnx/run_pipeline.sh <trip> <out> <speed> <vtype> [phones]`. 절차는 `controller/bringup/README.md`.
+
+### 3.12 결과물 버전 (`ml/runs.py`) [구현]
+
+데이터셋, 모델, 실차 데이터셋은 덮어쓰지 않습니다. 만드는 스크립트가 실행마다 `ml/out/runs/vNNN/`을 새로 만들고, `run.json`에 종류, 입력 버전, git 커밋(작업 중 변경 여부 포함), 파라미터, 설명(`--note`)을 남깁니다.
+
+| 만드는 것 | 스크립트 | 새 버전에 들어가는 것 |
+|---|---|---|
+| 데이터셋 | `build_dataset.py` | `dataset.npz`, `rides.json`, `dataset_report.json`, `trips/ride_*.bin` |
+| 모델 | `train.py` (기본 입력: 최신 데이터셋) | `models/`, `train/report.{md,json}`, `thresholds.json` |
+| 실차 데이터셋 | `build_real.py` | `real_<source>.npz`, 보고서, `trips/real/` |
+
+- 리포트(`compare.py`, `tudelft_replay.py`, `model_parity.py`, `export_csv.py`)는 입력 버전 폴더의 하위 폴더에 씁니다. 같은 입력이면 같은 내용이라 다시 만들어도 잃는 정보가 없습니다.
+- 배포할 모델은 `python3 ml/runs.py use vNNN`으로만 정합니다. `ml/out/runs/CURRENT`를 바꾸고 그 버전의 문턱을 `controller/config/thresholds.json`에 복사합니다 (`"run"` 칸). 이 파일은 git으로 이력을 남깁니다.
+- 읽는 쪽 기본값: 모델은 CURRENT, 데이터셋은 그 모델이 학습한 것, 실차 데이터셋은 그 파일이 있는 최신 버전. `run_pipeline.sh`도 CURRENT 모델을 씁니다.
+- 예외: S1 Oman 적합 결과(`ml/verify/out/`)는 원자료(ATDOMS)에서 결정적으로 나오는 값이라 그대로 둡니다.
+- `v001`은 채택하지 않은 피처 v2 실험(T-24)을 보관한 것입니다. 코드는 `code.patch`에 있습니다.
 
 ## 4. 피처 77개 현황
 
@@ -511,7 +527,7 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | T-21 | 해결 | 기본 프로필일 때 AC-04 P(≥4) | T-23 보정 데이터셋에서 0.478로 G1+G9 모델(0.472) 이상. 보정 전에는 0.002 낮았음 | 데이터셋이 바뀌면 다시 확인 (train.py가 매번 보고) | `ml/out/train/report.md` |
 | T-22 | 해결 | featurize 시작 1분 rms_z | 2026-11-12 해결: Wf와 0.63 Hz 저역통과를 첫 샘플의 정상상태로 시작 (C++ `Biquad::prime`, Python `wf.weight`, `oman.input_signal(prime=True)`). 시뮬레이터 첫 1분 rms_z_1m 중앙값 1.02 → 0.005. 데이터셋·모델 다시 만듦, 최종 문턱은 그대로(0.63/0.65/0.77). Mac AC-01 통과 | **Pi에서 다시 빌드하고 AC-01, AC-02 재실행** (보드 연결 안 됨) | `controller/bringup/README.md` |
 | T-23 | 1차 완료 | 시뮬레이터를 실차 분포에 맞추기 | 2026-11-12: 고속도로 구간, 가감속·저크·정차 시간, 노면 굴곡, 차로 유지 흔들림을 BATON-Sample 사람 운전에 맞춤. 피처 15개 평균 KS 0.38 → 0.14, P(≥4) 0.37 → 0.21 (실차 0.20). 문턱 0.54 / 0.46 / 0.53 ([REALDATA.md](REALDATA.md) 6장) | BATON 전체(운전자 150명)와 국내 도심(KAIST, 직접 녹화)으로 다시 맞추기. 운전자 2명에 맞춘 값이라 과적합 가능 | `ml/simulator/sim_config.json`, `ml/realdata/calibrate.py` |
-| T-24 | 일부 해결 | k5·k6 모델이 거의 빈 모델 | 2026-11-12: 강한 규제(잎 7, 잎당 최소 1,000행, L2 10, 학습률 0.03) + 최소 100회. 트리 4, 1개 → 100, 102개. k5 PR-AUC 0.186 → 0.203 (Oman만 0.202), k6 0.062 → 0.055 (Oman만 0.086). 문턱 0.53 / 0.51 / 0.59. 남은 문제: oman_score × 민감도 하나가 모델보다 나음 (PR k4 0.549 대 0.499, k5 0.275 대 0.203). 트리가 K·민감도 곱을 드문 k에서 못 배움 | 개인화 Oman 피처(oman_score × sens) 추가. 피처 77개 계약(feature_order 버전, C++ P3)이 바뀌므로 팀 결정. 실제 사람(TU Delft 재생, [REALDATA.md](REALDATA.md) 7장)에서는 곱이 모델과 거의 같고(PR k4 0.66 대 0.62) 개인 K 보정이 훨씬 큼(0.74) | `ml/train/common.py`, `ml/verify/tudelft_replay.py` |
+| T-24 | 일부 해결 | k5·k6 모델이 거의 빈 모델 | 2026-11-12: 강한 규제(잎 7, 잎당 최소 1,000행, L2 10, 학습률 0.03) + 최소 100회. 트리 4, 1개 → 100, 102개. k5 PR-AUC 0.186 → 0.203 (Oman만 0.202), k6 0.062 → 0.055 (Oman만 0.086). 문턱 0.53 / 0.51 / 0.59. 남은 문제: oman_score × 민감도 하나가 모델보다 나음 (PR k4 0.549 대 0.499, k5 0.275 대 0.203). 트리가 K·민감도 곱을 드문 k에서 못 배움 | 2026-11-16 시험(피처 v2, `ml/out/runs/v001` 보관): oman_personal 추가 + mssq·sensitivity를 모델 입력에서 끔. 시뮬레이터 PR은 k3~k6 0.867 / 0.520 / 0.241 / 0.075로 올랐지만, BATON PR k4 0.52 → 0.48, k5 0.39 → 0.26, TU Delft PR k3 0.80 → 0.76, AC-04 기본 프로필 0.481 → 0.471(기준 0.472 미달)로 실차에서는 나빠져 **채택 안 함**. 시뮬레이터 라벨이 Oman × 민감도라 곱 피처는 그 안에서만 이득. 함께 확인한 것: mssq에 제약이 없으면 트리가 사람 ID로 씀(기본 프로필이 실제 프로필보다 P(≥4) 0.508 대 0.492). k6 모델은 라벨에 효과 없는 seatback_angle 8.9%, soc 4.3%, ev_experience 3.8%에 기댐 | 개인 K 보정(승객 피드백)이 효과가 더 큼 (TU Delft 0.74). 라벨에 효과 없는 피처 정리(soc, 배터리 출력, ev_experience) 시험 | `ml/train/common.py`, `ml/verify/tudelft_replay.py` |
 | T-17 | 높음 | 프로필의 EV 경험, 차량 유형 (C16) | 저장 안 함 | 프로필 파일과 PROFILES 메시지에 ev, vtype 추가 (P6에서 받음) | `store.cpp`, `messages.hpp` |
 | T-18 | 높음 | 빠른 끄기 3번 규칙 (C12) | 빠른 끄기만 셈 | 팀 확인 후 필요하면 `policy.cpp`와 AC-09 테스트 수정 | `policy.cpp`, `POLICY.md` |
 | T-19 | 높음 | P5 기기 관리, P6 통신, HEARTBEAT, MOT (100 ms) | [미구현] | PRD §P5, §P6, §5 그대로 구현 (S10) | `controller/qnx/` |
@@ -529,12 +545,11 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | `ml/train/` | `common.py` 파라미터, `train.py` 학습·문턱, `policy.py` 재생 |
 | `ml/realdata/` | 실차 데이터 변환 (comma2k19, BATON), 축 정렬, 시뮬레이터 비교 ([REALDATA.md](REALDATA.md)) |
 | `ml/verify/` | `oman_tudelft.py`, `slalom_check.py`, `model_parity.py` (AC-01), `pipeline_check.py` (AC-02), `export_csv.py` |
-| `ml/out/` (git 제외) | `dataset.npz`, `rides.json`, `models/model_2~6.txt`, `train/report.md`, `csv/` |
+| `ml/runs.py`, `ml/out/runs/vNNN/` (git 제외) | 결과물 버전 폴더 (3.12). 데이터셋 버전: `dataset.npz`, `rides.json`, `trips/ride_*.bin`. 모델 버전: `models/`, `train/report.md`, `thresholds.json`, `compare/`, `verify/`, `parity/`. 실차 버전: `real_*.npz` |
 | `controller/common/` | `features.cpp` (P2), `inference.cpp` (P3), `policy.cpp` (P4), `store.cpp`, `filters.hpp`, `FEATURES.md`, `POLICY.md` |
 | `controller/qnx/` | `p1_acq` ~ `p4_policy`, `ipc.hpp`, `messages.hpp`, `run_pipeline.sh` |
 | `controller/tests/`, `ml/tests/` | C++ / Python 단위 테스트 |
 | `controller/bringup/README.md` | Pi 빌드, AC-01, AC-02 절차와 결과 |
-| `data/trips/ride_*.bin` | 재생용 100 Hz 주행 8개 |
 
 **재현 (Mac)**
 
@@ -556,6 +571,10 @@ python3 ml/simulator/build_dataset.py
 
 ```bash
 python3 ml/train/train.py
+```
+
+```bash
+python3 ml/runs.py use vNNN
 ```
 
 ```bash

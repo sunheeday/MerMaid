@@ -1,13 +1,14 @@
 """순서형 LightGBM 학습과 평가, 배포 파일 내보내기 (S4)
 
-    python3 ml/train/train.py [--data ml/out/dataset.npz] [--persons N] [--no-final]
+    python3 ml/train/train.py [--data <dataset.npz 또는 버전>] [--note TEXT] [--persons N] [--no-final]
 
 1. 사람 단위 5-fold. 학습 쪽 사람의 15%를 떼어 조기 종료와 문턱 선택에 쓴다 (학습에 쓰지 않은 행이라 과적합된 확률로 문턱을 고르지 않음)
 2. 학습 데이터 = 원본 + 그룹 드롭아웃 복사본 1벌. 이진 분류기 5개 (k = 2..6), 단조 제약
 3. 시험 fold: k별 PR-AUC(주), ROC-AUC, 기준선(Oman 점수, 탄 시간), 정책 재생(AC-05),
    그룹 결측 강건성(AC-04: 그룹을 지운 시험 데이터 vs G1 + G9만으로 학습한 모델)
-4. 최종: 전체 사람으로 같은 설정 → ml/out/models/model_k.txt, models.json, controller/config/thresholds.json
-결과: ml/out/train/report.json, report.md
+4. 최종: 전체 사람으로 같은 설정 → models/model_k.txt, models.json, thresholds.json
+결과: 새 버전 폴더 ml/out/runs/vNNN/ (models/, train/report.json, report.md, thresholds.json).
+데이터셋 기본값은 dataset.npz가 있는 최신 버전. 배포는 python3 ml/runs.py use vNNN (controller/config/thresholds.json 갱신)
 """
 import argparse
 import hashlib
@@ -24,7 +25,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import common as C  # noqa: E402
 import policy  # noqa: E402
 
-OUT = C.REPO / "ml" / "out"
+sys.path.insert(0, str(C.REPO / "ml"))
+import runs  # noqa: E402
 # 문턱은 행 단위 재현율/정밀도가 아니라 정책 재생으로 고른다. 양성 행 대부분이 이미 멀미가 온 뒤라
 # 행 규칙은 문턱을 0.99 근처로 올려 증상 전에 켜지지 않게 만든다 (PRD 규칙에서 바꾼 부분)
 TARGETS = {"1": ("detection_rate", ">=", 0.85),             # 송풍: 85% 이상 미리 켜지는 가장 높은 문턱
@@ -104,12 +106,20 @@ def predict(models, X, ks=C.K):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default=str(OUT / "dataset.npz"))
+    ap.add_argument("--data", help="dataset.npz 경로 또는 데이터셋 버전 (기본: dataset.npz가 있는 최신 버전)")
+    ap.add_argument("--note", default="", help="run.json에 남길 설명")
     ap.add_argument("--persons", type=int, default=0, help="빠른 확인용: 앞 N명만")
     ap.add_argument("--no-final", action="store_true")
     a = ap.parse_args()
     t0 = time.time()
+    if a.data is None:
+        a.data = runs.latest_with("dataset.npz")
+    elif not str(a.data).endswith(".npz"):
+        a.data = runs.resolve(a.data) / "dataset.npz"
     d = C.load(a.data)
+    OUT = runs.new("models", a.note, inputs={"dataset": a.data},
+                   params={"persons": a.persons, "final": not a.no_final, "lgb": C.PARAMS,
+                           "rounds": [C.MAX_ROUNDS, C.EARLY_STOP, C.MIN_ROUNDS]})
     if a.persons:
         m = d["person_id"] < a.persons
         d = {k: (v[m] if v.ndim and len(v) == len(m) else v) for k, v in d.items()}
@@ -178,7 +188,7 @@ def main():
                         "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
         (mdir / "models.json").write_text(json.dumps({"feature_order_version": C.FO["version"], "n_features": len(C.NAMES),
                                                        "k": C.K, "models": files}, indent=1))
-        (C.REPO / "controller" / "config" / "thresholds.json").write_text(json.dumps({
+        (OUT / "thresholds.json").write_text(json.dumps({
             "placeholder": False, "feature_order_version": C.FO["version"],
             "source": "ml/train/train.py final model, policy replay on a 15% person holdout of the synthetic data",
             "rule": {t: f"{'largest' if op == '>=' else 'smallest'} threshold with {m} {op} {v} (replay, grid step 0.01)"
@@ -191,6 +201,7 @@ def main():
     (OUT / "train" / "report.json").write_text(json.dumps(report, indent=1))
     (OUT / "train" / "report.md").write_text(markdown(report))
     print(markdown(report))
+    print(f"\n{OUT.name}: 배포하려면 python3 ml/runs.py use {OUT.name}")
 
 
 def markdown(r):

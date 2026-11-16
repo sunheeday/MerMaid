@@ -6,7 +6,8 @@
 
 벡터: 데이터셋 행 2,000 + NaN 행(전부 / 그룹 단위) + 0 행(전부 / 결측을 0으로) + 분기 기준값 바로 위아래(± 1e-9)와 기준값 그 자체.
 합격: max |차이| < 1e-6, Tier 결정(P(>=3) >= th1, P(>=4) >= th2, th3) 100% 일치.
-출력: ml/verify/out/parity/ vectors.bin, expected_p.bin, meta.json, result.json
+모델은 배포 중인 버전(ml/runs.py CURRENT), 문턱은 그 버전의 thresholds.json.
+출력: <모델 버전>/parity/ vectors.bin, expected_p.bin, meta.json, result.json
 """
 import json
 import pathlib
@@ -19,8 +20,12 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "ml" / "train"))
 import common as C  # noqa: E402
 
-OUT = REPO / "ml" / "verify" / "out" / "parity"
-MODELS = REPO / "ml" / "out" / "models"
+sys.path.insert(0, str(REPO / "ml"))
+import runs  # noqa: E402
+
+RUN = runs.current_models()
+OUT = RUN / "parity"
+MODELS = RUN / "models"
 EPS = 1e-9
 
 
@@ -94,8 +99,8 @@ def make():
     OUT.mkdir(parents=True, exist_ok=True)
     write_bin(OUT / "vectors.bin", V)
     write_bin(OUT / "expected_p.bin", P)
-    th = json.loads((REPO / "controller" / "config" / "thresholds.json").read_text())["base_th"]
-    meta = {"rows": len(V), "kinds": {k: kinds.count(k) for k in dict.fromkeys(kinds)}, "splits_total": len(sp),
+    th = json.loads((RUN / "thresholds.json").read_text())["base_th"]
+    meta = {"run": RUN.name, "rows": len(V), "kinds": {k: kinds.count(k) for k in dict.fromkeys(kinds)}, "splits_total": len(sp),
             "thresholds": th, "kind_per_row": kinds,
             "models_sha256": json.loads((MODELS / "models.json").read_text())["models"]}
     (OUT / "meta.json").write_text(json.dumps(meta))

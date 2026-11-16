@@ -131,7 +131,7 @@ HF 저장소 목록(공개 API)으로 확인한 크기입니다. 영상이 대�
 | P(≥5) | 0.000 | 0.021 | 0.146 |
 | Oman 점수 p10 / p50 / p90 | 0.08 / 0.49 / 1.40 | 0.20 / 1.06 / 2.15 | |
 
-**시뮬레이터 모델을 실차 행에 그대로 적용** (`ml/out/models`, 다시 학습하지 않음)
+**시뮬레이터 모델을 실차 행에 그대로 적용** (그때의 모델, 다시 학습하지 않음)
 
 | k | 실차 비율 | 평균 예측 P | PR-AUC | ROC-AUC | oman_score만 ROC | 시뮬레이터 CV PR / ROC |
 |---|---|---|---|---|---|---|
@@ -356,13 +356,13 @@ python3 ml/realdata/compare.py --source comma2k19
 보정 점수 (시뮬레이터 데이터셋 하나를 두 실차 기준과 비교):
 
 ```bash
-python3 ml/realdata/calibrate.py ml/out/dataset.npz
+python3 ml/realdata/calibrate.py ml/out/runs/vNNN/dataset.npz
 ```
 
-TU Delft 재생 (모델 `ml/out/models`, 결과 `ml/verify/out/tudelft_replay.{json,md}`):
+TU Delft 재생 (모델은 배포 중인 버전, 결과는 그 버전의 `verify/tudelft_replay.{json,md}`):
 
 ```bash
 python3 ml/verify/tudelft_replay.py data/raw/ATDOMS.mat
 ```
 
-출력은 `ml/out/real_comma2k19.npz`, `ml/out/real_comma2k19_report.json`(구간별 정렬 값), `ml/out/compare_comma2k19.{json,md}`, `data/trips/real/comma2k19/*.bin`(재생용, 구간마다 첫 탑승)입니다. 모두 git에서 제외됩니다.
+출력은 버전 폴더(`ml/runs.py`)에 쌓입니다. `build_real.py`는 새 버전에 `real_comma2k19.npz`, `real_comma2k19_report.json`(구간별 정렬 값), `trips/real/comma2k19/*.bin`(재생용, 구간마다 첫 탑승)을 쓰고, `compare.py`는 모델 버전의 `compare/comma2k19_<실차 버전>.{json,md}`에 씁니다. 모두 git에서 제외됩니다.

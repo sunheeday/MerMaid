@@ -10,12 +10,14 @@
 import argparse
 import json
 import pathlib
+import sys
 
 import numpy as np
 from scipy.stats import ks_2samp
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-OUT = REPO / "ml" / "out"
+sys.path.insert(0, str(REPO / "ml"))
+import runs  # noqa: E402
 FEATS = ["rms_x_1m", "jerk_rms_x_1m", "decel_rms_x_1m", "hard_brake_count_5m", "hard_accel_count_5m",
          "rms_y_1m", "jerk_rms_y_1m", "yaw_rms_1m", "hard_turn_count_5m", "rms_z_1m",
          "msdv", "oman_score", "speed_mean_1m", "speed_std_1m", "stop_ratio_5m"]
@@ -23,10 +25,10 @@ FEATS = ["rms_x_1m", "jerk_rms_x_1m", "decel_rms_x_1m", "hard_brake_count_5m", "
 
 def targets():
     out = {}
-    b = np.load(OUT / "real_baton.npz")
+    b = np.load(runs.latest_with("real_baton.npz"), allow_pickle=False)
     m = b["tag_das"] < 0.05
     out["baton"] = {"X": b["X"][m], "y": b["y"][m], "tmax": np.inf}
-    c = np.load(OUT / "real_comma2k19.npz")
+    c = np.load(runs.latest_with("real_comma2k19.npz"), allow_pickle=False)
     out["comma"] = {"X": c["X"], "y": c["y"], "tmax": float(c["t"].max())}
     return out, list(b["feature_names"])
 

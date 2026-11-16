@@ -1,10 +1,11 @@
 """합성 학습 데이터 만들기 (S3)
 
-    python3 ml/simulator/build_dataset.py [--trips 480] [--passengers 120] [--seed 0] [--keep-trips 8] [--jobs 8]
+    python3 ml/simulator/build_dataset.py [--note TEXT] [--trips 480] [--passengers 120] [--seed 0] [--keep-trips 8] [--jobs 8]
 
 경로마다 승객 4명이 다른 좌석, 회생 설정, 공조로 탄다(도메인 랜덤화). 탑승마다:
 trip.bin 작성 → C++ featurize(차량 피처 71개) → G8(v1 NaN), G10(승객) 붙이기 → Oman 라벨.
-출력: ml/out/dataset.npz, ml/out/dataset_report.json, data/trips/ride_XXXX.bin (재생용, 앞 --keep-trips개)
+출력: 새 버전 폴더 ml/out/runs/vNNN/ (ml/runs.py): dataset.npz, dataset_report.json, rides.json,
+      trips/ride_XXXX.bin (재생용, 앞 --keep-trips개). --out을 주면 그 경로 (이미 있으면 거부, 덮어쓰지 않음)
 """
 import argparse
 import json
@@ -19,13 +20,12 @@ import numpy as np
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
+import runs  # noqa: E402
 import sim  # noqa: E402
 import trip as tripio  # noqa: E402
 
 FEAT = tripio.FEATURES["features"]
 NV = 71
-OUT = tripio.REPO / "ml" / "out"
-TRIPS = tripio.REPO / "data" / "trips"
 
 
 def ride_record(ride_id, trip_id, pax, vtype, ride, motion, rows, mult, t, Xv, rng):
@@ -53,7 +53,8 @@ def ride_record(ride_id, trip_id, pax, vtype, ride, motion, rows, mult, t, Xv, r
 
 
 def one_trip(args):
-    trip_id, seed, riders, keep = args
+    trip_id, seed, riders, keep, *rest = args  # rest: 재생용 trip.bin 폴더
+    keep_dir = pathlib.Path(rest[0]) if rest else None
     rng = np.random.default_rng([seed, trip_id])
     route = sim.gen_route(rng)
     driver = sim.gen_driver(rng)
@@ -65,7 +66,7 @@ def one_trip(args):
             ride = sim.gen_ride(rng, vtype)
             motion = sim.drive(route, driver, ride["regen_level"], rng)
             rows, mult = sim.ride_rows(route, motion, ride, rng)
-            path = (TRIPS / f"ride_{ride_id:04d}.bin") if ride_id < keep else pathlib.Path(td) / "trip.bin"
+            path = (keep_dir / f"ride_{ride_id:04d}.bin") if keep_dir and ride_id < keep else pathlib.Path(td) / "trip.bin"
             tripio.write_trip(path, rows)
             t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
             out.append(ride_record(ride_id, trip_id, pax, vtype, ride, motion, rows, mult, t, Xv, rng))
@@ -80,15 +81,24 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--keep-trips", type=int, default=8)
     ap.add_argument("--jobs", type=int, default=mp.cpu_count())
-    ap.add_argument("--out", default=str(OUT / "dataset.npz"))
+    ap.add_argument("--out", help="버전 폴더 대신 이 경로에 (보정용 빠른 실행). 이미 있으면 거부")
+    ap.add_argument("--note", default="", help="run.json에 남길 설명")
     a = ap.parse_args()
-    pathlib.Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-    TRIPS.mkdir(parents=True, exist_ok=True)
+    if a.out:
+        if pathlib.Path(a.out).exists():
+            sys.exit(f"{a.out}가 이미 있음 (덮어쓰지 않음)")
+        od = pathlib.Path(a.out).parent
+        od.mkdir(parents=True, exist_ok=True)
+    else:
+        od = runs.new("dataset", a.note, params={k: v for k, v in vars(a).items() if k not in ("out", "note", "jobs")})
+        a.out = str(od / "dataset.npz")
+    keep_dir = od / "trips"
+    keep_dir.mkdir(exist_ok=True)
 
     rng = np.random.default_rng(a.seed)
     pax = [sim.gen_passenger(rng, i) for i in range(a.passengers)]
     k = sc["riders_per_trip"]
-    tasks = [(tid, a.seed, [pax[i] for i in rng.choice(a.passengers, k, replace=False)], a.keep_trips)
+    tasks = [(tid, a.seed, [pax[i] for i in rng.choice(a.passengers, k, replace=False)], a.keep_trips, str(keep_dir))
              for tid in range(a.trips)]
     t0 = time.time()
     with mp.Pool(a.jobs) as pool:
@@ -116,7 +126,6 @@ def main():
         "ev_rides": int(sum(m["vehicle_type"] for m in meta)),
         "K_median": float(np.median([m["K"] for m in meta])),
     }
-    od = pathlib.Path(a.out).parent  # 보고서는 --out 옆에 (빠른 보정 실행이 ml/out을 덮지 않게)
     stem = pathlib.Path(a.out).stem
     (od / ("dataset_report.json" if stem == "dataset" else f"{stem}_report.json")).write_text(json.dumps(report, indent=1))
     (od / ("rides.json" if stem == "dataset" else f"{stem}_rides.json")).write_text(json.dumps(meta, indent=0))
