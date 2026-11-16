@@ -1,0 +1,70 @@
+// P5 기기 관리의 핵심 로직: 등록 명부, P4 명령 → 연결 번호, 재연결 시 상태 재전송, 30초 안전 OFF.
+// 표준 C++17만 사용 (QNX API 없음 → Mac에서 테스트). 프로세스는 qnx/p5_devmgr.cpp.
+// 규칙: docs/RF_MESSAGES.md §4.
+//
+// P4는 기기를 ID(airflow-01, display-01, 폰 UUID)로, 브리지는 연결 번호(0~8)로 구분한다.
+// 이 클래스가 둘을 잇는다. 돌려주는 Outs는 P6에 보낼 메시지 목록이다 (보내는 일은 프로세스가).
+#pragma once
+#include <cstdint>
+#include <functional>
+#include <map>
+#include <string>
+#include <variant>
+#include <vector>
+
+#include "policy.hpp"
+#include "rf_messages.hpp"
+
+namespace mm::devmgr {
+
+constexpr int64_t kSafetyTimeoutMs = 30000;  // policy.json safety_timeout_s
+
+using Out = std::variant<msg::OutInt, msg::OutStream, msg::OutProf, msg::OutDrop>;
+using Outs = std::vector<Out>;
+
+class DevMgr {
+public:
+    using LogFn = std::function<void(const std::string&)>;
+    // 저장된 프로필 읽기 (P4가 쓴 state/profiles/<ID>.json). 없으면 false. P5는 읽기만 한다
+    using ProfileFn = std::function<bool(const std::string& phone, Profile& out)>;
+
+    DevMgr(ProfileFn load_profile, LogFn log = nullptr, int64_t safety_ms = kSafetyTimeoutMs)
+        : load_profile_(std::move(load_profile)), log_(std::move(log)), safety_ms_(safety_ms) {}
+
+    Outs on_hello(const msg::DevHello& m);    // P6: 기기 등록
+    Outs on_bye(const msg::DevBye& m);        // P6: 기기 해제
+    Outs on_tier_cmd(const msg::TierCmd& m);  // P4: 기기 하나 ON/OFF
+    msg::DevSyncReply on_sync(const msg::DevSync& m, int64_t now_ms);  // P4: 10초마다, 회신 = 명부
+    Outs on_tick(int64_t now_ms);  // 1초마다: DEV_SYNC가 30초 없으면 전부 OFF
+
+    // ---- 조회 (테스트·로그) ----
+    int conn_of(const std::string& dev) const;  // 없으면 -1
+    bool is_on(const std::string& device) const;
+    bool safe_off() const { return safe_off_; }
+
+private:
+    struct Entry {
+        bool used = false;
+        std::string dev;
+        msg::Role role = msg::Role::App;
+    };
+
+    void log(const std::string& s) const {
+        if (log_) log_(s);
+    }
+    void send_state(uint8_t conn, Outs& out) const;  // 그 연결에 지금 상태 전부
+    static void push_int(Outs& out, uint8_t conn, int tier, bool on);
+    static void push_stream(Outs& out, uint8_t conn, bool on);
+
+    Entry e_[msg::kMaxConn];
+    bool airflow_ = false;               // Tier 1 (공용)
+    bool display_ = false;               // Tier 2 (공용)
+    std::map<std::string, bool> dots_;   // Tier 3, 폰 ID별. 끊겨도 기억 (재연결 때 다시 보냄)
+    int64_t last_sync_ = -1;             // -1: 아직 시계 시작 전
+    bool safe_off_ = false;
+    ProfileFn load_profile_;
+    LogFn log_;
+    int64_t safety_ms_;
+};
+
+}  // namespace mm::devmgr

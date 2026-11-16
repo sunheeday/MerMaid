@@ -1,7 +1,8 @@
 # RF 메시지 정의 (P5·P6) v1
 
 > 작성 정유경 · 2026-11-16 · 상태: **김승희 리뷰 필요** (메시지 번호, DEV_SYNC 방식, MOT 부호)
-> 코드: `controller/qnx/rf_messages.hpp` (구조체), `controller/common/comm.{hpp,cpp}` (P6 번역 규칙)
+> 코드: `controller/qnx/rf_messages.hpp` (구조체), `controller/common/comm.*` (P6 규칙), `controller/common/devmgr.*` (P5 규칙),
+> `controller/qnx/p6_comm.cpp`, `p5_devmgr.cpp` (프로세스), `rf_stub.cpp` (시험용 P4·P2 대역)
 > 기기 메시지(JSON)와 UART 프레임은 `protocol/PROTOCOL.md`가 기준. 이 문서는 Pi 안의 P5·P6 메시지를 정한다.
 
 ```
@@ -73,15 +74,16 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | `id\|{PROF}` | 앱만, mssq 0~54, sens 0.5~2.0 → CTX_PROF |
 | `id\|{HB}` | P6에서 끝 |
 | HELLO 전의 SCR·OVR·PROF, 모르는 `t`, 깨진 JSON | 로그 후 버림 |
-| 1초마다 | `ALL\|{"t":"HB","seq":N}` |
+| 1초마다 | `ALL\|{"t":"HB","seq":N}`. P5에 아직 못 알린 등록이 있으면 DEV_HELLO를 다시 보냄 (P5가 늦게 떴을 때) |
 | HELLO 없이 5초 | `id\|DROP` 한 번 |
+| 등록된 기기가 5초 동안 아무것도 안 보냄 | `id\|DROP` + DEV_BYE (PROTOCOL.md §3. 브리지가 재시작되면 DISCONNECT가 안 오므로 이것으로 정리). `--no-link-timeout`으로 끔 (HB를 안 보내는 nRF Connect 시험용) |
 | OUT_INT / OUT_PROF / OUT_DROP | 해당 줄 |
 | OUT_STREAM | 스트림 표만 바꿈. 등록 안 된 연결은 켜지 않음 |
 | MOTION | 스트림이 켜진 연결마다 `id\|{"t":"MOT",...}`. ax·ay가 NaN이면 안 보냄, pax·pay는 둘 다 있을 때만 |
 
 숫자 형식: MOT 소수 3자리, PROF mssq 2자리·sens 3자리.
 
-## 4. P5 규칙 (구현 예정)
+## 4. P5 규칙 (`devmgr.cpp`)
 
 | 들어온 것 | 처리 |
 |---|---|
@@ -89,7 +91,9 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | DEV_BYE | 명부에서 삭제 |
 | TIER_CMD | 상태 기억. Tier 1·2(공용): HUD에 INT, 모든 폰에도 INT (표시용), HUD 스트림 = Tier 2. Tier 3: 그 폰에 INT + 스트림 |
 | DEV_SYNC | 마지막 시각 갱신, 명부 회신 |
-| 30초 동안 DEV_SYNC 없음 | 모든 연결에 Tier 1·2·3 OFF, 스트림 모두 OFF, 로그 "safe off" (`policy.json` safety_timeout_s) |
+| 30초 동안 DEV_SYNC 없음 (시작부터 30초 유예) | 모든 연결에 Tier 1·2·3 OFF, 스트림 모두 OFF, 로그 "safe off" (`policy.json` safety_timeout_s). DEV_SYNC가 다시 올 때까지 ON 명령은 무시 (OFF는 통과) |
+| Tier 3 명령인데 그 폰이 연결돼 있지 않음 | 상태만 기억. 다시 붙으면 HELLO 때 보냄 |
+| 잘못된 TIER_CMD (기기와 tier가 안 맞음, `hud-01`) | 로그 후 버림 |
 
 프로필은 P4가 `state/profiles/<ID>.json`에 저장한다. P5는 OUT_PROF를 위해 읽기만 한다.
 
@@ -104,7 +108,19 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | pax·pay | trip 열 `pred_ax_10s`, `pred_ay_10s` | 김승희 |
 | HUD HELLO의 dev | 무엇을 보내든 `hud-01`로 등록 | 이준민 (HUD는 `hud-01`을 보내면 됨) |
 
-## 6. 김승희 쪽에서 바꿀 곳 (통합 단계)
+## 6. Pi에서 실행
+
+시작 순서: **P6 → P5 → P4 → P3 → P2 → P1** (받는 쪽이 먼저). 모두 root, `uart3.sh` 다음에.
+
+```
+p6_comm                         # UART3. 손으로 시험할 때는 --no-link-timeout, P4가 아직 CTX_*를 못 받으면 --no-p4
+p5_devmgr --state <P4와 같은 state 폴더>
+rf_stub --cycle --motion        # 진짜 P4·P2 대신. 진짜 P4를 띄울 때는 rf_stub을 띄우지 않는다 (같은 이름)
+```
+
+알려진 한계: P5나 P6 하나만 다시 시작하면 서로의 상태(등록, 스트림)가 어긋난다. 둘 다 다시 시작하고 기기를 다시 연결한다.
+
+## 7. 김승희 쪽에서 바꿀 곳 (통합 단계)
 
 - P4: `--phone`/`--hud` 대신 DEV_SYNC 회신으로 등록 (`add_phone`, `remove_phone`, `set_hud_connected`)
 - P4: CTX_SCREEN·CTX_OVR·CTX_PROF를 받아 `on_screen`·`on_override`·`on_profile`에 넘기기

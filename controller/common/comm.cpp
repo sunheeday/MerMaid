@@ -79,9 +79,11 @@ Actions Comm::on_uart_line(const std::string& line, int64_t now_ms) {
     if (f.payload == "CONNECT") {
         forget(f.conn, out);  // DISCONNECT를 놓쳤을 때를 대비해 옛 등록을 먼저 지운다
         conn_[f.conn].hello_due = now_ms + kHelloTimeoutMs;
+        conn_[f.conn].last_rx = now_ms;
     } else if (f.payload == "DISCONNECT") {
         forget(f.conn, out);
     } else {
+        conn_[f.conn].last_rx = now_ms;  // 무엇이든 받으면 링크는 살아 있음 (HB 포함)
         on_device_json(f.conn, f.payload, out);
     }
     return out;
@@ -113,6 +115,7 @@ void Comm::on_device_json(uint8_t conn, const std::string& text, Actions& out) {
                 throw std::runtime_error("bad role " + role);
             }
             c.registered = true;
+            c.delivered = false;
             c.hello_due = -1;
             c.role = role == "hud" ? msg::Role::Hud : msg::Role::App;
             c.dev = dev;
@@ -172,10 +175,25 @@ void Comm::on_device_json(uint8_t conn, const std::string& text, Actions& out) {
 // ============================================================
 // 타이머: HB 1초, HELLO 5초
 // ============================================================
+void Comm::hello_delivered(uint8_t conn, const char* dev) {
+    if (valid(conn) && conn_[conn].registered && conn_[conn].dev == dev) conn_[conn].delivered = true;
+}
+
 Actions Comm::on_tick(int64_t now_ms) {
     Actions out;
     if (next_hb_ms_ < 0 || now_ms >= next_hb_ms_) {
         out.emplace_back(UartLine{"ALL|{\"t\":\"HB\",\"seq\":" + std::to_string(hb_seq_++) + "}"});
+        // P5에 아직 못 알린 등록을 1초마다 다시 (P5가 P6보다 늦게 뜨거나 잠깐 응답이 없을 때)
+        for (int i = 0; i < msg::kMaxConn; i++) {
+            const Conn& c = conn_[i];
+            if (!c.registered || c.delivered) continue;
+            msg::DevHello m;
+            m.conn = static_cast<uint8_t>(i);
+            m.role = c.role;
+            m.ver = 1;
+            msg::copy_id(m.dev, c.dev);
+            out.emplace_back(m);
+        }
         // 조금 늦으면 원래 박자를 지키고, 한 주기 넘게 밀리면 몰아서 보내지 않고 지금부터 다시
         if (next_hb_ms_ < 0 || now_ms - next_hb_ms_ >= kHbPeriodMs) next_hb_ms_ = now_ms + kHbPeriodMs;
         else next_hb_ms_ += kHbPeriodMs;
@@ -186,6 +204,13 @@ Actions Comm::on_tick(int64_t now_ms) {
             c.hello_due = -1;  // 한 번만. 브리지가 끊으면 DISCONNECT가 온다
             out.emplace_back(UartLine{std::to_string(i) + "|DROP"});
             log("no HELLO in 5 s, drop " + std::to_string(i));
+        }
+        // 등록된 기기가 5초 동안 조용하면 (앱은 HB를 1초마다 보냄) 끊긴 것으로 본다.
+        // 브리지가 재시작되면 DISCONNECT가 오지 않으므로 이것이 유일한 정리 방법이다
+        if (link_timeout_ms_ > 0 && c.registered && now_ms - c.last_rx >= link_timeout_ms_) {
+            out.emplace_back(UartLine{std::to_string(i) + "|DROP"});
+            log("no message in 5 s, drop " + std::to_string(i) + " (" + c.dev + ")");
+            forget(static_cast<uint8_t>(i), out);
         }
     }
     return out;

@@ -24,6 +24,7 @@ namespace mm::comm {
 
 constexpr int64_t kHelloTimeoutMs = 5000;  // CONNECT 후 이 안에 HELLO가 없으면 DROP
 constexpr int64_t kHbPeriodMs = 1000;      // ALL HB 주기
+constexpr int64_t kLinkTimeoutMs = 5000;   // 등록된 기기에서 이만큼 아무것도 안 오면 끊긴 것으로 봄 (PROTOCOL.md §3)
 constexpr size_t kMaxFrame = 512;          // UART 한 줄 최대 (PROTOCOL.md §1)
 
 // UART 바이트 → 줄. '\n'까지 이어 붙이고 '\r'은 버린다. kMaxFrame보다 긴 줄은 다음 '\n'까지 버린다.
@@ -52,11 +53,15 @@ using Actions = std::vector<Action>;
 class Comm {
 public:
     using LogFn = std::function<void(const std::string&)>;
-    explicit Comm(LogFn log = nullptr) : log_(std::move(log)) {}
+    // link_timeout_ms = 0: 기기 쪽 무응답 감시를 끔 (nRF Connect로 손으로 시험할 때. 앱은 HB를 1초마다 보냄)
+    explicit Comm(LogFn log = nullptr, int64_t link_timeout_ms = kLinkTimeoutMs)
+        : log_(std::move(log)), link_timeout_ms_(link_timeout_ms) {}
 
     // ---- UART 스레드 ----
     Actions on_uart_line(const std::string& line, int64_t now_ms);  // ESP32에서 온 한 줄
     Actions on_tick(int64_t now_ms);                                // 자주 (예: 100 ms마다)
+    // DEV_HELLO를 P5에 보내는 데 성공하면 부른다. 못 보낸 HELLO는 1초마다 다시 나온다 (P5가 늦게 뜬 경우)
+    void hello_delivered(uint8_t conn, const char* dev);
 
     // ---- 받기 스레드 (P5, P2가 보낸 메시지) ----
     Actions on_out_int(const msg::OutInt& m);
@@ -73,6 +78,8 @@ private:
         bool registered = false;  // HELLO 받음
         bool stream = false;      // MOT를 보낼지
         int64_t hello_due = -1;   // -1: 기다리는 중 아님
+        int64_t last_rx = 0;      // 이 연결에서 마지막으로 받은 시각
+        bool delivered = false;   // DEV_HELLO가 P5에 전달됨
         msg::Role role = msg::Role::App;
         std::string dev;          // 연결 → 기기 ID (Ctx*의 sender를 채우려고)
     };
@@ -88,6 +95,7 @@ private:
     int64_t next_hb_ms_ = -1;
     uint64_t hb_seq_ = 0;
     LogFn log_;
+    int64_t link_timeout_ms_;
 };
 
 }  // namespace mm::comm

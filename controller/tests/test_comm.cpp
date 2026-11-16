@@ -69,7 +69,7 @@ static void frames() {
 }
 
 static void hello_timeout() {
-    Comm c;
+    Comm c(nullptr, 0);  // 기기 무응답 감시 끔
     c.on_tick(0);  // 첫 HB
     CHECK(c.on_uart_line("0|CONNECT", 1000).empty(), "CONNECT alone sends nothing");
     CHECK(!has_line(c.on_tick(5999), "0|DROP"), "no DROP before 5 s");
@@ -101,7 +101,7 @@ static void hello_timeout() {
 }
 
 static void hud_id() {
-    Comm c;
+    Comm c(nullptr, 0);  // 기기 무응답 감시 끔
     c.on_uart_line("3|CONNECT", 0);
     Actions a = c.on_uart_line("3|" + hello("hud", "some-browser-uuid"), 10);
     const auto* h = only<msg::DevHello>(a);
@@ -109,7 +109,7 @@ static void hud_id() {
 }
 
 static void reconnect_same_conn() {
-    Comm c;
+    Comm c(nullptr, 0);  // 기기 무응답 감시 끔
     c.on_uart_line("0|CONNECT", 0);
     c.on_uart_line("0|" + hello("app", kPhone), 1);
     msg::OutStream s;
@@ -121,7 +121,7 @@ static void reconnect_same_conn() {
 }
 
 static void device_messages() {
-    Comm c;
+    Comm c(nullptr, 0);  // 기기 무응답 감시 끔
     c.on_uart_line("0|CONNECT", 0);
     CHECK(c.on_uart_line("0|{\"t\":\"SCR\",\"on\":true,\"att\":true}", 1).empty(), "dropped before HELLO");
     c.on_uart_line("0|" + hello("app", kPhone), 2);
@@ -190,7 +190,7 @@ static void heartbeat() {
 }
 
 static void outgoing() {
-    Comm c;
+    Comm c(nullptr, 0);  // 기기 무응답 감시 끔
     msg::OutInt i;
     i.conn = 0;
     i.tier = 3;
@@ -223,7 +223,7 @@ static void outgoing() {
 }
 
 static void motion_stream() {
-    Comm c;
+    Comm c(nullptr, 0);  // 기기 무응답 감시 끔
     c.on_uart_line("0|CONNECT", 0);
     c.on_uart_line("0|" + hello("app", kPhone), 1);
     c.on_uart_line("2|CONNECT", 0);
@@ -269,6 +269,39 @@ static void motion_stream() {
     CHECK(c.on_motion(m).empty(), "ALL off");
 }
 
+
+static void link_timeout() {
+    Comm c;  // 감시 켬 (5초)
+    c.on_uart_line("0|CONNECT", 0);
+    c.on_uart_line("0|" + hello("app", kPhone), 100);
+    c.on_uart_line("0|{\"t\":\"HB\",\"seq\":1}", 3000);
+    CHECK(!has_line(c.on_tick(7999), "0|DROP"), "HB at 3 s keeps the link until 8 s");
+    Actions a = c.on_tick(8000);
+    bool bye = false;
+    for (const auto& x : a)
+        if (const auto* b = std::get_if<msg::DevBye>(&x)) bye = b->conn == 0;
+    CHECK(has_line(a, "0|DROP") && bye && !c.registered(0), "silent 5 s: DROP and DEV_BYE");
+    CHECK(c.on_uart_line("0|DISCONNECT", 8100).empty(), "later DISCONNECT is a no-op");
+}
+
+static void hello_resend() {
+    Comm c(nullptr, 0);
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 10);
+    c.on_uart_line("0|" + hello("app", kPhone), 20);  // P5가 아직 없어서 못 보냈다고 치자
+    auto count_hello = [](const Actions& a) {
+        int n = 0;
+        for (const auto& x : a) n += std::holds_alternative<msg::DevHello>(x);
+        return n;
+    };
+    CHECK(count_hello(c.on_tick(500)) == 0, "no resend between beats");
+    CHECK(count_hello(c.on_tick(1000)) == 1, "resend with the next HB");
+    c.hello_delivered(0, "someone-else");
+    CHECK(count_hello(c.on_tick(2000)) == 1, "delivery of another dev does not count");
+    c.hello_delivered(0, kPhone.c_str());
+    CHECK(count_hello(c.on_tick(3000)) == 0, "no resend after delivery");
+}
+
 int main() {
     line_assembler();
     frames();
@@ -279,6 +312,8 @@ int main() {
     heartbeat();
     outgoing();
     motion_stream();
+    link_timeout();
+    hello_resend();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;
