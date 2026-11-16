@@ -1,6 +1,7 @@
 // P5 기기 관리: 등록 명부를 들고 P4의 명령을 맞는 연결로 보낸다. 판단은 common/devmgr.cpp, 이 파일은 손발.
-//   p5_devmgr --state DIR [--prio P]
-//   --state  P4와 같은 상태 폴더. profiles/<ID>.json을 읽기만 한다 (쓰기는 P4)
+//   p5_devmgr --state DIR [--safety-s S] [--prio P]
+//   --state     P4와 같은 상태 폴더. profiles/<ID>.json을 읽기만 한다 (쓰기는 P4)
+//   --safety-s  DEV_SYNC가 이만큼 없으면 전부 OFF (기본 30 = policy.json safety_timeout_s. 시험에서만 줄임)
 //
 // 받는 것 (mermaid_p5): P6의 DEV_HELLO·DEV_BYE, P4의 TIER_CMD·DEV_SYNC
 // 보내는 것: P6에 OUT_INT·OUT_STREAM·OUT_PROF (P6의 받기 스레드는 바로 회신하므로 멈추지 않는다)
@@ -63,13 +64,15 @@ union Inbox {
 int main(int argc, char** argv) {
     std::string state_dir;
     int prio = 14;
+    int safety_s = 30;
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
         const bool more = i + 1 < argc;
         if (a == "--state" && more) state_dir = argv[++i];
+        else if (a == "--safety-s" && more) safety_s = std::atoi(argv[++i]);
         else if (a == "--prio" && more) prio = std::atoi(argv[++i]);
         else {
-            std::fprintf(stderr, "usage: p5_devmgr --state DIR [--prio P]\n");
+            std::fprintf(stderr, "usage: p5_devmgr --state DIR [--safety-s S] [--prio P]\n");
             return 2;
         }
     }
@@ -93,7 +96,8 @@ int main(int argc, char** argv) {
                 return false;
             }
         };
-        devmgr::DevMgr core(load_profile, [](const std::string& s) { log_line("..", s); });
+        if (safety_s < 1) safety_s = 1;
+        devmgr::DevMgr core(load_profile, [](const std::string& s) { log_line("..", s); }, safety_s * 1000LL);
         std::mutex mu;  // core와 P6 보내기를 함께 보호: 한 사건의 OUT_*가 순서대로 나가게
 
         ipc::Client p6_main(msg::kNameP6, 200 * 1000000ULL);
@@ -106,7 +110,8 @@ int main(int argc, char** argv) {
         };
 
         ipc::Server srv(msg::kNameP5);
-        log_line("..", std::string("p5_devmgr up: name ") + msg::kNameP5 + ", state " + state_dir);
+        log_line("..", std::string("p5_devmgr up: name ") + msg::kNameP5 + ", state " + state_dir + ", safety " +
+                           std::to_string(safety_s) + " s");
 
         // 안전 감시 스레드: 1초마다
         std::thread tick([&] {

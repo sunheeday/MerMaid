@@ -114,8 +114,16 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 
 ```
 p6_comm                         # UART3. 손으로 시험할 때는 --no-link-timeout, P4가 아직 CTX_*를 못 받으면 --no-p4
-p5_devmgr --state <P4와 같은 state 폴더>
+p5_devmgr --state <P4와 같은 state 폴더>  # --safety-s는 시험에서만 줄임 (기본 30)
 rf_stub --cycle --motion        # 진짜 P4·P2 대신. 진짜 P4를 띄울 때는 rf_stub을 띄우지 않는다 (같은 이름)
+```
+
+Pi 없이 시험 (Mac, Linux): `ctest`의 `rf_sim`이 위 세 프로세스를 실제로 함께 띄운다. QNX 메시지 전달은
+`controller/tests/qnxsim`(Unix 소켓), `/dev/ser3`는 가상 터미널, ESP32는 `controller/tests/rf_sim_test.py`가 맡는다.
+QNX 커널과 UART 드라이버 자체는 확인하지 못하므로 Pi 시험은 따로 필요하다.
+
+```
+cmake -S controller -B build && cmake --build build && ctest --test-dir build --output-on-failure
 ```
 
 알려진 한계: P5나 P6 하나만 다시 시작하면 서로의 상태(등록, 스트림)가 어긋난다. 둘 다 다시 시작하고 기기를 다시 연결한다.
