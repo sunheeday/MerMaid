@@ -103,12 +103,15 @@ bool FeatureExtractor::push(const Row& r) {
     const double lx = lpx_.step(r[C_AX]), ly = lpy_.step(r[C_AY]);
     oman_.step(std::hypot(lx, ly));
 
-    // 이벤트: 저역통과 가속도가 기준을 넘는 순간 (상승 에지)
-    const bool acc = lx > kHardAccelX, brk = lx < kHardBrakeX, trn = std::fabs(ly) > kHardTurnAbsY;
-    if (acc && !in_accel_) events_.push_back({t_, 0});
-    if (brk && !in_brake_) events_.push_back({t_, 1});
-    if (trn && !in_turn_) events_.push_back({t_, 2});
-    in_accel_ = acc; in_brake_ = brk; in_turn_ = trn;
+    // 이벤트: 저역통과 가속도가 기준을 넘는 순간. 기준에서 kEventRearmMargin만큼 되돌아와야 다시 센다
+    // (히스테리시스, feature_order v3). 기준 근처에서 오르내리는 제동 하나를 여러 번 세지 않게.
+    const double ay_abs = std::fabs(ly);
+    if (!in_accel_ && lx > kHardAccelX) { in_accel_ = true; events_.push_back({t_, 0}); }
+    else if (in_accel_ && lx < kHardAccelX - kEventRearmMargin) in_accel_ = false;
+    if (!in_brake_ && lx < kHardBrakeX) { in_brake_ = true; events_.push_back({t_, 1}); }
+    else if (in_brake_ && lx > kHardBrakeX + kEventRearmMargin) in_brake_ = false;
+    if (!in_turn_ && ay_abs > kHardTurnAbsY) { in_turn_ = true; events_.push_back({t_, 2}); }
+    else if (in_turn_ && ay_abs < kHardTurnAbsY - kEventRearmMargin) in_turn_ = false;
     while (!events_.empty() && events_.front().t <= t_ - 300.0) events_.pop_front();
 
     // 차량 신호 파생값

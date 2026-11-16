@@ -1,5 +1,6 @@
 {
- "version": 1,
+ "version": 3,
+ "history": "1: first contract. 2: T-24 experiment with oman_personal (not adopted, ml/out/runs/v001). 3: same 77 features as 1, event counts use hysteresis (constants.json events.rearm_margin_mps2). Enabled flags marked v1 below still hold.",
  "n_features": 77,
  "vehicle_range": [0, 70],
  "passenger_range": [71, 76],

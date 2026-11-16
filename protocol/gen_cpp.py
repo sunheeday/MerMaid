@@ -59,6 +59,7 @@ def render():
         f"constexpr double kHardAccelX = {num(c['events']['hard_accel_x_mps2'])};",
         f"constexpr double kHardBrakeX = {num(c['events']['hard_brake_x_mps2'])};",
         f"constexpr double kHardTurnAbsY = {num(c['events']['hard_turn_abs_y_mps2'])};",
+        f"constexpr double kEventRearmMargin = {num(c['events']['rearm_margin_mps2'])};",
         f"constexpr double kRestStillTimeS = {num(c['rest']['still_time_s'])};",
         f"constexpr double kRestStillAccel = {num(c['rest']['still_weighted_accel_mps2'])};",
         f"constexpr double kMssqMean = {num(c['mssq']['norm_mean'])};",

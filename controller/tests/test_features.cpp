@@ -133,6 +133,18 @@ static void test_events() {
     CHECK(v[F_EVENT_IRREGULARITY_5M] > 0, "irregularity %g", v[F_EVENT_IRREGULARITY_5M]);
 }
 
+static void test_event_hysteresis() {
+    // 감속이 -0.75 근처에서 0.1 m/s^2씩 오르내려도 (기준을 10번 넘나듦) 제동 1번. 되돌아온 뒤 다시 밟으면 2번
+    FeatureExtractor fx;
+    auto v = run(fx, 60, [](double t) {
+        double ax = 0;
+        if (t > 5 && t < 25) ax = -0.75 + 0.1 * std::sin(2 * kPi * 0.25 * t);
+        if (t > 40 && t < 45) ax = -1.5;
+        return imu_row(t, ax, 0);
+    });
+    CHECK(v[F_HARD_BRAKE_COUNT_1M] == 2, "hard brake with chatter %g", v[F_HARD_BRAKE_COUNT_1M]);
+}
+
 static void test_missing_groups_are_nan() {
     FeatureExtractor fx;
     auto v = run(fx, 30, [](double t) { return imu_row(t, std::sin(t), std::cos(t)); });
@@ -167,6 +179,7 @@ int main() {
     test_rest_short_stop_is_not_rest();
     test_rest_with_speed();
     test_events();
+    test_event_hysteresis();
     test_missing_groups_are_nan();
     test_pitch();
     test_reset();
