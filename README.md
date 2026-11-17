@@ -250,6 +250,8 @@ Training runs on a development PC (Python, LightGBM). The trained model files ar
 │   ├── gen_cpp.py           # JSON → controller/common/protocol_gen.hpp
 │   └── check.py             # validates the files above
 │
+├── bridge/                  # ESP32-S3 BLE ↔ UART bridge firmware (Arduino)
+│
 ├── controller/              # QNX C++ on Raspberry Pi 4 (P1–P6 to come)
 │   ├── CMakeLists.txt       # cmake -S controller -B build (Mac and Pi)
 │   ├── common/              # portable C++: filters, Oman, 71 vehicle features
