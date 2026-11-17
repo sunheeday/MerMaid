@@ -1,0 +1,138 @@
+/* 화면정의서 전용: A4 가로 + Galaxy S22+ 목업 (384 × 832 dp를 0.6615배 = 높이 약 145 mm) */
+@page { size: A4 landscape; margin: 11mm 12mm 11mm 12mm;
+  @top-right { content: "MerMaid · 화면정의서 v0.2"; font: 7.5pt "Malgun Gothic"; color: #7a7074; }
+  @bottom-right { content: counter(page) " / " counter(pages); font: 7.5pt "Malgun Gothic"; color: #7a7074; } }
+@page :first { @top-right { content: none; } @bottom-right { content: none; } }
+body { font-size: 8.8pt; }
+.page { height: 187mm; overflow: hidden; }
+.cover-page { height: 187mm; }
+
+/* 화면 머리 표 */
+.meta { display: grid; grid-template-columns: 26mm 1fr 22mm 34mm 26mm 1fr; border: 0.3mm solid var(--ink); margin-bottom: 3mm; font-size: 8.4pt; }
+.meta > div { padding: 1.4mm 2mm; border-right: 0.25mm solid var(--line-2); }
+.meta > div:nth-child(odd) { background: var(--ink); color: #fff; font-weight: 700; }
+.meta > div:last-child { border-right: 0; }
+.meta .sid { font-family: var(--mono); color: var(--red); font-weight: 700; }
+.body { display: grid; grid-template-columns: auto 1fr; gap: 6mm; align-items: start; }
+.phones { display: flex; gap: 7mm; }
+.cap { font-size: 8pt; color: var(--muted); text-align: center; margin-top: 2mm; }
+.cap b { color: var(--ink); }
+.desc table { font-size: 8.2pt; margin-top: 0; }
+.desc td:first-child { width: 7mm; text-align: center; }
+.desc th:nth-child(2) { width: 24mm; }
+.desc .num { display: inline-block; width: 4.6mm; height: 4.6mm; line-height: 4.6mm; border-radius: 50%; background: var(--red); color: #fff; font-weight: 700; font-size: 7.4pt; text-align: center; }
+.desc .msg { font-family: var(--mono); font-size: 7.6pt; color: var(--ink-2); }
+
+/* ───────── 폰 목업 */
+.pw { position: relative; width: 254px; height: 551px; flex: none; }
+.pw.land { width: 551px; height: 254px; }
+/* transform 대신 zoom: transform은 축소 전 높이(832px)로 쪽 나눔이 일어나 아래가 잘림 */
+.ph { position: absolute; left: 0; top: 0; width: 384px; height: 832px; zoom: 0.6615;
+  border-radius: 46px; overflow: hidden; background: #f6f3f0; color: #1e1b1d; font-size: 15px; line-height: 1.4;
+  box-shadow: 0 0 0 9px #161314, 0 0 0 10.5px #57504f; }
+.land .ph { width: 832px; height: 384px; }
+.ph.dark { background: #121011; color: #f6f3f0; }
+.sb { height: 34px; display: flex; justify-content: space-between; align-items: center; padding: 6px 26px 0; font-size: 13px; font-weight: 700; position: relative; z-index: 3; }
+.sb .ic { display: flex; gap: 5px; align-items: center; font-size: 11px; }
+.sb .ic i { display: inline-block; width: 15px; height: 9px; border: 1.6px solid currentColor; border-radius: 2px; position: relative; }
+.sb .ic i::after { content: ""; position: absolute; left: 1px; top: 1px; bottom: 1px; width: 65%; background: currentColor; }
+.hole { position: absolute; top: 11px; left: 50%; width: 13px; height: 13px; margin-left: -6.5px; border-radius: 50%; background: #0c0b0b; z-index: 6; }
+.land .hole { top: 50%; left: 11px; margin: -6.5px 0 0; }
+.gbar { position: absolute; bottom: 9px; left: 50%; width: 118px; height: 5px; margin-left: -59px; border-radius: 3px; background: rgba(30, 27, 29, 0.45); z-index: 6; }
+.dark .gbar, .vid .gbar { background: rgba(255, 255, 255, 0.55); }
+.scr { position: absolute; inset: 34px 0 0; padding: 10px 20px 30px; display: flex; flex-direction: column; gap: 12px; }
+.co { position: absolute; width: 30px; height: 30px; border-radius: 50%; background: #a50034; color: #fff; font: 700 17px/30px "Malgun Gothic";
+  text-align: center; box-shadow: 0 0 0 3px #fff, 0 2px 6px rgba(0, 0, 0, 0.35); z-index: 20; }
+
+/* 앱 컴포넌트 */
+.apbar { display: flex; align-items: center; justify-content: space-between; height: 44px; }
+.logo { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 19px; }
+.chipm { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 15px; background: #fff; border: 1px solid #e4ddd8; font-size: 13px; font-weight: 600; white-space: nowrap; flex: none; }
+.chipm .d { width: 8px; height: 8px; border-radius: 50%; background: #1f9d68; }
+.chipm.bad { color: #c62828; border-color: #f0b8b8; background: #fdeeee; } .chipm.bad .d { background: #c62828; }
+.chipm.wait .d { background: #c77700; }
+.card { background: #fff; border-radius: 20px; padding: 16px; border: 1px solid #ece6e1; }
+.dark .card { background: #1f1b1d; border-color: #2c2729; }
+.h1 { font-size: 24px; font-weight: 800; line-height: 1.3; }
+.h2 { font-size: 18px; font-weight: 800; }
+.mut { color: #7a7074; font-size: 13.5px; }
+.btnm { height: 52px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; background: #a50034; color: #fff; }
+.btnm.ghost { background: transparent; color: #4a4346; border: 1px solid #d8d0ca; }
+.btnm.sm { height: 38px; font-size: 14px; border-radius: 12px; padding: 0 14px; }
+.sw { width: 46px; height: 28px; border-radius: 14px; background: #d8d0ca; position: relative; flex: none; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.sw.on { background: var(--c, #a50034); } .sw.on::after { left: 21px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tiers .row { padding: 11px 0; border-bottom: 1px solid #f0ebe7; }
+.tiers .row:last-child { border-bottom: 0; }
+.tdot { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 14%, #fff); color: var(--c); font-weight: 800; font-size: 12px; flex: none; }
+.lbl b { display: block; font-size: 15.5px; } .lbl span { font-size: 12.5px; color: #7a7074; }
+.step { display: flex; gap: 6px; } .step i { flex: 1; height: 4px; border-radius: 2px; background: #e4ddd8; } .step i.on { background: #a50034; }
+.perm { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 16px; background: #fff; border: 1px solid #ece6e1; }
+.perm.cur { border: 2px solid #a50034; }
+.perm .pi { width: 34px; height: 34px; border-radius: 10px; background: #f6f3f0; display: grid; place-items: center; font-size: 17px; flex: none; }
+.perm .lbl { flex: 1; }
+.ok { color: #1f9d68; font-weight: 700; font-size: 13px; }
+.tag { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 8px; background: #f5e3e9; color: #a50034; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: #ebe5e0; border-radius: 12px; padding: 4px; font-size: 13.5px; text-align: center; }
+.seg span { padding: 8px; border-radius: 9px; color: #7a7074; } .seg span.on { background: #fff; color: #1e1b1d; font-weight: 700; }
+.q { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 6px; font-size: 13px; }
+.opts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.opts span { height: 32px; border-radius: 8px; background: #fff; border: 1px solid #e4ddd8; display: grid; place-items: center; font-size: 11.5px; color: #7a7074; }
+.opts span.on { background: #a50034; border-color: #a50034; color: #fff; font-weight: 700; } .opts span.na.on { background: #4a4346; border-color: #4a4346; }
+.slider { height: 6px; border-radius: 3px; background: #e4ddd8; position: relative; } .slider i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: #a50034; }
+.slider b { position: absolute; top: -7px; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 2px solid #a50034; margin-left: -10px; }
+.sect { font-size: 12.5px; font-weight: 700; color: #a50034; margin: 4px 0 -4px; letter-spacing: .02em; }
+.kvm { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; font-size: 13px; } .kvm dt { color: #7a7074; margin: 0; } .kvm dd { margin: 0; text-align: right; font-weight: 600; }
+.logm { font: 11px/1.55 Consolas, monospace; color: #4a4346; background: #fff; border-radius: 14px; padding: 10px 12px; border: 1px solid #ece6e1; }
+.logm .rx { color: #1f7a52; } .logm .tx { color: #1660b0; }
+
+/* 타 앱(동영상 앱) — 브랜드 요소 없는 일반 화면 */
+.vid { background: #0f0f10; color: #eee; }
+.vid .sb { color: #fff; }
+.vplayer { position: absolute; left: 0; right: 0; top: 34px; height: 216px; background: linear-gradient(135deg, #3d2b4f, #8a3e5c 55%, #e8956a); }
+.vplayer::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, #e33 38%, rgba(255,255,255,.3) 38%); }
+.vmeta { position: absolute; left: 0; right: 0; top: 262px; padding: 0 16px; display: grid; gap: 9px; }
+.bar { height: 12px; border-radius: 6px; background: #3a3a3c; } .bar.w { background: #8d8d92; }
+.vlist { position: absolute; left: 16px; right: 16px; top: 400px; display: grid; gap: 16px; }
+.vitem { display: grid; grid-template-columns: 150px 1fr; gap: 12px; } .vitem .th { height: 86px; border-radius: 10px; background: #2b2b2e; }
+.vitem .th.a { background: linear-gradient(135deg, #234, #3a6a7a); } .vitem .th.b { background: linear-gradient(135deg, #432, #9a6a3a); } .vitem .th.c { background: linear-gradient(135deg, #324, #6a3a8a); }
+.vitem div:last-child { display: grid; gap: 8px; align-content: start; padding-top: 4px; }
+
+/* 오버레이 점: 흰 점 + 어두운 테두리 (밝은/어두운 배경 모두 보이게), 불투명도 0.8 */
+.ovl { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+.ovl i { position: absolute; width: 11px; height: 11px; border-radius: 50%; background: rgba(255,255,255,.92); box-shadow: 0 0 0 1.2px rgba(0,0,0,.55); opacity: .8; }
+.pill { position: absolute; left: 50%; transform: translateX(-50%); top: 44px; z-index: 12; padding: 7px 14px; border-radius: 18px; background: rgba(30,27,29,.82); color: #fff; font-size: 13px; font-weight: 600; display: flex; gap: 7px; align-items: center; white-space: nowrap; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #ffb547; }
+
+/* 알림창 */
+.shade { background: #e9eef3; color: #111; }
+.qs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 10px; padding: 8px 18px; }
+.qt { display: grid; justify-items: center; gap: 6px; font-size: 11.5px; color: #333; }
+.qt b { width: 54px; height: 54px; border-radius: 27px; background: #fff; display: grid; place-items: center; font-size: 20px; color: #666; }
+.qt.on b { background: #3e7bfa; color: #fff; } .qt.mm b { background: #c77700; color: #fff; }
+.noti { margin: 6px 12px; background: #fff; border-radius: 22px; padding: 14px 16px; display: grid; gap: 6px; }
+.noti .app { display: flex; gap: 6px; align-items: center; font-size: 12px; color: #666; }
+.noti .app i { width: 18px; height: 18px; border-radius: 6px; background: #a50034; display: inline-block; }
+.noti b { font-size: 15px; } .noti .acts { display: flex; gap: 18px; margin-top: 4px; font-size: 13.5px; font-weight: 700; color: #a50034; }
+
+/* 차량 디스플레이 조각 목업 (DSP-01b) — cabin3d/ui/css/display.css와 같은 색 */
+.dmock { background: #1e1b1d; border-radius: 3mm; padding: 3mm; color: #f6f3f0; font-size: 8pt; }
+.dtick { display: flex; gap: 2mm; align-items: center; color: #a79d99; padding: 1.4mm 0; border-bottom: 0.2mm solid rgba(246,243,240,.08); }
+.dtick:last-child { border-bottom: 0; }
+.dtag { font: 700 6.6pt/1 Consolas, monospace; letter-spacing: .08em; padding: 1.2mm 1.6mm; border-radius: 1.2mm; background: #a50034; color: #fff; flex: none; }
+.dbtn { position: relative; overflow: hidden; border: 0.3mm solid rgba(246,243,240,.16); border-radius: 2.4mm; background: #29252a; padding: 2mm 3mm; text-align: center; font-size: 8pt; }
+.dbtn small { color: #a79d99; font-size: 6.6pt; }
+.dbtn.hold { border-color: #ff5a5f; } .dbtn.hold i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,90,95,.35); } .dbtn.hold span { position: relative; }
+.doff { background: #000; border-radius: 2.4mm; padding: 2.4mm; text-align: center; display: grid; gap: 0.6mm; } .doff span { color: #a79d99; font-size: 6.8pt; }
+
+/* 흐름도 */
+.flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3mm; align-items: center; margin: 2mm 0 4mm; }
+.flow .f { border: 0.35mm solid var(--ink); border-radius: 2mm; padding: 2mm; text-align: center; background: #fff; font-size: 8.2pt; position: relative; min-height: 15mm; display: grid; align-content: center; }
+.flow .f b { display: block; font-family: var(--mono); color: var(--red); font-size: 7.6pt; }
+.flow .f:not(:last-child)::after { content: "→"; position: absolute; right: -3.2mm; top: 50%; transform: translateY(-50%); color: var(--red); font-weight: 700; }
+.flow .f.hl { background: var(--red-soft); border-color: var(--red); }
+.tok { display: inline-block; width: 4mm; height: 4mm; border-radius: 1mm; vertical-align: -0.8mm; margin-right: 1.2mm; border: 0.2mm solid rgba(0,0,0,.15); }
+
+/* 쪽 번호·날짜 칸은 줄바꿈 없이 */
+td.c { white-space: nowrap; }

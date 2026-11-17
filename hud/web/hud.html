@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>MerMaid HUD</title>
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/hud.css">
+</head>
+<body>
+  <!-- 반사형 HUD: 검은 바탕 + 가속 방향 앰비언트 큐만. 아크릴판·앞유리 아래에 폰/태블릿을 눕혀 반사 -->
+  <div class="view" id="view">
+    <canvas id="cue"></canvas>
+    <div class="mini" id="mini">
+      <span class="air" id="air" title="송풍 ON (Tier 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h15a3 3 0 1 1-3 3M3 16h8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+      <span class="ld" id="ld" title="RF 연결 상태"></span>
+    </div>
+  </div>
+
+  <div class="panel" id="panel">
+    <header><b>HUD 설정</b><span class="chip" id="linkChip" data-s="idle"><span class="dot"></span><span id="linkText">연결 안 됨</span></span></header>
+    <div class="row"><span>반사 모드</span>
+      <div class="seg" role="radiogroup" id="mirror">
+        <button role="radio" data-v="none" aria-checked="true">끔</button>
+        <button role="radio" data-v="x" aria-checked="false">좌우 반전</button>
+        <button role="radio" data-v="y" aria-checked="false">상하 반전</button>
+      </div>
+    </div>
+    <div class="row"><span>밝기</span><input type="range" id="bright" min="20" max="100" value="85"></div>
+    <div class="row"><span>큐 크기</span><input type="range" id="gain" min="50" max="160" value="100"></div>
+    <div class="row" id="connRow"><span>연결</span>
+      <div class="btns"><button class="btn primary" id="bBle">BLE</button><button class="btn" id="bWs">서버</button><button class="btn" id="bDemo">데모</button></div>
+    </div>
+    <p class="hint" id="hint">차량 디스플레이 창이 열려 있으면 그 연결을 함께 씁니다 (hud-01은 한 연결만 등록).<br>키: M 반사 · F 전체 화면 · 화면을 움직이면 이 패널이 보입니다</p>
+  </div>
+  <script type="module" src="js/hud.js"></script>
+</body>
+</html>

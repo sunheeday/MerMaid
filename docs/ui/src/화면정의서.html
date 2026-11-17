@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>MerMaid 화면정의서 v0.2</title>
+<link rel="stylesheet" href="doc.css">
+<link rel="stylesheet" href="screens.css">
+</head>
+<body>
+<div class="rail"></div>
+
+<!-- ═════════ 표지 ═════════ -->
+<section class="page cover-page">
+  <div class="cover" style="height:100%">
+    <div class="lane"><svg class="curve" viewBox="0 0 100 300" preserveAspectRatio="none"><path d="M70 300 C 70 210, 20 180, 30 110 S 60 20, 55 0" fill="none" stroke="#a50034" stroke-width="2.2"/></svg></div>
+    <div class="t">
+      <div class="kicker">MERMAID · PROACTIVE MOTION SICKNESS AGENT</div>
+      <h1>화면정의서</h1>
+      <p class="sub">탑승객 앱 (Android · Galaxy S22+ 기준)<br>차량 디스플레이 · HUD</p>
+    </div>
+    <table>
+      <tr><th>문서 번호</th><td>MM-UI-001</td></tr>
+      <tr><th>버전</th><td>v0.2 (검토용) · 2026-11-17</td></tr>
+      <tr><th>작성</th><td>MerMaid 팀 · 프론트엔드(UI/UX)</td></tr>
+      <tr><th>관련 문서</th><td>MM-REQ-001 요구사항정의서 v0.1 · GitHub <code>protocol/</code> v1</td></tr>
+      <tr><th>표기</th><td>목업 크기는 Galaxy S22+ 384 × 832 dp 기준. 숫자 원(●)은 오른쪽 표의 항목 번호</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ═════════ 화면 목록 · 흐름 ═════════ -->
+<section class="page">
+  <h2><span class="no">1</span>화면 목록과 흐름</h2>
+  <div class="grid2" style="grid-template-columns: 1.25fr 1fr; gap:6mm">
+    <div>
+      <table>
+        <thead><tr><th>화면 ID</th><th>화면명</th><th>유형</th><th>설명</th><th>쪽</th></tr></thead>
+        <tbody>
+          <tr><td class="id">APP-01</td><td>시작</td><td>앱 화면</td><td>첫 실행 소개, 무엇을 하는 앱인지</td><td class="c">4</td></tr>
+          <tr><td class="id">APP-02</td><td>권한 안내</td><td>앱 화면</td><td>블루투스 · 알림 · 다른 앱 위에 표시 · 배터리, 4단계</td><td class="c">4</td></tr>
+          <tr><td class="id">APP-03</td><td>차량 등록</td><td>시스템 + 앱</td><td>MSAgent 브리지를 1회 등록(CDM), 완료 안내</td><td class="c">5</td></tr>
+          <tr><td class="id">APP-04</td><td>멀미 프로필</td><td>앱 화면</td><td>MSSQ-Short 설문과 결과(민감도)</td><td class="c">6</td></tr>
+          <tr><td class="id">APP-05</td><td>홈</td><td>앱 화면</td><td>연결 상태, 개입 상태, 수동 조작. 상태별 변형</td><td class="c">7</td></tr>
+          <tr><td class="id">OVL-01</td><td>모션 큐 (세로)</td><td>오버레이</td><td><b>타 앱 위</b>에 그리는 점. 터치 통과</td><td class="c">8</td></tr>
+          <tr><td class="id">SYS-01</td><td>상주 알림 · 빠른 설정</td><td>시스템 UI</td><td>백그라운드 상태 표시와 즉시 조작</td><td class="c">8–9</td></tr>
+          <tr><td class="id">OVL-02</td><td>모션 큐 (가로 전체 화면)</td><td>오버레이</td><td>동영상 전체 화면에서의 배치</td><td class="c">9</td></tr>
+          <tr><td class="id">APP-06</td><td>설정</td><td>앱 화면</td><td>큐 표시, 연결, 프로필, 권한</td><td class="c">10</td></tr>
+          <tr><td class="id">APP-07</td><td>RF 진단</td><td>앱 화면</td><td>연결 지표와 로그</td><td class="c">10</td></tr>
+          <tr><td class="id">DSP-01</td><td>차량 디스플레이</td><td>웹 1920×720</td><td>개입 상태 · 공용 장치 조작 · 화면 큐 · 상태 변형</td><td class="c">11–12</td></tr>
+          <tr><td class="id">HUD-01</td><td>HUD</td><td>웹 (반사)</td><td>가속 방향 앰비언트 큐 · 화면 게이트</td><td class="c">11–12</td></tr>
+        </tbody>
+      </table>
+      <h3>개정 이력</h3>
+      <table>
+        <thead><tr><th>버전</th><th>날짜</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td>v0.1</td><td class="c">2026-11-17</td><td>최초 작성 (탑승객 앱 Android 재정의, DSP·HUD v0.1)</td></tr>
+          <tr><td>v0.2</td><td class="c">2026-11-17</td><td>DSP-01·HUD-01 v0.2 구현 반영: 화면 OFF 길게 누르기, '알 수 없음' 상태, LEARN 안내, HUD 화면 게이트 연동 (12쪽 추가)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3 style="margin-top:0">최초 1회 (설치 직후)</h3>
+      <div class="flow" style="grid-template-columns: repeat(4,1fr)">
+        <div class="f"><b>APP-01</b>시작</div>
+        <div class="f"><b>APP-02</b>권한 4단계</div>
+        <div class="f"><b>APP-03</b>차량 등록</div>
+        <div class="f"><b>APP-04</b>프로필</div>
+      </div>
+      <h3>매번 탑승할 때 (조작 0회)</h3>
+      <div class="flow" style="grid-template-columns: repeat(4,1fr)">
+        <div class="f">차에 탐<br><small class="muted">브리지 감지</small></div>
+        <div class="f hl"><b>SYS-01</b>알림 “연결됨”</div>
+        <div class="f">YouTube · SNS<br>사용</div>
+        <div class="f hl"><b>OVL-01/02</b>필요할 때 큐</div>
+      </div>
+      <div class="box" style="margin-top:3mm">
+        <h4>설계 원칙</h4>
+        <ul class="tight">
+          <li><b>앱을 보지 않아도 된다.</b> 탑승 후 할 일은 없다. 앱 화면은 설정할 때만 연다.</li>
+          <li><b>필요할 때만, 방해하지 않게.</b> 큐는 가장자리에만, 터치는 아래 앱으로. Tier 1·2는 알림 문구만 바뀐다.</li>
+          <li><b>끊기면 끈다.</b> 연결이 불확실하면 큐를 남기지 않는다 (NFR-01).</li>
+          <li><b>조작은 가장 가까운 곳에서.</b> 알림 버튼 · 빠른 설정 타일 → 앱 홈 순.</li>
+        </ul>
+      </div>
+      <p class="muted"><small>APP-05 홈에서 언제든 APP-04(프로필), APP-06(설정), APP-07(진단)으로 이동. 앱을 닫아도 서비스는 계속 동작.</small></p>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ 공통 규격 ═════════ -->
+<section class="page">
+  <h2><span class="no">2</span>공통 규격</h2>
+  <div class="grid2" style="grid-template-columns: 1fr 1fr 1fr; gap:5mm">
+    <div>
+      <h3 style="margin-top:0">화면 기준 (Galaxy S22+)</h3>
+      <table>
+        <tbody>
+          <tr><td>물리 해상도</td><td><b>1080 × 2340 px</b>, 6.6″, 120 Hz</td></tr>
+          <tr><td>설계 기준</td><td><b>384 × 832 dp</b> (×2.8125)</td></tr>
+          <tr><td>상태 표시줄</td><td>약 34 dp, 펀치홀 중앙</td></tr>
+          <tr><td>제스처 바</td><td>하단 약 20 dp (3버튼일 때 48 dp)</td></tr>
+          <tr><td>좌우 여백</td><td>20 dp</td></tr>
+          <tr><td>최소 터치 영역</td><td>48 × 48 dp</td></tr>
+          <tr><td>방향</td><td>앱 화면 세로 고정, 오버레이는 세로·가로 모두</td></tr>
+          <tr><td>테마</td><td>시스템 따름(라이트/다크). 이 문서는 라이트로 표기</td></tr>
+        </tbody>
+      </table>
+      <p class="muted"><small>상태 표시줄·제스처 바 크기는 기기 설정에 따라 다르므로 코드에서는 WindowInsets 값을 쓴다. dp 기준은 실기 확인 필요.</small></p>
+    </div>
+    <div>
+      <h3 style="margin-top:0">색</h3>
+      <table>
+        <tbody>
+          <tr><td><span class="tok" style="background:#a50034"></span>Brand</td><td>#A50034 · 주요 버튼, 강조</td></tr>
+          <tr><td><span class="tok" style="background:#1e1b1d"></span>Ink</td><td>#1E1B1D · 본문</td></tr>
+          <tr><td><span class="tok" style="background:#f6f3f0"></span>Paper</td><td>#F6F3F0 · 배경</td></tr>
+          <tr><td><span class="tok" style="background:#1683d8"></span>Tier 1</td><td>#1683D8 · 송풍</td></tr>
+          <tr><td><span class="tok" style="background:#d61f69"></span>Tier 2</td><td>#D61F69 · 앰비언트</td></tr>
+          <tr><td><span class="tok" style="background:#c77700"></span>Tier 3</td><td>#C77700 · 모션 큐</td></tr>
+          <tr><td><span class="tok" style="background:#1f9d68"></span>연결됨</td><td>#1F9D68</td></tr>
+          <tr><td><span class="tok" style="background:#c62828"></span>끊김</td><td>#C62828</td></tr>
+        </tbody>
+      </table>
+      <h3>글자 (sp)</h3>
+      <table><tbody>
+        <tr><td>제목 1</td><td>24 / ExtraBold</td></tr><tr><td>제목 2</td><td>18 / ExtraBold</td></tr>
+        <tr><td>본문</td><td>15 / Regular</td></tr><tr><td>보조</td><td>13 / Regular, #7A7074</td></tr>
+      </tbody></table>
+    </div>
+    <div>
+      <h3 style="margin-top:0">모션 큐 점 규격 (OVL)</h3>
+      <table>
+        <tbody>
+          <tr><td>점</td><td>지름 10 dp, 흰색 + 1 dp 어두운 테두리</td></tr>
+          <tr><td>불투명도</td><td>기본 0.8 (최대 0.8, 터치 통과 조건)</td></tr>
+          <tr><td>배치</td><td>좌우 각 2열 × 8행, 상하 각 1행 × 5개</td></tr>
+          <tr><td>여백</td><td>가장자리에서 18 dp, 열 간격 16 dp</td></tr>
+          <tr><td>회피</td><td>상태 표시줄·펀치홀·제스처 바 영역</td></tr>
+          <tr><td>이동</td><td>±3 m/s²에서 최대 24 dp (약/중/강 = 16/24/32)</td></tr>
+          <tr><td>방향</td><td>ay+(왼쪽 가속) → 오른쪽, ax+(가속) → 아래</td></tr>
+          <tr><td>등장 · 퇴장</td><td>페이드 0.3 초 / 끊김 시 즉시</td></tr>
+        </tbody>
+      </table>
+      <h3>연결 칩 상태</h3>
+      <div style="display:flex; gap:2mm; flex-wrap:wrap; transform:scale(.8); transform-origin:0 0; width:125%">
+        <span class="chipm"><span class="d"></span>연결됨</span>
+        <span class="chipm wait"><span class="d"></span>차 찾는 중</span>
+        <span class="chipm bad"><span class="d"></span>신호 없음</span>
+        <span class="chipm" style="color:#7a7074"><span class="d" style="background:#bbb"></span>미등록</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ APP-01 / APP-02 ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">APP-01 · APP-02</div><div>화면명</div><div>시작 · 권한 안내</div><div>요구사항</div><div>APP-F-40, NFR-10</div></div>
+  <div class="body">
+    <div class="phones">
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>9:41</span><span class="ic">LTE <i></i></span></div>
+          <div class="scr" style="padding-top:70px; gap:18px">
+            <svg viewBox="0 0 64 64" width="72" height="72"><path d="M8 44c8-16 16-16 24 0s16 16 24 0" fill="none" stroke="#a50034" stroke-width="6" stroke-linecap="round"/><circle cx="32" cy="18" r="6" fill="#1e1b1d"/></svg>
+            <div class="h1" style="font-size:28px">멀미가 오기 전에,<br>먼저 움직입니다</div>
+            <div class="mut" style="font-size:15px">MerMaid는 차와 연결되어 흔들림을 미리 알고 화면에 작은 점으로 알려 드려요.</div>
+            <div class="card" style="display:grid; gap:14px; margin-top:6px">
+              <div class="row" style="justify-content:flex-start"><span class="tdot" style="--c:#a50034">1</span><div class="lbl"><b>차에 타면 자동 연결</b><span>앱을 열지 않아도 돼요</span></div></div>
+              <div class="row" style="justify-content:flex-start"><span class="tdot" style="--c:#c77700">2</span><div class="lbl"><b>쓰던 앱 그대로</b><span>YouTube 위에도 점이 나타나요</span></div></div>
+              <div class="row" style="justify-content:flex-start"><span class="tdot" style="--c:#1683d8">3</span><div class="lbl"><b>나에게 맞춰 학습</b><span>끄고 켜는 것을 기억해요</span></div></div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="btnm">시작하기</div>
+            <div class="mut" style="text-align:center">설정은 2분이면 끝나요</div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:20px; top:150px">1</span>
+          <span class="co" style="left:330px; top:345px">2</span>
+          <span class="co" style="left:330px; top:735px">3</span>
+        </div></div>
+        <div class="cap"><b>APP-01</b> 시작</div>
+      </div>
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>9:41</span><span class="ic">LTE <i></i></span></div>
+          <div class="scr">
+            <div class="step"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+            <div class="mut">3 / 4 단계</div>
+            <div class="h1">다른 앱 위에<br>점을 그릴 수 있게 해 주세요</div>
+            <div class="card" style="height:150px; position:relative; overflow:hidden; background:#1a1418; border:0">
+              <div style="position:absolute; inset:14px 40px; border-radius:16px; background:linear-gradient(135deg,#3d2b4f,#8a3e5c 55%,#e8956a)"></div>
+              <div class="ovl" data-w="342" data-h="150" data-t="0" data-b="0" data-dx="6" data-dy="0" data-rows="5" data-mini="1"></div>
+            </div>
+            <div class="mut">YouTube·SNS를 볼 때 화면 가장자리에만 점이 나타나요. 화면을 누르는 데는 영향이 없어요.</div>
+            <div class="perm"><span class="pi">ᛒ</span><div class="lbl"><b>근처 기기 (블루투스)</b><span>차와 연결</span></div><span class="ok">허용됨</span></div>
+            <div class="perm"><span class="pi">🔔</span><div class="lbl"><b>알림</b><span>연결 상태 · 빠른 조작</span></div><span class="ok">허용됨</span></div>
+            <div class="perm cur"><span class="pi">▣</span><div class="lbl"><b>다른 앱 위에 표시</b><span>모션 큐</span></div><span class="tag">지금</span></div>
+            <div class="perm"><span class="pi">⚡</span><div class="lbl"><b>배터리 제한 없음</b><span>주행 중 연결 유지</span></div><span class="mut">다음</span></div>
+            <div style="flex:1"></div>
+            <div class="btnm">설정에서 허용하기</div>
+            <div class="mut" style="text-align:center">나중에 할게요</div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:330px; top:44px">4</span>
+          <span class="co" style="left:330px; top:205px">5</span>
+          <span class="co" style="left:4px; top:590px">6</span>
+          <span class="co" style="left:330px; top:735px">7</span>
+        </div></div>
+        <div class="cap"><b>APP-02</b> 권한 안내 (3단계 예시)</div>
+      </div>
+    </div>
+    <div class="desc">
+      <table>
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">1</span></td><td>핵심 문구</td><td>발표 헤드라인과 같은 문장. 앱의 목적을 한 줄로</td></tr>
+          <tr><td><span class="num">2</span></td><td>특징 3가지</td><td>자동 연결 · 타 앱 위 큐 · 학습. “앱을 계속 볼 필요가 없다”를 먼저 알림</td></tr>
+          <tr><td><span class="num">3</span></td><td>시작하기</td><td>APP-02로 이동. 첫 실행에만 표시(이후 바로 APP-05)</td></tr>
+          <tr><td><span class="num">4</span></td><td>단계 표시</td><td>4단계 중 현재 위치. 이미 허용된 단계는 자동으로 건너뜀</td></tr>
+          <tr><td><span class="num">5</span></td><td>미리보기</td><td>점이 가장자리에서 움직이는 짧은 애니메이션. 왜 권한이 필요한지 보여 줌</td></tr>
+          <tr><td><span class="num">6</span></td><td>권한 목록</td><td>순서: 블루투스(<span class="msg">BLUETOOTH_SCAN/CONNECT</span>) → 알림(<span class="msg">POST_NOTIFICATIONS</span>) → 다른 앱 위에 표시(<span class="msg">SYSTEM_ALERT_WINDOW</span>, 시스템 설정 화면으로 이동) → 배터리 제한 없음(One UI 설정 안내). 상태: 허용됨 / 지금 / 다음 / 거부됨</td></tr>
+          <tr><td><span class="num">7</span></td><td>허용 · 나중에</td><td>시스템 권한 창 또는 설정 화면을 연다. 돌아오면 상태를 다시 확인. “나중에”를 눌러도 다음 단계로, 빠진 권한은 홈에 배너로 표시</td></tr>
+        </tbody>
+      </table>
+      <div class="box"><h4>예외</h4>블루투스를 거부하면 연결 불가 → 홈에 “블루투스 권한이 필요해요” 배너. 다른 앱 위에 표시를 거부하면 큐 대신 알림만, 컨트롤러에 <span class="msg">SCR att=false</span>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ APP-03 ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">APP-03</div><div>화면명</div><div>차량 등록</div><div>요구사항</div><div>APP-F-01, 02, 09</div></div>
+  <div class="body">
+    <div class="phones">
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>9:42</span><span class="ic">LTE <i></i></span></div>
+          <div class="scr" style="filter:brightness(.55)">
+            <div class="h1">차에 연결하기</div>
+            <div class="mut">차 안의 MerMaid 장치(MSAgent)를 찾고 있어요. 차에 시동이 걸려 있어야 해요.</div>
+          </div>
+          <div style="position:absolute; left:10px; right:10px; bottom:14px; background:#fff; border-radius:30px; padding:26px 22px 22px; z-index:8; display:grid; gap:14px">
+            <div style="text-align:center; font-size:17px; font-weight:700">MerMaid에서 관리할 기기를 선택하세요</div>
+            <div class="mut" style="text-align:center; font-size:12.5px">이 앱은 기기가 근처에 있을 때 자동으로 연결하고, 백그라운드에서 실행될 수 있습니다.</div>
+            <div style="display:grid; gap:4px">
+              <div class="row" style="padding:12px 14px; border-radius:14px; background:#eef3fb"><div class="lbl"><b>MSAgent-1A2B</b><span>근처</span></div><span style="color:#3e7bfa; font-weight:700">●</span></div>
+              <div class="row" style="padding:12px 14px"><div class="lbl"><b>MSAgent-7F03</b><span>약함</span></div></div>
+            </div>
+            <div class="row" style="justify-content:flex-end; gap:28px; color:#3e7bfa; font-weight:700; padding-right:8px"><span>취소</span><span>허용</span></div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:330px; top:478px">1</span>
+          <span class="co" style="left:8px; top:640px">2</span>
+          <span class="co" style="left:190px; top:768px">3</span>
+        </div></div>
+        <div class="cap"><b>APP-03a</b> 시스템 기기 선택 창 (One UI 모양은 기기마다 다름)</div>
+      </div>
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>9:42</span><span class="ic">LTE <i></i></span></div>
+          <div class="scr" style="padding-top:80px; gap:16px">
+            <div style="width:110px; height:110px; border-radius:34px; background:#e3f3ec; display:grid; place-items:center; font-size:54px; color:#1f9d68">✓</div>
+            <div class="h1">MSAgent-1A2B<br>등록했어요</div>
+            <div class="mut" style="font-size:15px">다음부터는 <b style="color:#1e1b1d">차에 타면 자동으로 연결</b>돼요. 앱을 열 필요가 없어요.</div>
+            <div class="card" style="display:grid; gap:10px">
+              <div class="row"><span class="mut">페어링</span><b class="ok">암호화 완료</b></div>
+              <div class="row"><span class="mut">자동 연결</span><span class="sw on"></span></div>
+              <div class="row"><span class="mut">내 기기 ID</span><b style="font-size:13px">5f3a9c1e…</b></div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="btnm">다음: 멀미 프로필</div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:180px; top:170px">4</span>
+          <span class="co" style="left:340px; top:465px">5</span>
+          <span class="co" style="left:330px; top:735px">6</span>
+        </div></div>
+        <div class="cap"><b>APP-03b</b> 등록 완료</div>
+      </div>
+    </div>
+    <div class="desc">
+      <table>
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">1</span></td><td>시스템 기기 선택 창</td><td>앱이 아닌 Android가 띄우는 창(CompanionDeviceManager). 필터: 이름 접두어 <span class="msg">MSAgent-</span> + 서비스 UUID <span class="msg">cd820001-…</span>. 이 창으로 등록해야 탑승 시 자동 실행 권한이 생김</td></tr>
+          <tr><td><span class="num">2</span></td><td>기기 목록</td><td>신호 세기 순. 여러 대면 차에 붙은 라벨(MAC 끝 4자리)과 비교하도록 안내</td></tr>
+          <tr><td><span class="num">3</span></td><td>허용</td><td>등록 + 본딩(LE Secure Connections, Just Works — 숫자 입력 없음). 첫 연결 시 HELLO, 프로필 전송</td></tr>
+          <tr><td><span class="num">4</span></td><td>완료 표시</td><td>등록 이름. 실패 시(“찾을 수 없음”) 다시 찾기 · 도움말(차 시동, 블루투스 켜기)</td></tr>
+          <tr><td><span class="num">5</span></td><td>등록 정보</td><td>암호화 상태, 자동 연결 스위치(기본 켬), 기기 ID(앱이 처음 만든 UUID, 63자 이하)</td></tr>
+          <tr><td><span class="num">6</span></td><td>다음</td><td>APP-04 프로필로. 건너뛰면 기본 프로필(MSSQ 12.90, 민감도 1.0)</td></tr>
+        </tbody>
+      </table>
+      <div class="box red"><h4>탑승 시 자동 연결 (화면 없음)</h4>등록 후에는 브리지가 범위에 들어오면 시스템이 앱을 깨운다 → 포그라운드 서비스 시작 → GATT 연결 → <span class="msg">HELLO{role:"app"}</span> → <span class="msg">PROF</span> → <span class="msg">SCR</span>. 사용자에게 보이는 것은 SYS-01 상주 알림뿐.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ APP-04 ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">APP-04</div><div>화면명</div><div>멀미 프로필</div><div>요구사항</div><div>APP-F-30~33</div></div>
+  <div class="body">
+    <div class="phones">
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>9:43</span><span class="ic">LTE <i></i></span></div>
+          <div class="scr" style="gap:10px">
+            <div class="row"><span style="font-size:22px">←</span><span class="mut">건너뛰기</span></div>
+            <div class="h2">탈것마다 얼마나 자주<br>멀미를 느꼈나요?</div>
+            <div class="seg"><span class="on">어릴 때 (12세 전)</span><span>최근 10년</span></div>
+            <div class="opts" style="margin-left:80px; font-size:10.5px; color:#7a7074; text-align:center; display:grid"><span style="border:0;background:none;height:auto">없음</span><span style="border:0;background:none;height:auto">전혀</span><span style="border:0;background:none;height:auto">가끔</span><span style="border:0;background:none;height:auto">때때로</span><span style="border:0;background:none;height:auto">자주</span></div>
+            <div class="q"><span>자동차</span><div class="opts"><span class="na">—</span><span>0</span><span>1</span><span class="on">2</span><span>3</span></div></div>
+            <div class="q"><span>버스</span><div class="opts"><span class="na">—</span><span>0</span><span class="on">1</span><span>2</span><span>3</span></div></div>
+            <div class="q"><span>기차</span><div class="opts"><span class="na">—</span><span class="on">0</span><span>1</span><span>2</span><span>3</span></div></div>
+            <div class="q"><span>비행기</span><div class="opts"><span class="na">—</span><span class="on">0</span><span>1</span><span>2</span><span>3</span></div></div>
+            <div class="q"><span>작은 배</span><div class="opts"><span class="na on">—</span><span>0</span><span>1</span><span>2</span><span>3</span></div></div>
+            <div class="q"><span>큰 배</span><div class="opts"><span class="na">—</span><span>0</span><span class="on">1</span><span>2</span><span>3</span></div></div>
+            <div class="q"><span>그네</span><div class="opts"><span class="na">—</span><span>0</span><span>1</span><span>2</span><span>3</span></div></div>
+            <div class="q"><span>회전기구</span><div class="opts"><span class="na">—</span><span>0</span><span>1</span><span>2</span><span>3</span></div></div>
+            <div class="q"><span>롤러코스터</span><div class="opts"><span class="na">—</span><span>0</span><span>1</span><span>2</span><span>3</span></div></div>
+            <div style="flex:1"></div>
+            <div class="row card" style="padding:12px 16px"><div class="lbl"><span>응답 6 / 18</span><b>지금 점수 8.1</b></div><div class="btnm sm">다음</div></div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:330px; top:150px">1</span>
+          <span class="co" style="left:30px; top:208px">2</span>
+          <span class="co" style="left:200px; top:742px">3</span>
+        </div></div>
+        <div class="cap"><b>APP-04a</b> MSSQ-Short 설문</div>
+      </div>
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>9:44</span><span class="ic">LTE <i></i></span></div>
+          <div class="scr" style="gap:16px">
+            <div class="h1" style="margin-top:20px">내 멀미 프로필</div>
+            <div class="card" style="display:grid; justify-items:center; gap:6px; padding:24px">
+              <svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="62" fill="none" stroke="#ece6e1" stroke-width="14"/><circle cx="75" cy="75" r="62" fill="none" stroke="#a50034" stroke-width="14" stroke-linecap="round" stroke-dasharray="132 390" transform="rotate(-90 75 75)"/><text x="75" y="78" text-anchor="middle" font-size="34" font-weight="800" fill="#1e1b1d">18.5</text><text x="75" y="102" text-anchor="middle" font-size="13" fill="#7a7074">/ 54</text></svg>
+              <b style="font-size:17px">민감도 1.20</b>
+              <span class="tag">평균보다 조금 민감</span>
+            </div>
+            <div class="mut" style="font-size:14px">이 값은 차량 컨트롤러로 보내져 <b style="color:#1e1b1d">언제 개입할지</b> 판단하는 데 쓰여요. 주행 중 끄고 켜는 기록에 따라 조금씩 바뀌어요.</div>
+            <div class="card" style="display:grid; gap:8px; font-size:13px">
+              <div class="row"><span class="mut">어릴 때 (A)</span><b>10.1</b></div>
+              <div class="row"><span class="mut">최근 10년 (B)</span><b>8.4</b></div>
+              <div class="row"><span class="mut">컨트롤러 저장값</span><b>1.20 → 1.38</b></div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="btnm">저장하고 시작하기</div>
+            <div class="btnm ghost">다시 하기</div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:320px; top:120px">4</span>
+          <span class="co" style="left:330px; top:440px">5</span>
+          <span class="co" style="left:340px; top:500px">6</span>
+          <span class="co" style="left:330px; top:690px">7</span>
+        </div></div>
+        <div class="cap"><b>APP-04b</b> 결과</div>
+      </div>
+    </div>
+    <div class="desc">
+      <table>
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">1</span></td><td>시기 탭</td><td>어릴 때(12세 전) / 최근 10년. 각 9문항</td></tr>
+          <tr><td><span class="num">2</span></td><td>문항 · 응답</td><td>9종 탈것 × 5단계: 타 본 적 없음(—) · 전혀 0 · 가끔 1 · 때때로 2 · 자주 3. 한 줄에 한 문항, 버튼 32 dp(행 전체 높이 48 dp)</td></tr>
+          <tr><td><span class="num">3</span></td><td>진행 · 지금 점수</td><td>응답 수와 실시간 점수. 구간 점수 = 합 × 9 ÷ (9 − 미경험 수)</td></tr>
+          <tr><td><span class="num">4</span></td><td>원점수</td><td>A + B (0~54). 링은 54 기준 비율</td></tr>
+          <tr><td><span class="num">5</span></td><td>민감도 · 설명</td><td><span class="msg">sens = clip(exp(0.3·(mssq−12.90)/9.90), 0.5, 2.0)</span>. 구간 문구: &lt;0.85 둔감 / 0.85~1.15 보통 / &gt;1.15 조금 민감 / &gt;1.5 민감</td></tr>
+          <tr><td><span class="num">6</span></td><td>상세</td><td>구간별 점수, 재연결 때 컨트롤러가 보낸 <span class="msg">PROF</span> 값(승객 조작으로 바뀐 민감도)</td></tr>
+          <tr><td><span class="num">7</span></td><td>저장</td><td>기기에 저장 → 연결돼 있으면 즉시 <span class="msg">PROF{mssq, sens}</span> 전송, 아니면 다음 연결 때</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ APP-05 ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">APP-05</div><div>화면명</div><div>홈 (상태별)</div><div>요구사항</div><div>APP-F-03, 07, 23~25, NFR-01</div></div>
+  <div class="body">
+    <div class="phones">
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>14:05</span><span class="ic">ᛒ LTE <i></i></span></div>
+          <div class="scr">
+            <div class="apbar"><div class="logo"><svg viewBox="0 0 32 32" width="24" height="24"><path d="M4 22c4-8 8-8 12 0s8 8 12 0" fill="none" stroke="#a50034" stroke-width="3.4" stroke-linecap="round"/><circle cx="16" cy="9" r="3.4" fill="#1e1b1d"/></svg>MerMaid</div><span class="chipm"><span class="d"></span>연결됨</span></div>
+            <div class="card" style="background:#1e1b1d; color:#fff; border:0; display:grid; gap:8px; position:relative; overflow:hidden">
+              <span style="font-size:12.5px; color:#cbbfba">MSAgent-1A2B</span>
+              <div class="h2" style="color:#fff">차와 연결됐어요.<br>이제 다른 앱을 쓰셔도 돼요</div>
+              <span style="font-size:13px; color:#cbbfba">필요할 때 화면 가장자리에 점이 나타나요. 앱을 닫아도 계속 동작해요.</span>
+              <div class="btnm sm" style="justify-self:start; background:#fff; color:#1e1b1d; margin-top:4px">홈 화면으로</div>
+            </div>
+            <div class="sect">지금 차 안</div>
+            <div class="card tiers" style="padding:4px 16px">
+              <div class="row"><span class="tdot" style="--c:#1683d8">T1</span><div class="lbl" style="flex:1"><b>송풍</b><span>차 안 공용 · 켜짐</span></div><span class="sw on" style="--c:#1683d8"></span></div>
+              <div class="row"><span class="tdot" style="--c:#d61f69">T2</span><div class="lbl" style="flex:1"><b>앰비언트 빛</b><span>차 안 공용 · 꺼짐</span></div><span class="sw"></span></div>
+              <div class="row"><span class="tdot" style="--c:#c77700">T3</span><div class="lbl" style="flex:1"><b>내 화면 모션 큐</b><span>이 폰에만 · 꺼짐</span></div><span class="sw"></span></div>
+            </div>
+            <div class="mut" style="font-size:12.5px">켜진 지 30초 안에 끄면 다음부터 덜 켜져요. 꺼진 큐를 직접 켜면 민감도를 올려요.</div>
+            <div class="card row" style="padding:12px 16px"><div class="lbl"><b>멀미 프로필</b><span>MSSQ 18.5 · 민감도 1.20</span></div><span class="mut">›</span></div>
+            <div class="row" style="justify-content:space-around; font-size:13px; color:#4a4346; margin-top:auto"><span>⚙ 설정</span><span>⌁ RF 진단</span></div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:222px; top:48px">1</span>
+          <span class="co" style="left:330px; top:120px">2</span>
+          <span class="co" style="left:4px; top:345px">3</span>
+          <span class="co" style="left:4px; top:525px">4</span>
+          <span class="co" style="left:330px; top:600px">5</span>
+        </div></div>
+        <div class="cap"><b>APP-05a</b> 연결됨</div>
+      </div>
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>14:21</span><span class="ic">ᛒ LTE <i></i></span></div>
+          <div class="scr">
+            <div class="apbar"><div class="logo"><svg viewBox="0 0 32 32" width="24" height="24"><path d="M4 22c4-8 8-8 12 0s8 8 12 0" fill="none" stroke="#a50034" stroke-width="3.4" stroke-linecap="round"/><circle cx="16" cy="9" r="3.4" fill="#1e1b1d"/></svg>MerMaid</div><span class="chipm bad"><span class="d"></span>신호 없음</span></div>
+            <div class="card" style="background:#fdeeee; border-color:#f0b8b8; display:grid; gap:6px">
+              <b style="color:#c62828; font-size:16px">차와 연결이 끊겼어요</b>
+              <span style="font-size:13px; color:#7a3b3b">안전을 위해 화면의 점을 껐어요. 다시 연결 중… (4초 후 재시도)</span>
+            </div>
+            <div class="card tiers" style="padding:4px 16px; opacity:.5">
+              <div class="row"><span class="tdot" style="--c:#1683d8">T1</span><div class="lbl" style="flex:1"><b>송풍</b><span>알 수 없음</span></div><span class="sw"></span></div>
+              <div class="row"><span class="tdot" style="--c:#d61f69">T2</span><div class="lbl" style="flex:1"><b>앰비언트 빛</b><span>알 수 없음</span></div><span class="sw"></span></div>
+              <div class="row"><span class="tdot" style="--c:#c77700">T3</span><div class="lbl" style="flex:1"><b>내 화면 모션 큐</b><span>꺼짐 (안전)</span></div><span class="sw"></span></div>
+            </div>
+            <div class="sect" style="margin-top:10px">다른 상태</div>
+            <div class="card" style="display:grid; gap:12px">
+              <div class="row" style="justify-content:flex-start"><span class="chipm wait"><span class="d"></span>차 찾는 중</span><span class="mut" style="font-size:12.5px">차에 타면 자동 연결. 앱을 닫아도 괜찮아요</span></div>
+              <div class="row" style="justify-content:flex-start"><span class="chipm" style="color:#7a7074"><span class="d" style="background:#bbb"></span>미등록</span><span class="mut" style="font-size:12.5px">[차 등록하기] 버튼 → APP-03</span></div>
+              <div class="row" style="justify-content:flex-start"><span class="chipm" style="color:#c77700"><span class="d" style="background:#c77700"></span>권한 필요</span><span class="mut" style="font-size:12.5px">“다른 앱 위에 표시”가 꺼져 있어요 [허용]</span></div>
+            </div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:330px; top:110px">6</span>
+          <span class="co" style="left:330px; top:215px">7</span>
+          <span class="co" style="left:330px; top:520px">8</span>
+        </div></div>
+        <div class="cap"><b>APP-05b</b> 신호 없음 · 기타 상태</div>
+      </div>
+    </div>
+    <div class="desc">
+      <table>
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">1</span></td><td>연결 칩</td><td>연결됨 / 차 찾는 중 / 신호 없음 / 미등록. 누르면 APP-07 진단</td></tr>
+          <tr><td><span class="num">2</span></td><td>안내 카드</td><td>연결 직후 “이제 다른 앱을 쓰셔도 돼요”. [홈 화면으로] = 앱을 백그라운드로(서비스 유지)</td></tr>
+          <tr><td><span class="num">3</span></td><td>개입 상태 · 조작</td><td>Tier 1·2·3 상태(<span class="msg">INT</span>)와 스위치. 누르면 <span class="msg">OVR</span>(<span class="msg">airflow-01</span> / <span class="msg">display-01</span> / 내 ID). 회신 전에는 흐리게, 3초 무회신 시 되돌림</td></tr>
+          <tr><td><span class="num">4</span></td><td>학습 안내</td><td>수동 조작이 다음 판단에 반영된다는 설명(POLICY)</td></tr>
+          <tr><td><span class="num">5</span></td><td>프로필 · 이동</td><td>APP-04, APP-06 설정, APP-07 진단</td></tr>
+          <tr><td><span class="num">6</span></td><td>끊김 배너</td><td>5초 무수신 시 즉시 표시, 오버레이 제거(NFR-01). 재연결 시도 시각 표시. 복구되면 자동으로 사라짐</td></tr>
+          <tr><td><span class="num">7</span></td><td>비활성 상태</td><td>연결 전 상태는 “알 수 없음”, 스위치 비활성</td></tr>
+          <tr><td><span class="num">8</span></td><td>기타 상태</td><td>차 찾는 중(대기) · 미등록 · 권한 필요. 각각 해결 버튼 제공</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ OVL-01 / SYS-01 ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">OVL-01 · SYS-01</div><div>화면명</div><div>타 앱 위 모션 큐 · 상주 알림</div><div>요구사항</div><div>APP-F-10~18, 21, 22, 24</div></div>
+  <div class="body">
+    <div class="phones">
+      <div>
+        <div class="pw"><div class="ph vid">
+          <div class="hole"></div><div class="sb"><span>14:12</span><span class="ic">ᛒ LTE <i></i></span></div>
+          <div class="vplayer"></div>
+          <div class="vmeta"><div class="bar w" style="width:88%"></div><div class="bar w" style="width:60%"></div><div class="bar" style="width:40%; margin-top:6px"></div><div style="display:flex; gap:8px; margin-top:8px"><div class="bar" style="width:70px; height:30px; border-radius:15px"></div><div class="bar" style="width:70px; height:30px; border-radius:15px"></div><div class="bar" style="width:70px; height:30px; border-radius:15px"></div></div></div>
+          <div class="vlist">
+            <div class="vitem"><div class="th a"></div><div><div class="bar w"></div><div class="bar" style="width:70%"></div></div></div>
+            <div class="vitem"><div class="th b"></div><div><div class="bar w"></div><div class="bar" style="width:60%"></div></div></div>
+            <div class="vitem"><div class="th c"></div><div><div class="bar w"></div><div class="bar" style="width:75%"></div></div></div>
+          </div>
+          <div class="ovl" data-w="384" data-h="832" data-t="34" data-b="24" data-dx="-14" data-dy="4"></div>
+          <div class="pill">모션 큐 시작</div>
+          <div class="gbar"></div>
+          <span class="co" style="left:52px; top:300px">1</span>
+          <span class="co" style="left:120px; top:772px">2</span>
+          <span class="co" style="left:178px; top:560px">3</span>
+          <span class="co" style="left:270px; top:40px">4</span>
+          <span class="co" style="left:300px; top:150px">5</span>
+        </div></div>
+        <div class="cap"><b>OVL-01</b> 동영상 앱 사용 중 큐 (우회전 중 → 점이 왼쪽으로)</div>
+      </div>
+      <div>
+        <div class="pw"><div class="ph shade">
+          <div class="hole"></div><div class="sb"><span>14:12</span><span class="ic">ᛒ LTE <i></i></span></div>
+          <div style="position:absolute; top:40px; left:0; right:0">
+            <div class="row" style="padding:4px 22px 10px; font-size:13px; color:#555"><span>11월 17일 (월)</span><span>⚙</span></div>
+            <div class="qs">
+              <div class="qt on"><b>⌔</b>Wi-Fi</div><div class="qt on"><b>ᛒ</b>블루투스</div><div class="qt"><b>◐</b>소리</div><div class="qt mm"><b>⁘</b>모션 큐</div>
+              <div class="qt"><b>✈</b>비행기</div><div class="qt"><b>⟳</b>자동 회전</div><div class="qt"><b>☾</b>방해 금지</div><div class="qt"><b>⚡</b>절전</div>
+            </div>
+            <div style="padding:10px 22px 4px"><div class="slider" style="background:#cfd6de"><i style="width:62%; background:#3e7bfa"></i><b style="left:62%; border-color:#3e7bfa"></b></div></div>
+            <div class="noti">
+              <div class="app"><i></i>MerMaid · 차량과 연결됨</div>
+              <b>모션 큐가 켜져 있어요</b>
+              <span style="font-size:13px; color:#555">송풍 켜짐 · 앰비언트 꺼짐 · MSAgent-1A2B</span>
+              <div class="acts"><span>모션 큐 끄기</span><span>앱 열기</span></div>
+            </div>
+            <div class="noti" style="opacity:.6"><div class="app"><i style="background:#888"></i>메시지 · 5분 전</div><div class="bar" style="background:#ddd; width:70%"></div></div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:300px; top:70px">6</span>
+          <span class="co" style="left:300px; top:330px">7</span>
+          <span class="co" style="left:300px; top:440px">8</span>
+        </div></div>
+        <div class="cap"><b>SYS-01</b> 알림창: 빠른 설정 타일 · 상주 알림</div>
+      </div>
+    </div>
+    <div class="desc">
+      <table>
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">1</span></td><td>좌우 점 (2열 × 8행)</td><td><span class="msg">INT tier 3 on</span> 수신 시 <b>어떤 앱 위에서도</b> 표시. <span class="msg">MOT</span> 10 Hz로 관성 방향 이동(그림: ay−, 우회전 → 왼쪽). 프레임마다 보간</td></tr>
+          <tr><td><span class="num">2</span></td><td>상하 점 (1행 × 5)</td><td>가속·제동이 보이게. 가속(ax+) → 아래, 제동 → 위</td></tr>
+          <tr><td><span class="num">3</span></td><td>중앙 비움 · 터치 통과</td><td>콘텐츠는 가리지 않고, 화면을 누르면 아래 앱이 받음(<span class="msg">NOT_TOUCHABLE</span>, 불투명도 ≤ 0.8)</td></tr>
+          <tr><td><span class="num">4</span></td><td>안전 영역</td><td>상태 표시줄 · 펀치홀 · 제스처 바에는 점을 두지 않음</td></tr>
+          <tr><td><span class="num">5</span></td><td>시작 안내 필</td><td>처음 켜질 때 1.5초 “모션 큐 시작”(터치 불가, 설정에서 끔). OFF 수신 → 0.3초 페이드, 끊김 → 즉시 제거</td></tr>
+          <tr><td><span class="num">6</span></td><td>빠른 설정 타일</td><td>“모션 큐”: 켜짐(앰버) / 꺼짐(흰색) / 연결 안 됨(비활성). 탭 = <span class="msg">OVR{dev:내 ID}</span></td></tr>
+          <tr><td><span class="num">7</span></td><td>상주 알림</td><td>포그라운드 서비스 알림(중요도 낮음, 소리·진동 없음). 제목 = 내 큐 상태, 내용 = Tier 1·2 · 차량 이름. 상태별 문구는 다음 쪽</td></tr>
+          <tr><td><span class="num">8</span></td><td>알림 버튼</td><td>[모션 큐 끄기/켜기] → <span class="msg">OVR</span>, [앱 열기] → APP-05</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ OVL-02 + 알림 상태 ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">OVL-02 · SYS-01</div><div>화면명</div><div>가로 전체 화면 큐 · 알림 상태</div><div>요구사항</div><div>APP-F-14, 15, 24, NFR-01</div></div>
+  <div class="body" style="grid-template-columns: 551px 1fr">
+    <div>
+      <div class="pw land"><div class="ph vid">
+        <div class="hole"></div>
+        <div style="position:absolute; inset:0; background:linear-gradient(120deg,#1f2a44,#3f5c7a 45%,#d7a36a 80%,#5a3a2a)"></div>
+        <div style="position:absolute; left:40%; top:30%; width:120px; height:120px; border-radius:50%; background:radial-gradient(#ffe2a8,#ffb36b 60%,transparent 62%)"></div>
+        <div class="ovl" data-w="832" data-h="384" data-t="0" data-b="0" data-l="40" data-r="20" data-dx="10" data-dy="-3" data-rows="5" data-land="1"></div>
+        <span class="co" style="left:44px; top:30px">1</span>
+        <span class="co" style="left:400px; top:20px">2</span>
+        <span class="co" style="left:400px; top:180px">3</span>
+      </div></div>
+      <div class="cap"><b>OVL-02</b> 동영상 전체 화면(시스템 바 숨김) — 좌회전 중 → 점이 오른쪽으로</div>
+      <table style="margin-top:4mm">
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td class="c"><span class="desc"><span class="num">1</span></span></td><td>펀치홀 회피</td><td>가로에서는 펀치홀이 왼쪽. cutout 쪽 여백을 더 둠</td></tr>
+          <tr><td class="c"><span class="desc"><span class="num">2</span></span></td><td>재배치</td><td>회전 시 좌우 2열 × 5행, 상하 1행 × 7개로 다시 배치. 승객이 정면을 본다고 가정해 좌우 가속은 화면 좌우로</td></tr>
+          <tr><td class="c"><span class="desc"><span class="num">3</span></span></td><td>전체 화면 위</td><td>타 앱이 시스템 바를 숨겨도 오버레이는 그 위에 표시(cutout 모드 ALWAYS)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3 style="margin-top:0">상주 알림 · 타일 상태별 문구</h3>
+      <table>
+        <thead><tr><th style="width:21mm">상태</th><th>알림 제목</th><th>알림 내용</th><th>버튼</th><th style="width:13mm">타일</th></tr></thead>
+        <tbody>
+          <tr><td>대기 (차 없음)</td><td colspan="3" class="muted">알림 없음 — 시스템이 감시만 함</td><td>비활성</td></tr>
+          <tr><td>연결 중</td><td>차와 연결하는 중</td><td>MSAgent-1A2B</td><td>—</td><td>비활성</td></tr>
+          <tr><td>연결됨 · 개입 없음</td><td>차량과 연결됨</td><td>편안한 주행이에요</td><td>앱 열기</td><td>꺼짐</td></tr>
+          <tr><td>Tier 1·2 켜짐</td><td>차량과 연결됨</td><td>송풍 켜짐 · 앰비언트 켜짐</td><td>모션 큐 켜기 · 앱 열기</td><td>꺼짐</td></tr>
+          <tr><td>Tier 3 켜짐</td><td>모션 큐가 켜져 있어요</td><td>송풍 켜짐 · 앰비언트 꺼짐</td><td>모션 큐 끄기 · 앱 열기</td><td><b style="color:#c77700">켜짐</b></td></tr>
+          <tr><td>신호 없음</td><td style="color:#c62828">연결이 끊겼어요</td><td>안전을 위해 점을 껐어요 · 다시 연결 중</td><td>앱 열기</td><td>비활성</td></tr>
+          <tr><td>권한 필요</td><td>점을 표시할 수 없어요</td><td>“다른 앱 위에 표시”를 허용해 주세요</td><td>허용하기</td><td>비활성</td></tr>
+        </tbody>
+      </table>
+      <div class="box">
+        <h4>알림 원칙</h4>
+        <ul class="tight">
+          <li>채널 중요도 <b>낮음</b>: 헤드업·소리·진동 없음. 영상 시청을 끊지 않는다.</li>
+          <li>Tier 1·2의 변화는 알림 문구만 바꾼다. 화면에 새로 뜨는 것은 Tier 3 큐뿐.</li>
+          <li>알림은 사용자가 지울 수 없다(포그라운드 서비스). 하차(브리지 사라짐) 시 자동으로 내려간다.</li>
+          <li>잠금 화면에는 “차량과 연결됨”만 보이고 버튼은 잠금 해제 후.</li>
+        </ul>
+      </div>
+      <div class="box red"><h4>화면 꺼짐 · 잠금</h4>화면이 꺼지거나 잠기면 오버레이를 숨기고 <span class="msg">SCR{on:false, att:false}</span>. 잠금 해제 시 <span class="msg">att:true</span>로 다시 보내고 Tier 3이 켜져 있으면 큐를 다시 그린다.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ APP-06 / APP-07 ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">APP-06 · APP-07</div><div>화면명</div><div>설정 · RF 진단</div><div>요구사항</div><div>APP-F-41~44</div></div>
+  <div class="body">
+    <div class="phones">
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>14:30</span><span class="ic">ᛒ LTE <i></i></span></div>
+          <div class="scr" style="gap:10px">
+            <div class="row" style="justify-content:flex-start; gap:12px"><span style="font-size:22px">←</span><div class="h2">설정</div></div>
+            <div class="sect">모션 큐</div>
+            <div class="card" style="display:grid; gap:14px">
+              <div style="height:92px; border-radius:14px; background:#1a1418; position:relative; overflow:hidden"><div style="position:absolute; inset:10px 30px; border-radius:10px; background:linear-gradient(135deg,#3d2b4f,#8a3e5c 55%,#e8956a)"></div><div class="ovl" data-w="342" data-h="92" data-t="0" data-b="0" data-dx="5" data-dy="0" data-rows="3" data-mini="1"></div></div>
+              <div><div class="row"><b style="font-size:14px">움직임 크기</b><span class="mut">중</span></div><div class="slider" style="margin-top:10px"><i style="width:50%"></i><b style="left:50%"></b></div></div>
+              <div><div class="row"><b style="font-size:14px">진하기</b><span class="mut">0.8 (최대)</span></div><div class="slider" style="margin-top:10px"><i style="width:100%"></i><b style="left:100%"></b></div></div>
+              <div class="row"><b style="font-size:14px">점 색</b><div style="display:flex; gap:8px"><span style="width:26px;height:26px;border-radius:50%;background:#fff;border:2px solid #a50034"></span><span style="width:26px;height:26px;border-radius:50%;background:#ffb547"></span></div></div>
+              <div class="row"><b style="font-size:14px">시작 안내 표시</b><span class="sw on"></span></div>
+            </div>
+            <div class="sect">연결</div>
+            <div class="card" style="display:grid; gap:12px">
+              <div class="row"><b style="font-size:14px">차에 타면 자동 연결</b><span class="sw on"></span></div>
+              <div class="row"><div class="lbl"><b style="font-size:14px">MSAgent-1A2B</b><span>등록된 차량</span></div><span class="tag">해제</span></div>
+            </div>
+            <div class="sect">기타</div>
+            <div class="card" style="display:grid; gap:10px; font-size:14px">
+              <div class="row"><span>멀미 프로필 다시 하기</span><span class="mut">›</span></div>
+              <div class="row"><span>권한 상태</span><span class="ok">모두 허용</span></div>
+              <div class="row"><span>버전 · 기기 ID</span><span class="mut">0.2.0 · 5f3a…</span></div>
+            </div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:330px; top:120px">1</span>
+          <span class="co" style="left:4px; top:250px">2</span>
+          <span class="co" style="left:4px; top:405px">3</span>
+          <span class="co" style="left:4px; top:520px">4</span>
+          <span class="co" style="left:4px; top:690px">5</span>
+        </div></div>
+        <div class="cap"><b>APP-06</b> 설정</div>
+      </div>
+      <div>
+        <div class="pw"><div class="ph">
+          <div class="hole"></div><div class="sb"><span>14:31</span><span class="ic">ᛒ LTE <i></i></span></div>
+          <div class="scr" style="gap:12px">
+            <div class="row" style="justify-content:flex-start; gap:12px"><span style="font-size:22px">←</span><div class="h2">RF 진단</div></div>
+            <div class="card row" style="gap:16px">
+              <svg width="104" height="104" viewBox="0 0 120 120"><circle cx="60" cy="60" r="50" fill="none" stroke="#ece6e1" stroke-width="10"/><circle cx="60" cy="60" r="50" fill="none" stroke="#1f9d68" stroke-width="10" stroke-linecap="round" stroke-dasharray="270 314" transform="rotate(-90 60 60)"/><text x="60" y="62" text-anchor="middle" font-size="22" font-weight="800" fill="#1e1b1d">0.4s</text><text x="60" y="82" text-anchor="middle" font-size="11" fill="#7a7074">마지막 수신</text></svg>
+              <dl class="kvm" style="flex:1">
+                <dt>상태</dt><dd style="color:#1f9d68">연결됨</dd>
+                <dt>브리지</dt><dd>MSAgent-1A2B</dd>
+                <dt>RSSI</dt><dd>−58 dBm</dd>
+                <dt>MTU</dt><dd>247</dd>
+                <dt>HB 보냄/받음</dt><dd>412 / 409</dd>
+                <dt>SCR</dt><dd>on · att</dd>
+              </dl>
+            </div>
+            <div class="row" style="gap:8px"><div class="btnm sm ghost" style="flex:1">다시 연결</div><div class="btnm sm ghost" style="flex:1">로그 지우기</div></div>
+            <div class="logm">
+              <div class="tx">14:30:58 → {"t":"HELLO","role":"app","dev":"5f3a…","v":1}</div>
+              <div class="tx">14:30:58 → {"t":"PROF","mssq":18.5,"sens":1.2}</div>
+              <div class="tx">14:30:58 → {"t":"SCR","on":true,"att":true}</div>
+              <div class="rx">14:30:58 ← {"t":"INT","tier":1,"on":true}</div>
+              <div class="rx">14:30:58 ← {"t":"INT","tier":2,"on":false}</div>
+              <div class="rx">14:30:58 ← {"t":"INT","tier":3,"on":false}</div>
+              <div class="rx">14:31:20 ← {"t":"INT","tier":3,"on":true}</div>
+              <div style="color:#7a7074">14:31:20 · MOT 10 Hz 수신 중 (로그 생략)</div>
+              <div class="tx">14:31:41 → {"t":"OVR","dev":"5f3a…","on":false}</div>
+              <div class="rx">14:31:41 ← {"t":"INT","tier":3,"on":false}</div>
+            </div>
+            <div class="mut" style="font-size:12px">로그는 이 폰에만 저장되고 밖으로 보내지 않아요. 최근 300줄.</div>
+          </div>
+          <div class="gbar"></div>
+          <span class="co" style="left:10px; top:100px">6</span>
+          <span class="co" style="left:330px; top:62px">7</span>
+          <span class="co" style="left:330px; top:400px">8</span>
+        </div></div>
+        <div class="cap"><b>APP-07</b> RF 진단</div>
+      </div>
+    </div>
+    <div class="desc">
+      <table>
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">1</span></td><td>미리보기</td><td>설정을 바꾸면 바로 반영되는 작은 큐 애니메이션</td></tr>
+          <tr><td><span class="num">2</span></td><td>움직임 크기 · 진하기</td><td>약/중/강 = 최대 이동 16/24/32 dp. 진하기 0.3~0.8 (0.8 넘으면 터치 통과가 막혀 상한)</td></tr>
+          <tr><td><span class="num">3</span></td><td>색 · 시작 안내</td><td>흰색(기본) / 앰버. 시작 안내 필 켜기</td></tr>
+          <tr><td><span class="num">4</span></td><td>연결</td><td>자동 연결 끄면 CDM 감시 중지(앱을 열 때만 연결). [해제] → 등록 삭제·본딩 해제 확인 창</td></tr>
+          <tr><td><span class="num">5</span></td><td>기타</td><td>프로필(APP-04), 권한 상태(빠진 것 → 설정 이동), 버전·기기 ID</td></tr>
+          <tr><td><span class="num">6</span></td><td>5초 링</td><td>마지막 수신 후 경과. 0~2.5초 초록, ~5초 주황, 5초 넘으면 빨강 = 안전 OFF</td></tr>
+          <tr><td><span class="num">7</span></td><td>지표</td><td>상태, 브리지, RSSI, MTU(247이 아니면 경고), HB, 마지막 SCR</td></tr>
+          <tr><td><span class="num">8</span></td><td>로그</td><td>→ 보냄 / ← 받음. MOT·HB는 개수만. 개발 빌드에는 [데모 모드] 버튼 추가</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ DSP-01 / HUD-01 ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">DSP-01 · HUD-01</div><div>화면명</div><div>차량 디스플레이 · HUD (웹, v0.2 구현)</div><div>요구사항</div><div>DSP-F-01~07, HUD-F-01~04</div></div>
+  <div style="display:grid; grid-template-columns: 1fr 84mm; gap:5mm">
+    <div>
+      <div style="position:relative; margin-left:7mm">
+        <img src="img/display.png" style="width:100%; display:block; border-radius:2mm">
+        <span class="co" style="position:absolute; left:-6.5mm; top:22%">1</span>
+        <span class="co" style="position:absolute; left:-6.5mm; top:45%">2</span>
+        <span class="co" style="position:absolute; left:-6.5mm; top:66%">3</span>
+        <span class="co" style="position:absolute; left:47%; top:-2%">4</span>
+        <span class="co" style="position:absolute; left:84%; top:-2%">5</span>
+        <span class="co" style="position:absolute; left:91%; top:-2%">6</span>
+        <span class="co" style="position:absolute; left:-6.5mm; top:88%">7</span>
+      </div>
+      <div class="cap"><b>DSP-01</b> 차량 디스플레이 1920 × 720 (데모 모드 실제 화면, Tier 1·2 켜짐)</div>
+      <div style="position:relative; width:62%; margin:3mm 0 0 7mm">
+        <img src="img/hud.png" style="width:100%; display:block; border-radius:2mm">
+        <span class="co" style="position:absolute; left:52%; top:40%">8</span>
+        <span class="co" style="position:absolute; left:88%; top:4%">9</span>
+      </div>
+      <div class="cap" style="text-align:left"><b>HUD-01</b> HUD (데모, 오른쪽 가속 중 — 빛이 오른쪽으로)</div>
+    </div>
+    <div class="desc">
+      <table>
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">1</span></td><td>상황 문구</td><td>평온 / 송풍 대비 / 빛 안내 / 연결 끊김</td></tr>
+          <tr><td><span class="num">2</span></td><td>공용 장치</td><td>송풍·앰비언트 상태 + 스위치 → <span class="msg">OVR airflow-01 / display-01</span></td></tr>
+          <tr><td><span class="num">3</span></td><td>좌석별 폰 큐</td><td>A·B Tier 3 (로컬 백엔드 DBG일 때만)</td></tr>
+          <tr><td><span class="num">4</span></td><td>콘텐츠 + 화면 큐</td><td>Tier 2 동안 가장자리 점, 가속 방향 쪽 가장자리 빛</td></tr>
+          <tr><td><span class="num">5</span></td><td>차량 움직임</td><td>G-미터(현재 · 2초 뒤 예측 점선), ax·ay, 30초 그래프, 송풍 표시</td></tr>
+          <tr><td><span class="num">6</span></td><td>연결 칩</td><td>BLE / 서버 / 데모, 끊기면 빨강 + 안전 OFF 배너</td></tr>
+          <tr><td><span class="num">7</span></td><td>하단 조작</td><td>연결, HUD 창 열기, 화면 ON/OFF(Tier 2 게이트, <b>1.2초 길게 눌러 끄기</b>), RF 로그</td></tr>
+          <tr><td><span class="num">8</span></td><td>HUD 빛</td><td>검은 바탕, 가속 방향 쪽으로 이동하는 빛 덩어리 + 갈매기표. 예측값이 있으면 먼저 움직임</td></tr>
+          <tr><td><span class="num">9</span></td><td>송풍 · 연결</td><td>Tier 1 아이콘, 연결 점(끊기면 깜박임). 설정 패널: 반사(좌우/상하)·밝기·크기, 3.5초 뒤 숨김</td></tr>
+        </tbody>
+      </table>
+      <div class="box"><h4>v0.2 반영</h4>화면 OFF 길게 누르기, 연결 전 '알 수 없음', LEARN 안내, HUD 화면 게이트 연동 → 다음 쪽(DSP-01b).</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ DSP-01b / HUD-01b (v0.2 상태 변형·조작) ═════════ -->
+<section class="page">
+  <div class="meta"><div>화면 ID</div><div class="sid">DSP-01b · HUD-01b</div><div>화면명</div><div>상태 변형 · 조작 보완 (v0.2)</div><div>요구사항</div><div>DSP-F-02·03·07, HUD-F-01, NFR-01</div></div>
+  <div style="display:grid; grid-template-columns: 1fr 84mm; gap:5mm">
+    <div>
+      <div style="position:relative; margin-left:7mm">
+        <img src="img/display_unknown.png" style="width:100%; display:block; border-radius:2mm">
+        <span class="co" style="position:absolute; left:-6.5mm; top:20%">1</span>
+        <span class="co" style="position:absolute; left:-6.5mm; top:42%">2</span>
+        <span class="co" style="position:absolute; left:91%; top:-2%">3</span>
+      </div>
+      <div class="cap"><b>DSP-01b</b> 연결 전 (실제 화면): 공용 장치 '알 수 없음', 스위치 비활성</div>
+
+      <div style="display:grid; grid-template-columns: 1.25fr 1fr; gap:5mm; margin:4mm 0 0 7mm">
+        <div>
+          <div class="dmock" style="position:relative">
+            <div class="dtick"><span class="dtag">LEARN</span>켜진 지 30초 안에 송풍을 껐어요 · 다음부터 덜 켜지고, 5분 동안 다시 켜지지 않아요</div>
+            <div class="dtick"><span class="dtag">LEARN</span>송풍을 껐어요 · 5분 동안 자동으로 다시 켜지지 않아요</div>
+            <div class="dtick"><span class="dtag">LEARN</span>앰비언트를 직접 켰어요 · 다음부터 조금 더 일찍 켜져요</div>
+            <span class="co" style="position:absolute; left:-6.5mm; top:6px">4</span>
+          </div>
+          <div class="cap" style="text-align:left">에이전트 카드 하단 안내 (9초 표시) — 문구 3종</div>
+        </div>
+        <div>
+          <div class="dmock" style="position:relative; display:grid; gap:7px">
+            <div class="dbtn">화면 ON · 길게 눌러 끄기</div>
+            <div class="dbtn hold"><i style="width:50%"></i><span>계속 누르면 꺼져요</span></div>
+            <div class="dbtn">길게 눌러 끄기 <small>(짧게 눌렀을 때 1.5초)</small></div>
+            <div class="doff"><b>화면 꺼짐</b><span>Tier 2 게이트 닫힘 · 눌러서 켜기</span></div>
+            <span class="co" style="position:absolute; right:-4mm; top:6px">5</span>
+          </div>
+          <div class="cap" style="text-align:left">화면 ON/OFF 버튼 상태</div>
+        </div>
+      </div>
+    </div>
+    <div class="desc">
+      <table>
+        <thead><tr><th>#</th><th>요소</th><th>설명 · 동작</th></tr></thead>
+        <tbody>
+          <tr><td><span class="num">1</span></td><td>상황 문구</td><td>연결 전 “컨트롤러에 연결해 주세요”, 끊김 후 “연결이 끊겨 개입을 모두 껐어요”</td></tr>
+          <tr><td><span class="num">2</span></td><td>알 수 없음</td><td>연결 전·신호 없음일 때 공용 장치 상태를 꺼짐으로 단정하지 않음. 점선 칩 + 스위치 비활성, 송풍 표시 “—” (APP-05 ⑦과 같은 규칙)</td></tr>
+          <tr><td><span class="num">3</span></td><td>연결 칩</td><td>연결 안 됨(회색) → 연결 중(주황) → 연결됨(초록) / 신호 없음(빨강)</td></tr>
+          <tr><td><span class="num">4</span></td><td>LEARN 안내</td><td>디스플레이에서 송풍·앰비언트를 직접 조작하면 표시. 켜진 지 30초 안에 끄면 허용도 +1, 끈 기기는 300초 쿨다운, 꺼진 것을 켜면 −1 (<span class="msg">POLICY.md</span>). HUD 버튼은 민감도를 바꾸지 않음. 판단은 컨트롤러, 화면은 설명만</td></tr>
+          <tr><td><span class="num">5</span></td><td>화면 OFF 길게 누르기</td><td>1.2초 누르는 동안 버튼이 빨갛게 참 → <span class="msg">SCR{on:false}</span>(Tier 2 게이트 닫힘). 짧게 누르면 안내만. 꺼진 화면은 한 번 탭으로 켜짐. 키보드 Enter/Space 길게 눌러도 동작 (DSP-F-07)</td></tr>
+          <tr><td class="c">—</td><td>HUD 화면 게이트</td><td>디스플레이 화면을 끄면 HUD 빛·송풍 아이콘도 함께 꺼짐(같은 차량 화면 앱). 연결이 끊기면 페이드 없이 즉시 꺼짐 (NFR-01 ≤ 100 ms)</td></tr>
+          <tr><td class="c">—</td><td>RF 로그</td><td>HB 줄은 빼고 상단 지표(HB↑/↓)에 개수만 — 앱 APP-07과 같은 방식</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<script>
+// 오버레이 점 배치 (OVL 규격: 지름 10dp, 가장자리 18dp, 열 간격 16dp, 좌우 2열 × 8행, 상하 1행 × 5)
+document.querySelectorAll('.ovl').forEach((o) => {
+  const W = +o.dataset.w, H = +o.dataset.h, t = +(o.dataset.t || 0), b = +(o.dataset.b || 0);
+  const l = +(o.dataset.l || 0), r = +(o.dataset.r || 0), dx = +(o.dataset.dx || 0), dy = +(o.dataset.dy || 0);
+  const mini = !!o.dataset.mini, rows = +(o.dataset.rows || 8), land = !!o.dataset.land;
+  const edge = mini ? 8 : 18 + 6, gap = mini ? 12 : 16, size = mini ? 7 : 11;
+  const pts = [];
+  const top = t + edge + (mini ? 0 : 16), bot = H - b - edge - (mini ? 0 : 16);
+  for (let c = 0; c < 2; c++) {
+    for (let i = 0; i < rows; i++) {
+      const y = top + (bot - top) * (i + (c ? 0.5 : 0)) / (rows - (c ? 0 : 1));
+      if (y > bot + 1) continue;
+      pts.push([l + edge + c * gap, y], [W - r - edge - c * gap, y]);
+    }
+  }
+  const n = land ? 7 : 5;
+  if (!mini) for (let i = 1; i <= n; i++) { const x = l + edge + (W - l - r - edge * 2) * i / (n + 1); pts.push([x, t + edge], [x, H - b - edge]); }
+  o.innerHTML = pts.map(([x, y]) => `<i style="left:${x + dx - size / 2}px;top:${y + dy - size / 2}px;width:${size}px;height:${size}px"></i>`).join('');
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MerMaid 화면 UI</title>
+  <link rel="stylesheet" href="css/common.css">
+  <style>
+    body { padding: 40px 16px; }
+    main { max-width: 880px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: 30px; }
+    p.lead { color: var(--muted); margin: 0 0 28px; line-height: 1.6; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 22px; display: grid; gap: 10px; }
+    .card h2 { margin: 0; font-size: 20px; }
+    .card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .card .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .card a { text-decoration: none; }
+    .role { font: 12px var(--mono); color: var(--faint); }
+    ul.notes { color: var(--muted); font-size: 14px; line-height: 1.7; margin-top: 30px; padding-left: 18px; }
+    code { font-family: var(--mono); font-size: 0.92em; color: var(--text); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MerMaid 화면 UI</h1>
+    <p class="lead">차량 디스플레이 · HUD · 탑승객 앱. 프로토콜 v1 (GitHub <code>protocol/</code>, RF 브랜치 <code>feat/rf-p5-p6</code>) 기준.<br>
+      기본은 이 서버의 <code>/ws</code>에 자동 연결, <code>?demo</code>는 백엔드 없이 브라우저 단독, BLE는 각 화면의 버튼으로.</p>
+    <div class="cards">
+      <section class="card"><span class="role">role hud · dev hud-01</span><h2>차량 디스플레이</h2>
+        <p>개입 상태(Tier 1·2·3), 송풍·앰비언트 수동 조작, 화면 모션 큐, 가속도 G-미터. 1920×720 와이드.</p>
+        <div class="links"><a class="btn primary" href="display.html">열기</a><a class="btn" href="display.html?demo">데모</a></div></section>
+      <section class="card"><span class="role">role hud · 디스플레이 연결 공유</span><h2>HUD</h2>
+        <p>검은 바탕에 가속 방향 앰비언트 큐만. 반사(좌우/상하) 모드. 디스플레이 창이 있으면 그 연결을 함께 씀.</p>
+        <div class="links"><a class="btn primary" href="hud.html">열기</a><a class="btn" href="hud.html?demo">데모</a></div></section>
+      <section class="card"><span class="role">role app · dev = 폰 UUID</span><h2>탑승객 앱 (RF)</h2>
+        <p>영상 위 모션 큐, 알림, 수동 조작(OVR), MSSQ-Short 프로필(PROF), RF 링크 상태·로그.</p>
+        <div class="links"><a class="btn primary" href="app.html">열기</a><a class="btn" href="app.html?demo">데모</a></div></section>
+    </div>
+    <ul class="notes">
+      <li>BLE(Web Bluetooth)는 Chrome/Edge에서 <code>https</code> 또는 <code>localhost</code>일 때만 됩니다. 폰에서 PC 주소(<code>http://192.168…</code>)로 열면 BLE는 막히고 서버 연결만 됩니다.</li>
+      <li>HUD 연결(<code>hud-01</code>)은 컨트롤러에 하나만 등록됩니다. 차량 디스플레이와 HUD를 다른 기기에 띄우면 나중에 붙은 쪽만 남으니, 같은 PC에서 디스플레이의 <b>HUD 창 열기</b>를 쓰세요.</li>
+      <li>모르는 메시지(<code>t</code>)는 무시하고, 5초 동안 아무것도 못 받으면 모든 개입 표시를 끕니다.</li>
+    </ul>
+  </main>
+</body>
+</html>
