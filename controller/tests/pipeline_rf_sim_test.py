@@ -5,6 +5,7 @@
 
 - P1, P2, P4, P5, P6은 Pi와 같은 qnx/*.cpp. P3만 LightGBM 없이 고정 확률을 내는 tests/fake_p3.cpp
 - QNX 메시지 전달은 tests/qnxsim, UART는 가상 터미널 (rf_sim_test.py의 Bridge)
+- 폰·HUD는 P4보다 먼저 붙어 SCR·PROF를 보낸다 (차에 타자마자 앱이 붙는 경우). P6이 기억했다가 P4가 뜨면 다시 보내야 한다
 - 확인: P4가 DEV_SYNC 명부로 폰·HUD를 등록, PROF가 P4 → P3 프로필로, 위험이 높으면 TIER_CMD → INT,
   Tier 3 동안 P2의 MOTION이 MOT로, 폰의 OVR가 P4 정책을 거쳐 INT off, 프로필 저장, 실패 0
 """
@@ -73,26 +74,28 @@ def main():
         return procs[name]
 
     try:
-        print("[1] P6 → P5 → P4 → P3 대역 → P2 순서로 띄우기")
+        print("[1] P6 → P5를 띄우고, P4가 뜨기 전에 폰과 HUD가 붙어 화면·프로필을 보냄")
         p6 = start("p6_comm", "--dev", br.path)
         check(p6.wait_log("p6_comm up"), "p6_comm up")
         p5 = start("p5_devmgr", "--state", state)
-        p4 = start("p4_policy", "--config", os.path.join(REPO, "controller", "config"), "--state", state,
-                   "--log", log, "--rf", "--once")
-        p3 = start("fake_p3", "--p", "0.95,0.95,0.95,0.95,0.95", "--once")
-        check(p3.wait_log("fake_p3 up", 0, 10), "fake P3 up (P4 found)")
-        p2 = start("p2_feat", "--motion", "--once")
-        time.sleep(1.0)
-
-        print("[2] 폰과 HUD가 붙고 화면·프로필을 보냄")
+        time.sleep(0.5)
         br.hello(1, "app", PHONE)
         br.hello(2, "hud", "hud-01")
         time.sleep(0.5)
         br.send('1|{"t":"SCR","on":true,"att":true}')
         br.send('2|{"t":"SCR","on":true,"att":false}')
         br.send('1|{"t":"PROF","mssq":30.0,"sens":1.6}')
-        time.sleep(1.0)
         check(p5.wait_log(r"hello conn 1 .*phone-a", 0, 3), "P5 registers phone-a")
+        check(p6.wait_log(r"cannot send to P4", 0, 3), "P6 cannot reach P4 yet")
+
+        print("[2] P4 → P3 대역 → P2를 띄움. P6이 기억한 SCR·PROF를 1초 안에 다시 보냄")
+        p4 = start("p4_policy", "--config", os.path.join(REPO, "controller", "config"), "--state", state,
+                   "--log", log, "--rf", "--once")
+        p3 = start("fake_p3", "--p", "0.95,0.95,0.95,0.95,0.95", "--once")
+        check(p3.wait_log("fake_p3 up", 0, 10), "fake P3 up (P4 found)")
+        p2 = start("p2_feat", "--motion", "--once")
+        check(p6.wait_log(r"P4 reachable again", 0, 4), "P6 reaches P4 and resends screen and profile")
+        time.sleep(0.5)
 
         print(f"[3] P1이 {SECONDS}초 주행을 {SPEED}배속으로 재생")
         m = br.mark()

@@ -37,6 +37,8 @@ hud="--hud"; [ -n "$rf4" ] && hud=""
 $B/p4_policy --config controller/config --state "$out/state" --log "$out/cycles.csv" $hud $rf4 $phones --once \
     > "$out/p4.out" 2> "$out/p4.err" &
 p4=$!
+# RF: P6이 기억해 둔 SCR·PROF를 P4에 다시 보낼 때까지 (못 보냈으면 1초마다). 빠른 재생은 첫 주기가 바로 오므로
+[ -n "$rf4" ] && sleep 2
 $B/p3_infer --models "$MODELS" --vehicle-type "$vt" --once > "$out/p3.out" 2> "$out/p3.err" &
 p3=$!
 $B/p2_feat --once $rf2 > "$out/p2.out" 2> "$out/p2.err" &

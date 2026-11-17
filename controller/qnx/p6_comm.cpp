@@ -210,15 +210,24 @@ int main(int argc, char** argv) {
             p5_warned = true;
             return false;
         };
-        auto send_p4 = [&](const void* m, size_t n, const std::string& what) {
-            log_line("P4", what);
-            if (no_p4) return;
+        auto p4_result = [&](bool ok) {
+            std::lock_guard<std::mutex> lk(sh.core_mu);
+            core.p4_result(ok);
+        };
+        // quiet: 기억해 둔 SCR·PROF를 다시 보낼 때 (10초마다라 성공하면 로그를 남기지 않는다)
+        auto send_p4 = [&](const void* m, size_t n, const std::string& what, bool quiet = false) {
+            if (!quiet || verbose) log_line("P4", what);
+            if (no_p4) return true;
             if (p4.send(m, n)) {
+                if (p4_warned) log_line("..", "P4 reachable again (" + what + ")");
                 p4_warned = false;
-                return;
+                p4_result(true);
+                return true;
             }
-            if (!p4_warned) log_line("ERR", "cannot send to P4 (" + what + ")");
+            if (!p4_warned) log_line("ERR", "cannot send to P4 (" + what + "), will resend screen and profile");
             p4_warned = true;
+            p4_result(false);
+            return false;
         };
         auto run = [&](const comm::Actions& acts) {
             for (const auto& a : acts) {
@@ -243,6 +252,19 @@ int main(int argc, char** argv) {
                     char buf[160];
                     std::snprintf(buf, sizeof buf, "PROF %s mssq=%.2f sens=%.3f", p->phone, p->mssq, p->sens);
                     send_p4(p, sizeof *p, buf);
+                } else if (const auto* r = std::get_if<comm::CtxResend>(&a)) {
+                    bool ok = true;
+                    if (r->has_scr)
+                        ok = send_p4(&r->scr, sizeof r->scr,
+                                     std::string("resend SCR ") + r->scr.sender + " on=" + std::to_string(r->scr.on) +
+                                         " att=" + std::to_string(r->scr.att),
+                                     true);
+                    if (ok && r->has_prof) {
+                        char buf[160];
+                        std::snprintf(buf, sizeof buf, "resend PROF %s mssq=%.2f sens=%.3f", r->prof.phone, r->prof.mssq,
+                                      r->prof.sens);
+                        send_p4(&r->prof, sizeof r->prof, buf, true);
+                    }
                 }
             }
         };

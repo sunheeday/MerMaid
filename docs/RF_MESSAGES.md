@@ -75,6 +75,7 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | `id\|{HB}` | P6에서 끝 |
 | HELLO 전의 SCR·OVR·PROF, 모르는 `t`, 깨진 JSON | 로그 후 버림 |
 | 1초마다 | `ALL\|{"t":"HB","seq":N}`. P5에 아직 못 알린 등록이 있으면 DEV_HELLO를 다시 보냄 (P5가 늦게 떴을 때) |
+| SCR·PROF 재전송 | 연결마다 마지막 SCR·PROF를 기억한다 (기기는 SCR를 바뀔 때만, PROF를 연결 직후 한 번만 보내므로). P4에 보내기가 실패하면 성공할 때까지 1초마다, 아니면 10초마다 CTX_SCREEN·CTX_PROF를 다시 보냄 (P4가 늦게 떴거나 조용히 재시작했을 때). OVR는 동작이라 다시 보내지 않는다. P4는 같은 값이면 바뀌는 것이 없다 (`on_profile`은 MSSQ가 같으면 현재 민감도 유지, 저장도 안 함) |
 | HELLO 없이 5초 | `id\|DROP` 한 번 |
 | 등록된 기기가 5초 동안 아무것도 안 보냄 | `id\|DROP` + DEV_BYE (PROTOCOL.md §3. 브리지가 재시작되면 DISCONNECT가 안 오므로 이것으로 정리). `--no-link-timeout`으로 끔 (HB를 안 보내는 nRF Connect 시험용) |
 | OUT_INT / OUT_PROF / OUT_DROP | 해당 줄 |
@@ -130,7 +131,7 @@ cmake -S controller -B build && cmake --build build && ctest --test-dir build --
 알려진 한계: P5나 P6 하나만 다시 시작하면 서로의 상태(등록, 스트림)가 어긋난다. 둘 다 다시 시작하고 기기를 다시 연결한다.
 
 알려진 문제 (2026-11-18 Pi 시험에서 발견, `controller/bringup/README.md` RF 절):
-- P4가 없을 때 온 SCR·PROF는 P6이 버린다. 기기는 다시 보내지 않으므로 P4는 화면 꺼짐으로 보고 Tier 2·3을 막는다. 제안: P6이 연결마다 마지막 SCR·PROF를 기억해 P4에 다시 닿으면 재전송
+- ~~P4가 없을 때 온 SCR·PROF를 P6이 버림~~ → 2026-11-18 고침: P6이 연결마다 기억했다가 다시 보낸다 (§3 표의 "SCR·PROF 재전송")
 - 맥 Chrome(Web Bluetooth) ↔ ESP32: 연결은 되지만 페어링이 끝나지 않아 HELLO가 안 나감. 원인 미확인
 
 ## 7. P4·P2 연결 (2026-11-18 완료, 김승희)

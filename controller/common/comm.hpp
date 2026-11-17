@@ -6,6 +6,7 @@
 //   UartLine        → '\n'을 붙여 UART에 쓴다
 //   DevHello/DevBye → P5에 MsgSend
 //   Ctx*            → P4에 MsgSend
+//   CtxResend       → 기억해 둔 SCR·PROF를 P4에 다시 MsgSend (조용히). 결과는 p4_result()로 알려 준다
 // 시각은 인자로 받는다 (테스트에서 시간을 마음대로 돌리려고). 단위 ms, 단조 시계.
 //
 // 스레드: 이 클래스는 잠그지 않는다. 프로세스에서 뮤텍스를 잡고 on_*()를 부르고,
@@ -26,6 +27,7 @@ constexpr int64_t kHelloTimeoutMs = 5000;  // CONNECT 후 이 안에 HELLO가 �
 constexpr int64_t kHbPeriodMs = 1000;      // ALL HB 주기
 constexpr int64_t kLinkTimeoutMs = 5000;   // 등록된 기기에서 이만큼 아무것도 안 오면 끊긴 것으로 봄 (PROTOCOL.md §3)
 constexpr size_t kMaxFrame = 512;          // UART 한 줄 최대 (PROTOCOL.md §1)
+constexpr int64_t kCtxRefreshMs = 10000;   // 연결마다 마지막 SCR·PROF를 P4에 다시 보내는 주기 (P4가 조용히 재시작한 경우)
 
 // UART 바이트 → 줄. '\n'까지 이어 붙이고 '\r'은 버린다. kMaxFrame보다 긴 줄은 다음 '\n'까지 버린다.
 class LineAssembler {
@@ -47,7 +49,14 @@ bool parse_frame(std::string_view line, Frame& out);
 struct UartLine {
     std::string text;  // '\n' 없이
 };
-using Action = std::variant<UartLine, msg::DevHello, msg::DevBye, msg::CtxScreen, msg::CtxOvr, msg::CtxProf>;
+// 기기는 SCR를 바뀔 때만, PROF를 연결 직후 한 번만 보낸다. P4가 그때 없었거나 뒤에 다시 떴으면 P4는 모른다.
+// 그래서 연결마다 마지막 값을 기억했다가 다시 보낸다 (OVR는 동작이라 다시 보내지 않는다).
+struct CtxResend {
+    bool has_scr = false, has_prof = false;
+    msg::CtxScreen scr;
+    msg::CtxProf prof;
+};
+using Action = std::variant<UartLine, msg::DevHello, msg::DevBye, msg::CtxScreen, msg::CtxOvr, msg::CtxProf, CtxResend>;
 using Actions = std::vector<Action>;
 
 class Comm {
@@ -62,6 +71,9 @@ public:
     Actions on_tick(int64_t now_ms);                                // 자주 (예: 100 ms마다)
     // DEV_HELLO를 P5에 보내는 데 성공하면 부른다. 못 보낸 HELLO는 1초마다 다시 나온다 (P5가 늦게 뜬 경우)
     void hello_delivered(uint8_t conn, const char* dev);
+    // Ctx*·CtxResend를 P4에 보낸 결과. 실패하면 HB 박자(1초)마다 CtxResend가 나오고, 성공하면 kCtxRefreshMs마다로 돌아간다
+    void p4_result(bool ok) { p4_down_ = !ok; }
+    bool p4_down() const { return p4_down_; }
 
     // ---- 받기 스레드 (P5, P2가 보낸 메시지) ----
     Actions on_out_int(const msg::OutInt& m);
@@ -82,6 +94,9 @@ private:
         bool delivered = false;   // DEV_HELLO가 P5에 전달됨
         msg::Role role = msg::Role::App;
         std::string dev;          // 연결 → 기기 ID (Ctx*의 sender를 채우려고)
+        bool has_scr = false, has_prof = false;  // 마지막으로 받은 SCR·PROF (P4 재전송용)
+        msg::CtxScreen scr;
+        msg::CtxProf prof;
     };
 
     static bool valid(int conn) { return conn >= 0 && conn < msg::kMaxConn; }
@@ -93,6 +108,8 @@ private:
 
     Conn conn_[msg::kMaxConn];
     int64_t next_hb_ms_ = -1;
+    int64_t next_refresh_ms_ = -1;
+    bool p4_down_ = false;
     uint64_t hb_seq_ = 0;
     LogFn log_;
     int64_t link_timeout_ms_;

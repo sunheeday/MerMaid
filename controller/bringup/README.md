@@ -148,11 +148,25 @@ ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && mkdir -p out/rf && (python3 contro
 | 등록 (P5 명부 → P4) | 폰 1, HUD 1 | 폰 1, HUD 1 | – |
 | 명령 → 기기 | Tier 1 ON → 폰·HUD에 INT | 같음 | – |
 
-**발견한 문제 (미해결):** 기기가 P4보다 먼저 SCR·PROF를 보내면 P6이 P4에 못 보내고 버린다 (`ERR cannot send to P4`).
-기기는 SCR를 바뀔 때만, PROF를 연결 직후 한 번만 보내므로 그 뒤로 P4는 화면이 꺼진 것으로 보고 Tier 2·3를 막고,
-P3에는 기본 프로필이 간다. 위 실행에서 Tier 1만 켜지고 MOT가 0인 이유다 (RF 없이 같은 trip은 Tier 1·2·3 모두 켜짐).
-P4가 주행마다 새로 뜨는 지금 스크립트에서는 매 주행 생긴다. 고칠 방향: P6이 연결마다 마지막 SCR·PROF를 기억했다가
-P4에 다시 닿으면 재전송 (P5에 HELLO를 재전송하는 것과 같은 방식).
+**발견한 문제 → 고침 (2026-11-18):** 기기가 P4보다 먼저 SCR·PROF를 보내면 P6이 P4에 못 보내고 버렸다 (`ERR cannot send to P4`).
+기기는 SCR를 바뀔 때만, PROF를 연결 직후 한 번만 보내므로 P4는 화면이 꺼진 것으로 보고 Tier 2·3를 막고,
+P3에는 기본 프로필이 갔다. 위 표에서 Tier 1만 켜지고 MOT가 0인 이유다.
+P6이 연결마다 마지막 SCR·PROF를 기억해 P4에 못 보냈으면 1초마다, 아니면 10초마다 다시 보내도록 고쳤다
+(`docs/RF_MESSAGES.md` §3). `run_pipeline.sh`는 `RF=1`일 때 P4를 띄운 뒤 2초 기다린다
+(빠른 재생은 첫 주기가 바로 와서, 기다리지 않으면 재전송 전 66주기를 화면 없음·기본 프로필로 처리한다. 실시간은 첫 주기가 10초 뒤라 상관없다).
+
+고친 뒤 빠른 재생 (같은 명령, 결과 `out/rf3`):
+
+| 항목 | 결과 |
+|---|---|
+| P6 | 기동 때 `cannot send to P4` 1번 → P4가 뜬 뒤 1초 안에 `P4 reachable again (resend SCR phone-0 …)` |
+| 등록 · 실패 | 폰 1, HUD 1 · DEV_SYNC 0, TIER_CMD 0, MOTION 0 실패 |
+| 명령 | Tier 1 ON 240초, Tier 2 ON 1,080초, Tier 3 ON 1,340초 → 폰·HUD에 INT |
+| MOT | 폰 5,245줄, HUD 7,845줄 (Tier 2·3이 켜진 동안) |
+| 10초 주기 지연 | 중앙값 0.56 ms, 최대 0.99 ms |
+
+RF 없는 AC-02(`out/fast`)와 비교하면 Tier 1·2는 같은 시각이고 Tier 3만 1,180초 → 1,340초다. 재전송 탓이 아니다:
+AC-02의 phone-0은 EV 경험이 `0.0`인데 RF로 들어온 폰은 PROF에 EV가 없어 NaN이라 P3 확률이 170초부터 달라진다 (T-17).
 
 **맥 Chrome ↔ ESP32 (미해결, 2026-11-18):** HUD 웹(`hud/web/app.html`)에서 `MSAgent-…`가 보이고 BLE 연결과 MTU 247까지는 되지만
 페어링(암호화)이 끝나지 않는다. ESP32 로그에 `security: encrypted=1`이 없고, 페이지는 `startNotifications`에서 기다리느라 HELLO를 보내지 않는다.

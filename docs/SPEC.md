@@ -53,7 +53,7 @@ PRD §10.2 작업 순서 기준입니다. 트랙 B(브리지, HUD, 앱)는 이 �
 | S7 | ESP32 BLE 브리지 | [미구현] | – |
 | S8 | HUD | [미구현] | – |
 | S9 | Android 앱 | [미구현] | – |
-| S10 | P5, P6 + 실제 연결 (AC-06/07/08) | [부분] P5·P6·ESP32 브리지 구현 (PR #4), P4·P2 연결 (2026-11-18). Mac `pipeline_rf_sim`, Pi P1~P6 + 브리지 흉내(가상 터미널) 통과. 실제 ESP32·폰·HUD 연결 미확인 | `docs/RF_MESSAGES.md`, `controller/bringup/README.md` |
+| S10 | P5, P6 + 실제 연결 (AC-06/07/08) | [부분] P5·P6·ESP32 브리지 구현 (PR #4), P4·P2 연결 (2026-11-18), P6 SCR·PROF 재전송 (P4가 늦게 떠도 화면·프로필 전달). Mac `pipeline_rf_sim`, Pi P1~P6 + 브리지 흉내(가상 터미널) 통과, Tier 1·2·3 모두 켜짐. 실제 ESP32·폰·HUD 연결 미확인 | `docs/RF_MESSAGES.md`, `controller/bringup/README.md` |
 | S11 | 데모 시나리오 | [미구현] | – |
 
 P1은 **재생 모드만** 있습니다 (`data/trips/*.bin`을 100 Hz로 흘림). 실제 IMU(MPU-6050)를 읽는 LIVE 모드는 없습니다 ([6장](#6-빈칸-목록-다음-작업자용) T-11).
