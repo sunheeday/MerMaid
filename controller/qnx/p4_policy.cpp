@@ -1,20 +1,29 @@
-// P4 정책: P3의 RISK로 기기별 ON/OFF를 정하고 로그와 명령을 남긴다. BLE(P5)가 붙기 전까지
-// 기기 등록, 화면 상태, 프로필은 명령행으로 준다 (화면 켜짐, 주의 있음으로 고정).
-//   p4_policy --config DIR --state DIR [--log FILE] [--hud] [--phone ID:MSSQ:SENS0[:EV]]... [--once] [--prio P]
-// 허용도와 프로필은 --state 아래에 바뀔 때마다 저장하고(store.hpp), 시작할 때 읽어 온다.
+// P4 정책: P3의 RISK로 기기별 ON/OFF를 정하고 로그와 명령을 남긴다.
+//   p4_policy --config DIR --state DIR [--log FILE] [--rf] [--hud] [--phone ID:MSSQ:SENS0[:EV]]... [--once] [--prio P]
+// 기기 등록은 두 길이다 (함께 써도 된다).
+//   --rf    P5(mermaid_p5)에 DEV_SYNC를 보내 그 회신 명부로 폰·HUD를 등록/해제하고, 명령을 TIER_CMD로 P5에 보낸다.
+//           P6의 CTX_SCREEN / CTX_OVR / CTX_PROF를 받아 Policy에 넘긴다 (docs/RF_MESSAGES.md).
+//           DEV_SYNC는 RISK마다(10초)와 RIDE_START에 보낸다. 주행이 없으면 보내지 않으므로 30초 뒤 P5가 안전 OFF 한다.
+//           RF로 온 폰의 EV 경험은 M06 PROF에 없어서 NaN으로 P3에 준다.
+//   --phone / --hud  명령행으로 고정 등록 (화면 켜짐, 주의 있음). BLE 없이 AC-02를 돌릴 때.
+// 허용도와 프로필은 --state 아래에 바뀔 때마다 저장하고(store.hpp), 시작할 때나 기기가 등록될 때 읽어 온다.
 // 명령은 stdout에 "CMD <t> <device> <tier> <0|1>", 주기 로그는 --log CSV.
-// 정책 시각은 주행 시각(RISK의 t)을 쓴다.
+// 정책 시각은 주행 시각(RISK의 t)을 쓴다. OVR는 마지막 RISK의 t로 처리한다.
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "ipc.hpp"
 #include "messages.hpp"
+#include "rf_messages.hpp"
 #include "json_min.hpp"
 #include "store.hpp"
 
@@ -25,6 +34,9 @@ union Inbox {
     msg::RiskMsg r;
     msg::RideEdge e;
     msg::ProfilesReq q;
+    msg::CtxScreen scr;
+    msg::CtxOvr ovr;
+    msg::CtxProf prof;
     _pulse pulse;
     Inbox() {}
 };
@@ -50,9 +62,11 @@ static PhoneArg parse_phone(const std::string& s) {
     return p;
 }
 
+static std::string id_of(const char* s) { return std::string(s, strnlen(s, msg::kIdLen)); }
+
 int main(int argc, char** argv) {
     std::string cfg_dir, state_dir, log_path;
-    bool hud = false, once = false;
+    bool hud = false, once = false, rf = false;
     int prio = 15;
     std::vector<PhoneArg> phones;
     try {
@@ -65,6 +79,7 @@ int main(int argc, char** argv) {
             else if (a == "--phone" && more) phones.push_back(parse_phone(argv[++i]));
             else if (a == "--prio" && more) prio = std::atoi(argv[++i]);
             else if (a == "--hud") hud = true;
+            else if (a == "--rf") rf = true;
             else if (a == "--once") once = true;
             else throw std::runtime_error("unknown argument " + a);
         }
@@ -96,12 +111,91 @@ int main(int argc, char** argv) {
         }
         st.save_dirty(pol);
 
+        // ---- RF: P5 명부로 등록, 명령은 TIER_CMD로 ----
+        std::unique_ptr<ipc::Client> p5;
+        if (rf) p5 = std::make_unique<ipc::Client>(msg::kNameP5, 200 * 1000000ULL);
+        std::set<std::string> rf_phones;  // P5 명부의 폰 (명령행 폰 제외)
+        bool rf_hud = false;
+        uint64_t sync_seq = 0, sync_fail = 0, cmd_fail = 0;
+        auto restore_device = [&](const std::string& d) {
+            int n;
+            if (st.load_tolerance(d, n)) pol.restore_tolerance(d, n);
+        };
+        auto is_cli_phone = [&](const std::string& id) {
+            return std::any_of(phones.begin(), phones.end(), [&](const PhoneArg& p) { return p.id == id; });
+        };
+        auto sync = [&]() {
+            if (!p5) return;
+            msg::DevSync s;
+            s.seq = sync_seq++;
+            msg::DevSyncReply rep;
+            if (!p5->send(&s, sizeof s, &rep, sizeof rep)) {
+                if (sync_fail++ == 0) std::fprintf(stderr, "p4: cannot reach %s (DEV_SYNC)\n", msg::kNameP5);
+                return;
+            }
+            std::set<std::string> now;
+            bool now_hud = false;
+            for (uint32_t i = 0; i < rep.n && i < static_cast<uint32_t>(msg::kMaxConn); i++) {
+                const std::string id = id_of(rep.e[i].dev);
+                if (rep.e[i].role == msg::Role::Hud) now_hud = true;
+                else if (store::safe_name(id) && !is_cli_phone(id)) now.insert(id);
+            }
+            if (now_hud != rf_hud && !hud) {
+                pol.set_hud_connected(now_hud);
+                if (now_hud) {
+                    restore_device(proto::kDeviceAirflow);
+                    restore_device(proto::kDeviceDisplay);
+                }
+                std::printf("REG hud %s\n", now_hud ? "on" : "off");
+            }
+            rf_hud = now_hud;
+            for (const auto& id : rf_phones)
+                if (!now.count(id)) {
+                    pol.remove_phone(id);
+                    std::printf("REG phone %s off\n", id.c_str());
+                }
+            std::set<std::string> kept;
+            for (const auto& id : now) {
+                if (!rf_phones.count(id)) {
+                    if (phones.size() + kept.size() >= static_cast<size_t>(msg::kMaxPhones)) {
+                        std::fprintf(stderr, "p4: more than %d phones, ignoring %s\n", msg::kMaxPhones, id.c_str());
+                        continue;
+                    }
+                    pol.add_phone(id);
+                    Profile saved;
+                    if (!pol.profile(id) && st.load_profile(id, saved)) pol.restore_profile(id, saved);
+                    restore_device(id);
+                    std::printf("REG phone %s on\n", id.c_str());
+                }
+                kept.insert(id);
+            }
+            rf_phones = kept;
+            std::fflush(stdout);
+        };
+        auto emit = [&](const std::vector<Command>& cs, double t) {
+            for (const Command& c : cs) {
+                std::printf("CMD %.1f %s %d %d\n", t, c.device.c_str(), c.tier, c.on ? 1 : 0);
+                if (p5) {
+                    msg::TierCmd m;
+                    msg::copy_id(m.device, c.device);
+                    m.tier = static_cast<uint8_t>(c.tier);
+                    m.on = c.on ? 1 : 0;
+                    if (!p5->send(&m, sizeof m)) cmd_fail++;
+                }
+            }
+            std::fflush(stdout);
+            return cs.size();
+        };
+        double last_t = 0;
+
         FILE* log = nullptr;
         if (!log_path.empty()) {
             log = std::fopen(log_path.c_str(), "w");
             if (!log) throw std::runtime_error("cannot open " + log_path);
             std::fprintf(log, "seq,t,latency_ms,infer_ms,phone,p2,p3,p4,p5,p6");
+            if (rf) devices = {proto::kDeviceAirflow, proto::kDeviceDisplay};  // 폰은 행마다 바뀌어 own_phone 열로
             for (const auto& d : devices) std::fprintf(log, ",%s", d.c_str());
+            if (rf) std::fprintf(log, ",own_phone");
             std::fprintf(log, "\n");
         }
 
@@ -124,6 +218,16 @@ int main(int argc, char** argv) {
                     e.ev = ev[p.id];
                     e.tol = pol.tol(p.id);
                 }
+                for (const auto& id : rf_phones) {  // PROF가 아직 없으면 PRD 기본 프로필
+                    if (rep.n >= static_cast<uint32_t>(msg::kMaxPhones)) break;
+                    msg::ProfileEntry& e = rep.e[rep.n++];
+                    msg::copy_id(e.id, id);
+                    const Profile* pf = pol.profile(id);
+                    e.mssq = pf ? pf->mssq : proto::kDefaultMssq;
+                    e.sens = pf ? pf->sens : proto::kDefaultSens;
+                    e.ev = std::nan("");
+                    e.tol = pol.tol(id);
+                }
                 ipc::Server::reply(rcvid, &rep, sizeof rep);
             } else if (type == msg::RISK) {
                 const msg::RiskMsg r = in.r;
@@ -132,12 +236,10 @@ int main(int argc, char** argv) {
                 expect = r.seq + 1;
                 std::map<std::string, Risk> risk;
                 for (uint32_t i = 0; i < r.n && i < static_cast<uint32_t>(msg::kMaxPhones); i++)
-                    risk[std::string(r.id[i], strnlen(r.id[i], msg::kIdLen))] = r.p[i];
-                for (const Command& c : pol.on_risk(r.t, risk)) {
-                    std::printf("CMD %.1f %s %d %d\n", r.t, c.device.c_str(), c.tier, c.on ? 1 : 0);
-                    cmds++;
-                }
-                std::fflush(stdout);
+                    risk[id_of(r.id[i])] = r.p[i];
+                last_t = r.t;
+                cmds += emit(pol.on_risk(r.t, risk), r.t);
+                sync();  // 다음 주기의 명부 (P3는 이 회신 뒤에 PROFILES를 묻는다)
                 saves += static_cast<uint64_t>(st.save_dirty(pol));
                 const double lat = (ipc::now_ns() - r.t_emit_ns) / 1e6;
                 lat_ms.push_back(lat);
@@ -148,6 +250,7 @@ int main(int argc, char** argv) {
                                      r.t_infer_ns / 1e6, r.id[i]);
                         for (double p : r.p[i]) std::fprintf(log, ",%.17g", p);
                         for (const auto& d : devices) std::fprintf(log, ",%d", pol.is_on(d) ? 1 : 0);
+                        if (rf) std::fprintf(log, ",%d", pol.is_on(id_of(r.id[i])) ? 1 : 0);
                         std::fprintf(log, "\n");
                     }
                     std::fflush(log);
@@ -155,6 +258,7 @@ int main(int argc, char** argv) {
             } else if (type == msg::RIDE_START || type == msg::RIDE_END) {
                 ipc::Server::reply(rcvid);
                 if (type == msg::RIDE_START) {
+                    sync();
                     pol.on_ride_start();
                     cycles = gaps = expect = cmds = 0;
                     lat_ms.clear();
@@ -164,16 +268,35 @@ int main(int argc, char** argv) {
                     std::vector<double> s = lat_ms;
                     std::sort(s.begin(), s.end());
                     std::printf("{\"proc\": \"p4\", \"cycles\": %llu, \"risk_gaps\": %llu, \"commands\": %llu, "
-                                "\"files_saved\": %llu, \"latency_ms_median\": %.3f, \"latency_ms_max\": %.3f}\n",
+                                "\"files_saved\": %llu, \"latency_ms_median\": %.3f, \"latency_ms_max\": %.3f",
                                 (unsigned long long)cycles, (unsigned long long)gaps, (unsigned long long)cmds,
                                 (unsigned long long)saves, s.empty() ? 0.0 : s[s.size() / 2],
                                 s.empty() ? 0.0 : s.back());
+                    if (rf)
+                        std::printf(", \"rf_phones\": %zu, \"rf_hud\": %d, \"sync_fail\": %llu, \"tier_cmd_fail\": %llu",
+                                    rf_phones.size(), rf_hud ? 1 : 0, (unsigned long long)sync_fail,
+                                    (unsigned long long)cmd_fail);
+                    std::printf("}\n");
                     std::fflush(stdout);
                     if (once) {
                         if (log) std::fclose(log);
                         return gaps ? 1 : 0;
                     }
                 }
+            } else if (type == msg::CTX_SCREEN) {
+                const msg::CtxScreen m = in.scr;
+                ipc::Server::reply(rcvid);
+                pol.on_screen(id_of(m.sender), m.on != 0, m.att != 0);
+            } else if (type == msg::CTX_OVR) {
+                const msg::CtxOvr m = in.ovr;
+                ipc::Server::reply(rcvid);
+                cmds += emit(pol.on_override(last_t, id_of(m.sender), id_of(m.device), m.on != 0), last_t);
+                saves += static_cast<uint64_t>(st.save_dirty(pol));
+            } else if (type == msg::CTX_PROF) {
+                const msg::CtxProf m = in.prof;
+                ipc::Server::reply(rcvid);
+                pol.on_profile(id_of(m.phone), m.mssq, m.sens);
+                saves += static_cast<uint64_t>(st.save_dirty(pol));
             } else {
                 ipc::Server::error(rcvid, EINVAL);
             }

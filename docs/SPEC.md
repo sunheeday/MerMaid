@@ -53,7 +53,7 @@ PRD §10.2 작업 순서 기준입니다. 트랙 B(브리지, HUD, 앱)는 이 �
 | S7 | ESP32 BLE 브리지 | [미구현] | – |
 | S8 | HUD | [미구현] | – |
 | S9 | Android 앱 | [미구현] | – |
-| S10 | P5, P6 + 실제 연결 (AC-06/07/08) | [미구현] | – |
+| S10 | P5, P6 + 실제 연결 (AC-06/07/08) | [부분] P5·P6·ESP32 브리지 구현 (PR #4), P4·P2 연결 (2026-11-18). Mac `pipeline_rf_sim`, Pi P1~P6 + 브리지 흉내(가상 터미널) 통과. 실제 ESP32·폰·HUD 연결 미확인 | `docs/RF_MESSAGES.md`, `controller/bringup/README.md` |
 | S11 | 데모 시나리오 | [미구현] | – |
 
 P1은 **재생 모드만** 있습니다 (`data/trips/*.bin`을 100 Hz로 흘림). 실제 IMU(MPU-6050)를 읽는 LIVE 모드는 없습니다 ([6장](#6-빈칸-목록-다음-작업자용) T-11).
@@ -330,13 +330,13 @@ tol_d      = 0.4 · tanh(n_d / 6),  n_d ≥ −4
 |---|---|---|
 | hold (1주기 = 10초) | Tier 1 / 2 / 3 = 1 / 6 / 12 주기 | |
 | off_margin, off_hold | 0.10, 6주기 | 켰다 꺼졌다 방지 |
-| 게이트 | Tier 1 없음, Tier 2 HUD 화면 ON, Tier 3 폰 화면 ON + 응시 | 게이트 입력은 P6 전이라 현재 `--hud` 플래그로만 |
+| 게이트 | Tier 1 없음, Tier 2 HUD 화면 ON, Tier 3 폰 화면 ON + 응시 | `--rf`면 P6의 CTX_SCREEN(M03), 아니면 `--hud`/`--phone`으로 켜짐 고정 |
 | n_d | 켜진 뒤 30초 안에 승객이 끄면 +1, 꺼진 것을 직접 켜면 −1, 최소 −4 | n = −4면 tol −0.23, n = 6이면 +0.30, 최대 +0.4 |
 | 쿨다운 | 승객이 끈 기기는 300초 동안 다시 켜지지 않음 | |
 | 비활성화 | 한 주행에서 빠른 끄기 3번이면 그 주행 동안 꺼 둠 | C12 [TODO] |
 | 민감도 갱신 | 승객이 꺼진 큐나 앰비언트를 켜면 sens × 1.15 (최대 2.0). 송풍 켜기, HUD 버튼, 끄기는 안 바꿈 | |
 | 주행 끝 | sens ← sens + 0.1 × (sens_mssq − sens) | 설문값 쪽으로 10% 복귀 |
-| 안전 타임아웃 | 30 s (`safety_timeout_s`) | P5가 쓸 값. P5 미구현 |
+| 안전 타임아웃 | 30 s (`safety_timeout_s`) | P5가 DEV_SYNC 없이 30초면 모두 OFF (`p5_devmgr`) |
 
 민감도는 모델 입력 G10(sensitivity)으로만 들어가고 Oman 피처의 K는 바꾸지 않습니다.
 
@@ -532,7 +532,7 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | T-24 | 일부 해결 | k5·k6 모델이 거의 빈 모델 | 2026-11-12: 강한 규제(잎 7, 잎당 최소 1,000행, L2 10, 학습률 0.03) + 최소 100회. 트리 4, 1개 → 100, 102개. k5 PR-AUC 0.186 → 0.203 (Oman만 0.202), k6 0.062 → 0.055 (Oman만 0.086). 문턱 0.53 / 0.51 / 0.59. 남은 문제: oman_score × 민감도 하나가 모델보다 나음 (PR k4 0.549 대 0.499, k5 0.275 대 0.203). 트리가 K·민감도 곱을 드문 k에서 못 배움 | 2026-11-16 시험(피처 v2, `ml/out/runs/v001` 보관): oman_personal 추가 + mssq·sensitivity를 모델 입력에서 끔. 시뮬레이터 PR은 k3~k6 0.867 / 0.520 / 0.241 / 0.075로 올랐지만, BATON PR k4 0.52 → 0.48, k5 0.39 → 0.26, TU Delft PR k3 0.80 → 0.76, AC-04 기본 프로필 0.481 → 0.471(기준 0.472 미달)로 실차에서는 나빠져 **채택 안 함**. 시뮬레이터 라벨이 Oman × 민감도라 곱 피처는 그 안에서만 이득. 함께 확인한 것: mssq에 제약이 없으면 트리가 사람 ID로 씀(기본 프로필이 실제 프로필보다 P(≥4) 0.508 대 0.492). k6 모델은 라벨에 효과 없는 seatback_angle 8.9%, soc 4.3%, ev_experience 3.8%에 기댐 | 개인 K 보정(승객 피드백)이 효과가 더 큼 (TU Delft 0.74). 라벨에 효과 없는 피처 정리(soc, 배터리 출력, ev_experience) 시험 | `ml/train/common.py`, `ml/verify/tudelft_replay.py` |
 | T-17 | 높음 | 프로필의 EV 경험, 차량 유형 (C16) | 저장 안 함 | 프로필 파일과 PROFILES 메시지에 ev, vtype 추가 (P6에서 받음) | `store.cpp`, `messages.hpp` |
 | T-18 | 높음 | 빠른 끄기 3번 규칙 (C12) | 빠른 끄기만 셈 | 팀 확인 후 필요하면 `policy.cpp`와 AC-09 테스트 수정 | `policy.cpp`, `POLICY.md` |
-| T-19 | 높음 | P5 기기 관리, P6 통신, HEARTBEAT, MOT (100 ms) | [미구현] | PRD §P5, §P6, §5 그대로 구현 (S10) | `controller/qnx/` |
+| T-19 | 높음 | P5 기기 관리, P6 통신, HEARTBEAT, MOT (100 ms) | [미구현] | **부분 해결 (2026-11-18)**: P5·P6 구현(PR #4), P4가 DEV_SYNC로 등록·CTX_* 처리·TIER_CMD, P2가 MOTION 100 ms. 남은 것: 실제 ESP32·폰·HUD로 Pi 시험, `RF_MESSAGES.md` §5 확정 | `controller/qnx/`, `docs/RF_MESSAGES.md` |
 | T-20 | 높음 | 실데이터 검증 | 합성 데이터 성능만 있음 | 실차 주행 + 1분 MISC 기록 수집, 이 문서의 TU Delft 적합·[추측] 값을 다시 맞춤 | 전체 |
 
 ## 7. 파일 위치와 재현

@@ -115,7 +115,8 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 ```
 p6_comm                         # UART3. 손으로 시험할 때는 --no-link-timeout, P4가 아직 CTX_*를 못 받으면 --no-p4
 p5_devmgr --state <P4와 같은 state 폴더>  # --safety-s는 시험에서만 줄임 (기본 30)
-rf_stub --cycle --motion        # 진짜 P4·P2 대신. 진짜 P4를 띄울 때는 rf_stub을 띄우지 않는다 (같은 이름)
+rf_stub --cycle --motion        # 진짜 P4·P2 대신 (P5·P6만 시험할 때). 진짜 P4를 띄울 때는 rf_stub을 띄우지 않는다 (같은 이름)
+# 진짜 P1~P4와 함께: RF=1 controller/qnx/run_pipeline.sh ... (controller/bringup/README.md)
 ```
 
 Pi 없이 시험 (Mac, Linux): `ctest`의 `rf_sim`이 위 세 프로세스를 실제로 함께 띄운다. QNX 메시지 전달은
@@ -128,9 +129,17 @@ cmake -S controller -B build && cmake --build build && ctest --test-dir build --
 
 알려진 한계: P5나 P6 하나만 다시 시작하면 서로의 상태(등록, 스트림)가 어긋난다. 둘 다 다시 시작하고 기기를 다시 연결한다.
 
-## 7. 김승희 쪽에서 바꿀 곳 (통합 단계)
+알려진 문제 (2026-11-18 Pi 시험에서 발견, `controller/bringup/README.md` RF 절):
+- P4가 없을 때 온 SCR·PROF는 P6이 버린다. 기기는 다시 보내지 않으므로 P4는 화면 꺼짐으로 보고 Tier 2·3을 막는다. 제안: P6이 연결마다 마지막 SCR·PROF를 기억해 P4에 다시 닿으면 재전송
+- 맥 Chrome(Web Bluetooth) ↔ ESP32: 연결은 되지만 페어링이 끝나지 않아 HELLO가 안 나감. 원인 미확인
 
-- P4: `--phone`/`--hud` 대신 DEV_SYNC 회신으로 등록 (`add_phone`, `remove_phone`, `set_hud_connected`)
-- P4: CTX_SCREEN·CTX_OVR·CTX_PROF를 받아 `on_screen`·`on_override`·`on_profile`에 넘기기
-- P4: `CMD` stdout과 함께 TIER_CMD를 P5로 보내기
-- P2: MOTION을 100 ms마다 P6로 보내기
+## 7. P4·P2 연결 (2026-11-18 완료, 김승희)
+
+- P4 `--rf`: RISK마다(10초)와 RIDE_START에 DEV_SYNC를 보내고, 회신 명부로 `add_phone` / `remove_phone` / `set_hud_connected`.
+  새로 붙은 폰은 저장된 프로필과 허용도를 읽어 온다. PROF가 아직 없으면 P3에 기본 프로필(MSSQ 12.90, 민감도 1.0), EV는 NaN
+- P4: CTX_SCREEN·CTX_OVR·CTX_PROF를 받자마자 회신하고 `on_screen`·`on_override`·`on_profile`에 넘긴다. OVR는 마지막 RISK의 주행 시각으로 처리
+- P4: `CMD` stdout과 함께 TIER_CMD를 P5로 (제한 200 ms, 실패는 `tier_cmd_fail`로 센다)
+- P2 `--motion`: 10샘플(100 ms)마다 MOTION {t, Wf 가중 ax·ay, pred_ax_10s, pred_ay_10s}를 P6로 (제한 20 ms)
+- `--rf`/`--motion` 없이 띄우면 예전처럼 `--phone`/`--hud` 고정 등록 (AC-02 비교용)
+- 주행이 없으면 DEV_SYNC도 없으므로 30초 뒤 P5가 안전 OFF 한다. 다음 주행의 RIDE_START에서 풀린다
+- 시험: Mac `ctest`의 `pipeline_rf_sim` (P1·P2·P4·P5·P6 진짜 코드 + `tests/fake_p3.cpp`), Pi는 `controller/bringup/README.md`의 RF 절

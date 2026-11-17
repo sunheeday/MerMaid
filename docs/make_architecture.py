@@ -68,25 +68,25 @@ def overview():
     s.append(f'<rect x="40" y="350" width="290" height="22" rx="6" class="store"/>')
     s.append(f'<text x="52" y="365" class="s">결과: ml/out/runs/vNNN (덮어쓰지 않음) · runs.py use</text>')
     # Pi
-    s.append(box(420, 40, 450, 340, "lane-pi", "Raspberry Pi 4 · QNX 8", [("C++ 프로세스 P1~P4 구현 · P5·P6 미구현", "s")], title_cls="lt", dy0=30, step=17, pad=20))
+    s.append(box(420, 40, 450, 340, "lane-pi", "Raspberry Pi 4 · QNX 8", [("C++ 프로세스 P1~P6 구현 (P5·P6 PR #4)", "s")], title_cls="lt", dy0=30, step=17, pad=20))
     procs = [("P1", "수집 100 Hz"), ("P2", "피처 10초"), ("P3", "추론"), ("P4", "정책")]
     for i, (a, b) in enumerate(procs):
         x = 440 + i * 105
         s.append(box(x, 110, 92, 70, "proc-pi", a, [b], title_cls="big", anchor="middle", dy0=32, step=18, rx=8))
         if i < 3:
             s.append(arrow(f"M{x + 92},145 L{x + 104},145", "a-pi", "pi"))
-    # P5, P6 (미구현)
-    s.append(box(650, 220, 92, 70, "proc-todo", "P5", ["기기 관리"], title_cls="big-todo", line_cls="s", anchor="middle", dy0=32, step=18, rx=8))
-    s.append(box(755, 220, 92, 70, "proc-todo", "P6", ["통신 UART"], title_cls="big-todo", line_cls="s", anchor="middle", dy0=32, step=18, rx=8))
-    s.append(arrow("M801,180 L801,200 L696,200 L696,219", "a-todo", "todo"))
-    s.append(arrow("M742,255 L754,255", "a-todo", "todo"))
+    # P5, P6
+    s.append(box(650, 220, 92, 70, "proc-pi", "P5", ["기기 관리"], title_cls="big", line_cls="s", anchor="middle", dy0=32, step=18, rx=8))
+    s.append(box(755, 220, 92, 70, "proc-pi", "P6", ["통신 UART"], title_cls="big", line_cls="s", anchor="middle", dy0=32, step=18, rx=8))
+    s.append(arrow("M801,180 L801,200 L696,200 L696,219", "a-pi", "pi"))
+    s.append(arrow("M742,255 L754,255", "a-pi", "pi"))
     s.append(box(495, 220, 145, 70, "store", "P4가 쓰는 것", ["state/ 허용도·프로필", "cycles.csv · CMD 로그"], title_cls="t2", step=16, rx=8))
     s.append(box(495, 305, 352, 60, "store", "Pi에 내려받은 파일 (~/mermaid/repo)", ["runs/CURRENT · runs/v007/models · controller/config"], title_cls="t2", step=17, rx=8))
     # 차량 입력
     s.append(box(420, 400, 450, 58, "proc-todo", "차량 입력: MPU-6050 IMU (I²C) · CAN 신호", ["실시간 읽기 미구현. 지금은 P1이 trip.bin을 100 Hz로 재생"], title_cls="t2", step=17, rx=10))
     s.append(arrow("M462,400 L462,181", "a-todo", "todo"))
     # 기기
-    s.append(box(940, 40, 240, 340, "lane-todo", "브리지 · 기기", [("미구현 (S7~S10)", "s")], title_cls="lt", dy0=30, step=17, pad=20))
+    s.append(box(940, 40, 240, 340, "lane-todo", "브리지 · 기기", [("구현 (PR #4·#5) · Pi와 실연결 시험 전", "s")], title_cls="lt", dy0=30, step=17, pad=20))
     s.append(box(960, 110, 200, 62, "proc-todo", "ESP32-S3 브리지", ["UART ↔ BLE GATT", "동시 연결 최대 9"], title_cls="t2", step=16, rx=8))
     s.append(box(960, 230, 95, 80, "proc-todo", "Android 앱", ["Tier 3 큐", "MSSQ 설문"], title_cls="t2", step=16, rx=8, pad=10))
     s.append(box(1065, 230, 95, 80, "proc-todo", "HUD (웹)", ["Tier 1 송풍", "Tier 2 화면"], title_cls="t2", step=16, rx=8, pad=10))
@@ -216,7 +216,7 @@ def runtime():
     # 설정 (위)
     s.append(box(250, 40, 440, 70, "cfgbox", "protocol/*.json → gen_cpp.py → protocol_gen.hpp", ["컴파일 때 고정: 32열 Row, 77개 순서, Oman · Wf · 이벤트 · 휴식 상수, 기본 프로필"], title_cls="tm", step=18, rx=8))
     s.append(box(770, 40, 180, 70, "cfgbox", "runs/v007/models/", ["model_2~6.txt (CURRENT)", "models.json (sha256)"], title_cls="tm", step=16, rx=8))
-    s.append(box(1030, 40, 200, 70, "cfgbox", "controller/config/", ["policy.json · thresholds.json", "인자 --phone, --hud (P6 대신)"], title_cls="tm", step=16, rx=8))
+    s.append(box(1030, 40, 200, 70, "cfgbox", "controller/config/", ["policy.json · thresholds.json", "--rf (P5 명부) 또는 --phone, --hud"], title_cls="tm", step=16, rx=8))
     for x in (340, 600):
         s.append(arrow(f"M{x},110 L{x},199", "a-cfg", "cfg"))
     s.append(arrow("M860,110 L860,199", "a-cfg", "cfg"))
@@ -255,19 +255,20 @@ def runtime():
         s.append(f'<rect x="{x}" y="{y}" width="225" height="42" rx="6" class="outpill"/>')
         s.append(f'<text x="{x + 8}" y="{y + 17}" class="m">{E(a)}</text>')
         s.append(f'<text x="{x + 8}" y="{y + 33}" class="s">{E(b)}</text>')
-    # 미구현 줄
+    # RF 줄: P5·P6 구현, 브리지·폰·HUD는 Pi와 실연결 시험 전
     s.append(box(20, 590, 150, 90, "proc-todo", "폰 ×최대 9 · HUD", ["BLE Central", "INT · MOT · HB 받음", "HELLO · SCR · OVR · PROF"], title_cls="t2", dy0=22, step=16, rx=10, pad=10))
     s.append(box(250, 590, 180, 90, "proc-todo", "ESP32-S3 브리지", ["BLE GATT ↔ UART", "광고 MSAgent-xxxx", "MTU 247 · 512 B 분할"], title_cls="t2", dy0=22, step=16, rx=10))
-    s.append(box(510, 590, 180, 90, "proc-todo", "P6 통신", ["/dev/ser1 · 115,200 8N1", "<id>|JSON 한 줄", "SCR · OVR · PROF → P4"], title_cls="t2", dy0=22, step=16, rx=10))
-    s.append(box(770, 590, 180, 90, "proc-todo", "P5 기기 관리", ["HELLO 등록 → P3 · P4", "TIER 명령 → 그 기기만", "30 s 무응답이면 전부 OFF"], title_cls="t2", dy0=22, step=16, rx=10))
-    for a, b, t in [(770, 690, "INT"), (510, 430, "<id>|JSON"), (250, 170, "BLE")]:
-        s.append(f'<path d="M{a - 1},635 L{b + 1},635" class="a-todo" marker-end="url(#ah-todo)" marker-start="url(#ah-todo)"/>')
+    s.append(box(510, 590, 180, 90, "proc-pi", "P6 comm", ["/dev/ser3 (UART3) 115,200", "<id>|JSON ↔ QNX 메시지", "HB 1 s · HELLO 5 s · MOT"], title_cls="tm", dy0=22, step=16, rx=10))
+    s.append(box(770, 590, 180, 90, "proc-pi", "P5 devmgr", ["HELLO → 명부 (연결 0~8)", "TIER_CMD → 그 기기에 INT", "DEV_SYNC 30 s 없으면 OFF"], title_cls="tm", dy0=22, step=16, rx=10))
+    for a, b, t, cls in [(770, 690, "INT · STREAM", "pi"), (510, 430, "<id>|JSON", "todo"), (250, 170, "BLE", "todo")]:
+        s.append(f'<path d="M{a - 1},635 L{b + 1},635" class="a-{cls}" marker-end="url(#ah-{cls})" marker-start="url(#ah-{cls})"/>')
         s.append(label((a + b) / 2, 627, t, "lb"))
-    s.append(arrow("M1220,320 L1238,320 L1238,635 L951,635", "a-todo", "todo"))
-    s.append(label(1100, 627, "TIER(d, on) · HEARTBEAT", "lb"))
-    s.append(arrow("M660,360 L660,589", "a-todo", "todo"))
-    s.append(label(668, 470, "MOT ax·ay 10 Hz", "lb", "start"))
-    s.append(label(20, 570, "아래 줄은 미구현 (S7~S10). 지금은 P4 실행 인자 --phone, --hud가 P5·P6 대신 폰 등록과 게이트를 줍니다.", "cap", "start"))
+    s.append(arrow("M1220,320 L1238,320 L1238,635 L951,635", "a-pi", "pi"))
+    s.append(label(1100, 627, "TIER_CMD · DEV_SYNC 10 s", "lb"))
+    s.append(arrow("M660,360 L660,589", "a-pi", "pi"))
+    s.append(label(650, 470, "MOTION 10 Hz (--motion)", "lb", "end"))
+    s.append(label(650, 484, "Wf ax·ay + pred_ax·ay_10s", "lb2", "end"))
+    s.append(label(20, 570, "아래 줄: P5·P6은 구현 (P4 --rf, P2 --motion으로 연결). ESP32·폰·HUD도 구현됐지만 Pi와 실제로 붙인 시험은 아직 (Pi에서는 가상 터미널 브리지 흉내로 확인).", "cap", "start"))
     return f'<svg viewBox="0 0 1250 700" role="img" aria-label="Pi 런타임">{"".join(s)}</svg>'
 
 
@@ -683,7 +684,7 @@ RUNTIME_ROWS = [
      "186,518개 보냄 · 실패 0 · 늦음 중앙값 953 µs, 최대 993 µs"],
     ["P2 feat<br>" + OK, C("p2_feat [--once] [--prio 30]"),
      ul("← P1 SAMPLE, RIDE_*"),
-     ul("→ P3 VEH {seq, t, t_emit_ns, x[71]} 10초마다, 제한 1 s", "→ P3 RIDE_* 그대로", "→ P6 MOT 10 Hz " + NO),
+     ul("→ P3 VEH {seq, t, t_emit_ns, x[71]} 10초마다, 제한 1 s", "→ P3 RIDE_* 그대로", "→ P6 MOTION 10 Hz (" + C("--motion") + ")"),
      "stdout JSON: received, seq_gaps, veh_sent, veh_fail, push_us_max",
      "받음 186,518 · 빠짐 0 · VEH 186 · 받기 처리 최대 2.5 ms"],
     ["P3 infer<br>" + OK, C("p3_infer --models DIR [--vehicle-type 0|1] [--once] [--prio 20]"),
@@ -692,17 +693,17 @@ RUNTIME_ROWS = [
      "stdout JSON: cycles, profiles_fail, risk_fail, infer_ms_max",
      "주기 186 · 실패 0 · 추론 최대 0.55 ms (폰 2대)"],
     ["P4 policy<br>" + OK, C("p4_policy --config DIR --state DIR [--log FILE] [--hud] [--phone ID:MSSQ:SENS0[:EV]]... [--once] [--prio 15]"),
-     ul("← P3 PROFILES, RISK", "← P2→P3→P4 RIDE_*", C("policy.json") + ", " + C("thresholds.json") + " (feature_order_version이 빌드와 다르면 시작 안 함)", C("state/") + " (시작 때 읽음)", "SCR · OVR · PROF ← P6 " + NO),
-     ul("→ P3 ProfilesReply", "stdout " + C("CMD <t> <기기> <tier> <on>"), "→ P5 TIER(d, on) " + NO),
+     ul("← P3 PROFILES, RISK", "← P2→P3→P4 RIDE_*", C("policy.json") + ", " + C("thresholds.json") + " (feature_order_version이 빌드와 다르면 시작 안 함)", C("state/") + " (시작 때 읽음)", "CTX_SCREEN · CTX_OVR · CTX_PROF ← P6 (" + C("--rf") + ")"),
+     ul("→ P3 ProfilesReply", "stdout " + C("CMD <t> <기기> <tier> <on>"), "→ P5 DEV_SYNC (회신 = 명부), TIER_CMD (" + C("--rf") + ")"),
      ul(C("cycles.csv") + ": seq, t, latency_ms, infer_ms, phone, p2..p6, 기기마다 0/1", C("state/tolerance/<기기>.json") + " {n}", C("state/profiles/<ID>.json") + " {mssq, sens_mssq, sens}"),
      "지연 중앙값 0.57 ms · 최대 2.03 ms · RISK 빠짐 0"],
-    ["P5 기기 관리<br>" + NO, "–",
-     ul("← P6 HELLO / BYE", "← P4 TIER(d, on), HEARTBEAT"),
-     ul("→ P3 · P4 등록 알림", "→ P6 INT(tier, on), 30 s 무응답이면 전부 OFF"),
+    ["P5 기기 관리<br>" + OK, C("p5_devmgr --state DIR [--safety-s 30]"),
+     ul("← P6 DEV_HELLO / DEV_BYE", "← P4 DEV_SYNC, TIER_CMD"),
+     ul("→ P4 DevSyncReply (명부)", "→ P6 OUT_INT, OUT_STREAM, OUT_PROF, OUT_DROP", "DEV_SYNC 30 s 없으면 전부 OFF"),
      "로그 (safe off)", "–"],
-    ["P6 통신<br>" + NO, "/dev/ser1 115,200 8N1",
-     ul("UART " + C("<id>|CONNECT · DISCONNECT · JSON"), "← P2 MOT, ← P5 명령"),
-     ul("→ P5 HELLO, BYE", "→ P4 SCR, OVR, PROF", "UART " + C("<id>|JSON") + ", MOT 100 ms, " + C("ALL|HB") + " 1 s, " + C("<id>|DROP")),
+    ["P6 통신<br>" + OK, C("p6_comm [--dev /dev/ser3]") + " 115,200 8N1",
+     ul("UART " + C("<id>|CONNECT · DISCONNECT · JSON"), "← P2 MOTION, ← P5 OUT_*"),
+     ul("→ P5 DEV_HELLO, DEV_BYE", "→ P4 CTX_SCREEN, CTX_OVR, CTX_PROF", "UART " + C("<id>|JSON") + ", MOT 100 ms, " + C("ALL|HB") + " 1 s, " + C("<id>|DROP")),
      "–", "–"],
 ]
 
@@ -740,7 +741,7 @@ PARAM_ROWS = [
     ["model_2~6.txt", "S4 → " + C("v007/models/"), "P3, AC-01, 실차 비교, TU Delft 재생"],
     ["base_th 0.53 / 0.51 / 0.59", "S4 재생 → " + C("v007/thresholds.json") + " → " + C("runs.py use"), "P4, AC-02, TU Delft Tier 리드"],
     ["hold, off, 쿨다운, 허용도 식, 민감도 규칙", C("policy.json") + " (PRD 설계)", "P4, 학습 재생"],
-    ["n[d] → tol = 0.4·tanh(n/6)", "P4 (승객 수동 조작, P6 이후)", "P4 문턱. P3 G8 입력은 꺼짐"],
+    ["n[d] → tol = 0.4·tanh(n/6)", "P4 (승객 수동 조작, P6의 CTX_OVR)", "P4 문턱. P3 G8 입력은 꺼짐"],
     ["화면 ON · 응시 (SCR)", "앱, HUD " + NO + " · 지금은 " + C("--hud"), "P4 게이트"],
 ]
 
@@ -766,7 +767,7 @@ def page():
 <nav>
 <a href="#overview">1. 전체 그림</a><a href="#offline">2. 시뮬레이션 → 학습</a><a href="#validation">3. 검증 · 보정</a><a href="#stages">4. 단계별 입출력</a>
 <a href="#versions">5. 결과 버전</a><a href="#upgrades">6. 고도화 이력</a><a href="#formulas">7. 식과 근거</a><a href="#runtime">8. Pi 런타임</a>
-<a href="#cycle">9. 10초 한 주기</a><a href="#vector">10. 77개 벡터</a><a href="#formats">11. 파일 형식</a><a href="#params">12. 파라미터 흐름</a><a href="#todo">13. 미구현 연결</a><a href="#refs">참고 문헌</a>
+<a href="#cycle">9. 10초 한 주기</a><a href="#vector">10. 77개 벡터</a><a href="#formats">11. 파일 형식</a><a href="#params">12. 파라미터 흐름</a><a href="#todo">13. 기기 연결</a><a href="#refs">참고 문헌</a>
 </nav>
 <div class="legend">
 <span><i class="sw" style="background:var(--pc-soft);border-color:var(--pc)"></i>개발 PC 처리</span>
@@ -778,7 +779,7 @@ def page():
 </div>
 
 <h2 id="overview">1. 전체 그림</h2>
-<p>개발 PC가 시뮬레이터로 학습 데이터를 만들고, 모델 5개와 문턱을 학습한 뒤, 실차 주행과 실제 사람 MISC로 검증합니다. 결과는 모두 버전 폴더에 쌓이고, 배포할 버전 하나를 골라 Pi에 복사합니다. 실행 중에는 Pi 혼자 10초마다 위험도를 계산해 기기를 켜고 끕니다. 브리지와 폰, HUD는 아직 없고, 그 자리는 P4 실행 인자와 로그 파일이 대신합니다.</p>
+<p>개발 PC가 시뮬레이터로 학습 데이터를 만들고, 모델 5개와 문턱을 학습한 뒤, 실차 주행과 실제 사람 MISC로 검증합니다. 결과는 모두 버전 폴더에 쌓이고, 배포할 버전 하나를 골라 Pi에 복사합니다. 실행 중에는 Pi 혼자 10초마다 위험도를 계산해 기기를 켜고 끕니다. 폰과 HUD는 ESP32 브리지를 거쳐 P6·P5로 붙습니다 (P4 <code>--rf</code>). 이 경로는 구현과 시뮬레이션 시험까지 끝났고, 실제 기기를 Pi에 붙인 시험은 아직입니다. BLE 없이 돌릴 때는 P4 실행 인자 <code>--phone</code>, <code>--hud</code>가 등록을 대신합니다.</p>
 <div class="fig">{overview()}</div>
 
 <h2 id="offline">2. 시뮬레이션 → 학습 → 배포</h2>
@@ -834,10 +835,10 @@ def page():
 <h2 id="params">12. 파라미터가 어디서 나와 어디로 가는가</h2>
 {table(["파라미터", "만드는 곳", "쓰는 곳"], PARAM_ROWS)}
 
-<h2 id="todo">13. 미구현 연결 (PRD §5 기준)</h2>
-<p>S7~S10에서 만들 부분입니다. 메시지 스키마와 UUID는 <code>protocol/</code>에 이미 있습니다.</p>
+<h2 id="todo">13. 기기 연결 (PRD §5 기준)</h2>
+<p>P5·P6, ESP32 브리지, 앱, HUD 모두 구현돼 있습니다 (PR #4, #5). P4·P2와 연결했고, Mac 시험(<code>pipeline_rf_sim</code>)과 Pi의 가상 터미널 브리지 흉내로 확인했습니다. 실제 ESP32·폰·HUD를 Pi에 붙인 시험은 아직입니다. Pi 안의 메시지는 <code>docs/RF_MESSAGES.md</code>, 기기 메시지와 UUID는 <code>protocol/</code>이 기준입니다.</p>
 {table(["구간", "물리 · 형식", "내용"], [
-    ["Pi P6 ↔ ESP32-S3", "mini UART " + C("/dev/ser1") + " GPIO14/15, 115,200 bps 8N1", "한 줄 " + C("<id>|<payload>\\n") + ", id = 연결 0~8 또는 ALL, 최대 512 B. 제어 토큰 CONNECT, DISCONNECT (ESP32 → Pi), DROP (Pi → ESP32)"],
+    ["Pi P6 ↔ ESP32-S3", "UART3 " + C("/dev/ser3") + " GPIO4/5 (핀 7·29), 115,200 bps 8N1. 구현, Pi 실연결 시험 전", "한 줄 " + C("<id>|<payload>\\n") + ", id = 연결 0~8 또는 ALL, 최대 512 B. 제어 토큰 CONNECT, DISCONNECT (ESP32 → Pi), DROP (Pi → ESP32)"],
     ["ESP32-S3 ↔ 폰 · HUD", "BLE GATT, ESP32 = Peripheral, 광고 " + C("MSAgent-xxxx"), "서비스 " + C("cd820001-…") + ", RX " + C("cd820002") + " (Write Without Response), TX " + C("cd820003") + " (Notify), MTU 247, 최대 9 연결, LE Secure Connections"],
     ["M00 HELLO", "기기 → 컨트롤러", "role (app / hud), dev (영구 ID), v. 연결 후 5초 안에 없으면 DROP"],
     ["M01 INT", "컨트롤러 → 기기", "tier, on"],

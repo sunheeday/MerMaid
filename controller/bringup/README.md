@@ -126,3 +126,35 @@ scp qnxuser@192.168.2.2:mermaid/repo/out/fast/cycles.csv ml/verify/out/pipeline/
 - P1은 늘 약 1 ms 늦게 깨어납니다. QNX 타이머가 1 ms 틱 단위로 올림하기 때문입니다. 늦는 양이 일정해서 샘플 간격은 10 ms로 유지됩니다.
 - `pidin`에서 P2~P4가 P1과 같은 우선순위 40으로 보이는 것은 정상입니다. QNX에서는 메시지를 받는 서버가 보낸 쪽의 우선순위를 물려받습니다.
 - 처음 실행에서는 P2가 P3에 연결되기 전에 이름을 붙였습니다. 그래서 P3가 모델을 읽는 동안 P1의 RIDE_START가 5 ms 시간 초과로 빠졌습니다. 이름을 붙이는 순서를 바꿔 고쳤습니다.
+
+## P1→P6 RF 연결 (2026-11-18, 모델 v007, ESP32 없이 가상 터미널)
+
+P4 `--rf`(P5 명부로 등록, TIER_CMD), P2 `--motion`(P6에 MOTION 100 ms)으로 P5·P6까지 잇는다 (`docs/RF_MESSAGES.md` §7).
+ESP32·폰 대신 `controller/tests/bridge_pty.py`가 가상 터미널 master(`/dev/ptyp0`)에서 폰 1대와 HUD를 흉내 내고, P6은 slave(`/dev/ttyp0`)를 연다.
+
+```bash
+ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && mkdir -p out/rf && (python3 controller/tests/bridge_pty.py --master /dev/ptyp0 --log out/rf/bridge.log --phone phone-0:25.81:1.479 --hud > out/rf/bridge.out 2>&1 &) ; sleep 1; RF=1 SER=/dev/ttyp0 RF_WAIT=3 controller/qnx/run_pipeline.sh ml/out/runs/v006/trips/ride_0001.bin out/rf 0 1; slay -s TERM python3'
+```
+
+실제 ESP32는 UART3를 켠 뒤(`sudo sh controller/bringup/uart3.sh`, 재부팅마다) `RF=1`만 주면 된다 (`SER` 기본 `/dev/ser3`).
+
+| 항목 | 빠른 재생 | 실시간 (1,865초) | 기준 |
+|---|---|---|---|
+| 샘플 (P1 → P2) | 186,518, 빠짐 0 | 186,518, 빠짐 0, 전송 실패 0 | 손실 없음 |
+| P1 깨어남 지연 | – | 중앙값 949 µs, 최대 981 µs | 10 ms 간격 유지 |
+| 10초 주기 (P2 → P4 끝) | 중앙값 0.53 ms, 최대 0.80 ms | 중앙값 0.50 ms, 최대 0.88 ms | RF 없을 때(0.57 / 2.03 ms)와 같은 수준 |
+| P2 MOTION → P6 | 18,651, 실패 0 | 18,651, 실패 0 | – |
+| P4 DEV_SYNC / TIER_CMD 실패 | 0 / 0 | 0 / 0 | 0 |
+| 등록 (P5 명부 → P4) | 폰 1, HUD 1 | 폰 1, HUD 1 | – |
+| 명령 → 기기 | Tier 1 ON → 폰·HUD에 INT | 같음 | – |
+
+**발견한 문제 (미해결):** 기기가 P4보다 먼저 SCR·PROF를 보내면 P6이 P4에 못 보내고 버린다 (`ERR cannot send to P4`).
+기기는 SCR를 바뀔 때만, PROF를 연결 직후 한 번만 보내므로 그 뒤로 P4는 화면이 꺼진 것으로 보고 Tier 2·3를 막고,
+P3에는 기본 프로필이 간다. 위 실행에서 Tier 1만 켜지고 MOT가 0인 이유다 (RF 없이 같은 trip은 Tier 1·2·3 모두 켜짐).
+P4가 주행마다 새로 뜨는 지금 스크립트에서는 매 주행 생긴다. 고칠 방향: P6이 연결마다 마지막 SCR·PROF를 기억했다가
+P4에 다시 닿으면 재전송 (P5에 HELLO를 재전송하는 것과 같은 방식).
+
+**맥 Chrome ↔ ESP32 (미해결, 2026-11-18):** HUD 웹(`hud/web/app.html`)에서 `MSAgent-…`가 보이고 BLE 연결과 MTU 247까지는 되지만
+페어링(암호화)이 끝나지 않는다. ESP32 로그에 `security: encrypted=1`이 없고, 페이지는 `startNotifications`에서 기다리느라 HELLO를 보내지 않는다.
+확인할 것: 맥의 블루투스 페어링 요청 창, 맥 Bluetooth 설정의 옛 `MSAgent` 삭제, ESP32에 저장된 본딩 정리.
+ESP32 전원과 로그는 맥 USB(보드의 "UART" 포트, CP2102 → `/dev/cu.usbserial-*`)로 받는다. Pi 핀 3가닥(7·29·9)은 데이터선이라 전원이 없다.

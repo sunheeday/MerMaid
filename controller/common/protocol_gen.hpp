@@ -237,6 +237,7 @@ constexpr double kSensMin = 0.5;
 constexpr double kSensMax = 2.0;
 constexpr double kDefaultMssq = 12.9;
 constexpr double kDefaultSens = 1.0;
+constexpr int kMotPeriodMs = 100;  // P2 -> P6 MOTION 주기
 constexpr const char* kDeviceAirflow = "airflow-01";
 constexpr const char* kDeviceDisplay = "display-01";
 constexpr const char* kDeviceHud = "hud-01";
