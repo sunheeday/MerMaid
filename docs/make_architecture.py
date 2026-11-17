@@ -226,7 +226,7 @@ def runtime():
     P = [
         (250, "P1 acq · 우선순위 40", ["trip.bin → 100 Hz", "clock_nanosleep 절대 시각", "주행 안 seq 번호", "RIDE_START / RIDE_END", "LIVE 모드 미구현"]),
         (510, "P2 feat · 30", ["Wf · Oman · 이벤트 · 휴식", "창 10 s / 1 m / 5 m / 누적", "1,000샘플마다 71개", "seq 빠짐 셈", "RIDE_START에 초기화"]),
-        (770, "P3 infer · 20", ["lib_lightgbm 4.6.0", "모델 5개 (로드 126 ms)", "폰마다 77개 행 (최대 9)", "단조 보정 min(p_k, p_k−1)", "--vehicle-type"]),
+        (770, "P3 infer · 20", ["lib_lightgbm 4.6.0", "모델 5개 (로드 95 ms)", "폰마다 77개 행 (최대 9)", "단조 보정 min(p_k, p_k−1)", "--vehicle-type"]),
         (1030, "P4 policy · 15", ["Tier 1·2·3 문턱 + tol", "hold · off · 쿨다운 · 비활성", "민감도 ×1.15 · 끝에 10% 복귀", "바뀐 상태만 원자 저장", "시각 = 주행 시각"]),
     ]
     for x, t, ls in P:
@@ -291,7 +291,7 @@ def cycle():
     for j in range(3):
         s.append(arrow(f"M110,{84 + j * 9} L327,{84 + j * 9}", "a-pi", "pi"))
     s.append(label(220, 74, "SAMPLE × 1,000 (10 ms마다, seq 0, 1, 2 …)", "lb"))
-    s.append(label(220, 125, "깨어남 늦음 중앙값 973 µs (QNX 1 ms 틱) · P2 회신 최대 2.6 ms", "lb2"))
+    s.append(label(220, 125, "깨어남 늦음 중앙값 953 µs (QNX 1 ms 틱) · P2 회신 최대 2.5 ms", "lb2"))
     s.append('<rect x="324" y="140" width="12" height="44" class="act"/>')
     s.append(label(345, 160, "1,000번째 샘플: 창 갱신", "lb", "start"))
     s.append(label(345, 174, "→ 차량 피처 71개 (VehicleVec)", "lb", "start"))
@@ -301,13 +301,13 @@ def cycle():
     s.append('<rect x="554" y="304" width="12" height="56" class="act"/>')
     s.append(label(545, 320, "n행 × 77개 조립 (폰 없으면 기본 프로필)", "lb", "end"))
     s.append(label(545, 334, "LightGBM 5개 → 단조 보정", "lb", "end"))
-    s.append(label(545, 348, "폰 9대 기준 중앙값 1.48 ms, 최대 2.0 ms", "lb2", "end"))
+    s.append(label(545, 348, "폰 9대 기준 중앙값 0.85 ms, 최대 0.90 ms", "lb2", "end"))
     msg("P3", "P4", 386, "RISK { seq, t, t_emit_ns, t_infer_ns, n, id[n], p[n][5] }")
     s.append('<rect x="784" y="400" width="12" height="46" class="act"/>')
     s.append(label(775, 416, "기기마다 r_d ≥ base_th + tol 확인", "lb", "end"))
     s.append(label(775, 430, "hold · off_hold · 쿨다운 · 게이트", "lb", "end"))
     msg("P4", "F", 466, "cycles.csv 한 줄 (폰마다) · CMD", sub="바뀐 state만 원자 저장")
-    s.append(label(550, 548, "P2가 VEH를 낸 때부터 P4가 끝날 때까지: Pi 200주기 중앙값 0.78 ms, 최대 1.84 ms (10초 주기의 0.02%)", "t2", "middle"))
+    s.append(label(550, 548, "P2가 VEH를 낸 때부터 P4가 끝날 때까지: Pi 186주기 중앙값 0.57 ms, 최대 2.03 ms (10초 주기의 0.02%)", "t2", "middle"))
     return f'<svg viewBox="0 0 1100 565" role="img" aria-label="10초 한 주기">{"".join(s)}</svg>'
 
 
@@ -537,11 +537,11 @@ OFFLINE_ROWS = [
     ["AC-01 동등성", OK + "<br>" + C("model_parity.py make → (Pi) verify_model → check"),
      ul("CURRENT 모델 5개", "데이터 2,000행 + NaN 201 + 0 201 + 분기 기준값 ±1e-9와 그 값 1,800 = 4,202행"),
      ul("Mac Python LightGBM 기대값", "Pi " + C("verify_model") + "이 lib_lightgbm으로 예측, 메모리·시간 측정"),
-     ul(C("v007/parity/") + " vectors.bin, expected_p.bin, actual_pi.bin, meta.json, result.json", "지난 Pi 결과 (T-22 이전 모델): 최대 차이 2.2e-16, Tier 결정 100% 일치, 로드 126 ms, 9행 1.48 ms, 약 13 MB. v007은 Pi 재실행 대기")],
+     ul(C("v007/parity/") + " vectors.bin, expected_p.bin, actual_pi.bin, meta.json, result.json", "Pi 결과 (v007, 2026-11-17): 최대 차이 2.2e-16, Tier 결정 100% 일치, 로드 95 ms, 9행 중앙값 0.85 ms, 약 12.6 MB")],
     ["AC-02 파이프라인", OK + "<br>" + C("(Pi) run_pipeline.sh → pipeline_check.py check"),
      ul("Pi " + C("cycles.csv") + " (P4 로그)", "같은 trip.bin, 폰 프로필 (" + C("spec <ride_id>") + " 또는 " + C("default:<vtype>") + ")"),
      ul("Mac에서 featurize + Python 예측 + Python 정책 재생", "주기 수, 확률, 기기 ON/OFF를 주기마다 비교"),
-     ul("JSON: 확률 차이 1.1e-16, ON/OFF 불일치 0, 지연 중앙값 0.78 ms · 최대 1.84 ms (T-22 이전 모델)", "샘플 200,535개 빠짐 0. v007은 Pi 재실행 대기")],
+     ul("JSON: 확률 차이 1.1e-16, ON/OFF 불일치 0 (186주기 × 4기기), 실시간 지연 중앙값 0.57 ms · 최대 2.03 ms", "샘플 186,518개 빠짐 0 (v007, 2026-11-17)")],
     ["CSV 내보내기", OK + "<br>" + C("python3 ml/verify/export_csv.py"),
      ul("CURRENT 모델이 학습한 데이터셋 버전의 " + C("dataset.npz") + ", " + C("rides.json") + ", " + C("trips/*.bin"), C("feature_order.json")),
      ul("엑셀에서 열 수 있게 표로 풀기", "피처마다 빈 비율과 이유"),
@@ -567,7 +567,7 @@ UPGRADE_ROWS = [
      "Wf 필터와 0.63 Hz 저역통과를 0에서 시작해, 중력 9.81이 계단 입력이 됨. 주행 첫 1분 rms_z가 1 m/s² 안팎으로 튐",
      ul("필터 상태를 첫 샘플의 정상상태로 시작", "C++ " + C("Biquad::prime") + ", Python " + C("wf.weight") + ", " + C("oman.input_signal(prime=True)"), "테스트 " + C("test_start_has_no_transient")),
      ul("입력: trip.bin (시뮬레이터, 실차)", "출력: 데이터셋 · 모델 다시 만듦"),
-     ul("첫 1분 rms_z_1m 중앙값 1.02 → 0.005", "Mac AC-01 통과. Pi 재실행 대기")],
+     ul("첫 1분 rms_z_1m 중앙값 1.02 → 0.005", "Pi에서 v007로 AC-01, AC-02 다시 통과 (2026-11-17)")],
     ["T-23<br>시뮬레이터 보정", DONE + " 1차",
      "시뮬레이터 운전이 실제보다 훨씬 거칠었음 (rms_x 2배, 급제동 2배, 고속도로 없음, 노면·차로 흔들림 없음). 그 위에서 고른 문턱은 실제에 맞지 않음",
      ul("BATON-Sample 사람 운전을 목표로 " + C("sim_config.json") + " 7항목 수정", "고속도로 구간 추가 (8%, 90~110 km/h)", "가감속 1.0~2.5 → 0.7~2.0 / 0.5~1.6 m/s², 저크 LP 0.5 → 0.3 Hz, 정차 최대 45 → 120 s", "노면 굴곡 (경사 AR(1)), 차로 유지 흔들림 (0.05~0.5 Hz) 추가"),
@@ -671,8 +671,8 @@ RUN_STEPS = [
     ["5", C("python3 ml/realdata/build_real.py --source comma2k19 --root data/raw/comma2k19/chunk1 --keep-trips --note \"…\""), "comma2k19 원자료", C("v009/real_comma2k19.npz") + ", trips/real/"],
     ["6", C("python3 ml/realdata/compare.py --source baton") + "<br>" + C("python3 ml/realdata/compare.py --source comma2k19"), "CURRENT 모델, 최신 실차, v006", C("v007/compare/*.md, *.json")],
     ["7", C("python3 ml/verify/tudelft_replay.py data/raw/ATDOMS.mat"), "ATDOMS, CURRENT 모델", C("v007/verify/tudelft_replay.md")],
-    ["8", C("python3 ml/verify/model_parity.py make") + " → Pi " + C("verify_model") + " → " + C("check"), "CURRENT 모델", C("v007/parity/result.json") + " (Pi 재실행 대기)"],
-    ["9", "Pi: " + C("controller/qnx/run_pipeline.sh") + " → " + C("pipeline_check.py check"), "CURRENT 모델 (tar로 복사)", "cycles.csv, 비교 JSON (Pi 재실행 대기)"],
+    ["8", C("python3 ml/verify/model_parity.py make") + " → Pi " + C("verify_model") + " → " + C("check"), "CURRENT 모델", C("v007/parity/result.json")],
+    ["9", "Pi: " + C("controller/qnx/run_pipeline.sh") + " → " + C("pipeline_check.py check"), "CURRENT 모델 (tar로 복사)", "cycles.csv, 비교 JSON"],
 ]
 
 RUNTIME_ROWS = [
@@ -680,22 +680,22 @@ RUNTIME_ROWS = [
      ul("trip.bin (32열, 100 Hz)", "LIVE: MPU-6050 I²C, CAN " + NO),
      ul("→ P2 SAMPLE {seq, Row[32]} 100 Hz, 제한 5 ms", "→ P2 RIDE_START / RIDE_END {samples}, 제한 1 s"),
      "stdout JSON: samples, send_fail, wall_s, 깨어남 늦음 중앙값·최대·1 ms 초과",
-     "200,535개 보냄 · 실패 0 · 늦음 중앙값 973 µs, 최대 995 µs"],
+     "186,518개 보냄 · 실패 0 · 늦음 중앙값 953 µs, 최대 993 µs"],
     ["P2 feat<br>" + OK, C("p2_feat [--once] [--prio 30]"),
      ul("← P1 SAMPLE, RIDE_*"),
      ul("→ P3 VEH {seq, t, t_emit_ns, x[71]} 10초마다, 제한 1 s", "→ P3 RIDE_* 그대로", "→ P6 MOT 10 Hz " + NO),
      "stdout JSON: received, seq_gaps, veh_sent, veh_fail, push_us_max",
-     "받음 200,535 · 빠짐 0 · VEH 200 · 받기 처리 최대 2.6 ms"],
+     "받음 186,518 · 빠짐 0 · VEH 186 · 받기 처리 최대 2.5 ms"],
     ["P3 infer<br>" + OK, C("p3_infer --models DIR [--vehicle-type 0|1] [--once] [--prio 20]"),
      ul("← P2 VEH, RIDE_*", C("runs/v007/models/model_2~6.txt"), "← P4 ProfilesReply"),
      ul("→ P4 PROFILES 요청 (주기마다)", "→ P4 RISK {seq, t, t_emit_ns, t_infer_ns, n, id[n], p[n][P≥2..6]}, 제한 1 s", "폰 없으면 \"default\" 한 행: MSSQ 12.90, sens 1.0, EV NaN"),
      "stdout JSON: cycles, profiles_fail, risk_fail, infer_ms_max",
-     "주기 200 · 실패 0 · 추론 최대 0.7 ms (1행)"],
+     "주기 186 · 실패 0 · 추론 최대 0.55 ms (폰 2대)"],
     ["P4 policy<br>" + OK, C("p4_policy --config DIR --state DIR [--log FILE] [--hud] [--phone ID:MSSQ:SENS0[:EV]]... [--once] [--prio 15]"),
      ul("← P3 PROFILES, RISK", "← P2→P3→P4 RIDE_*", C("policy.json") + ", " + C("thresholds.json") + " (feature_order_version이 빌드와 다르면 시작 안 함)", C("state/") + " (시작 때 읽음)", "SCR · OVR · PROF ← P6 " + NO),
      ul("→ P3 ProfilesReply", "stdout " + C("CMD <t> <기기> <tier> <on>"), "→ P5 TIER(d, on) " + NO),
      ul(C("cycles.csv") + ": seq, t, latency_ms, infer_ms, phone, p2..p6, 기기마다 0/1", C("state/tolerance/<기기>.json") + " {n}", C("state/profiles/<ID>.json") + " {mssq, sens_mssq, sens}"),
-     "지연 중앙값 0.78 ms · 최대 1.84 ms · RISK 빠짐 0"],
+     "지연 중앙값 0.57 ms · 최대 2.03 ms · RISK 빠짐 0"],
     ["P5 기기 관리<br>" + NO, "–",
      ul("← P6 HELLO / BYE", "← P4 TIER(d, on), HEARTBEAT"),
      ul("→ P3 · P4 등록 알림", "→ P6 INT(tier, on), 30 s 무응답이면 전부 OFF"),
@@ -815,8 +815,8 @@ def page():
 <p>QNX 프로세스 4개가 메시지 전달(MsgSend / MsgReceive / MsgReply)로 이어집니다. 받는 쪽은 바로 복사하고 회신해서 100 Hz의 P1이 막히지 않습니다. 각 프로세스는 다음 단계에 연결된 뒤에야 자기 이름을 붙여서, 시작 순서는 P4 → P3 → P2 → P1입니다. Pi에는 <code>ml/out/runs/CURRENT</code>, 그 버전의 <code>models/</code>, <code>controller/config/</code>를 tar로 복사합니다 (<code>controller/bringup/README.md</code>).</p>
 <div class="fig">{runtime()}</div>
 <h3>프로세스별 입력 · 출력</h3>
-<p class="cap">측정값은 T-22 이전 모델로 Pi에서 잰 값입니다. v007로 다시 재야 합니다.</p>
-{table(["프로세스", "실행", "받는 것", "보내는 것", "쓰는 것", "Pi 측정값 (ride_0001, 200,535 샘플)"], RUNTIME_ROWS)}
+<p class="cap">측정값은 모델 v007로 Pi에서 실시간(1배속) 재생해 잰 값입니다 (2026-11-17).</p>
+{table(["프로세스", "실행", "받는 것", "보내는 것", "쓰는 것", "Pi 측정값 (v006 ride_0001, 186,518 샘플)"], RUNTIME_ROWS)}
 <h3>QNX 메시지 (<code>controller/qnx/messages.hpp</code>)</h3>
 {table(["타입", "방향", "주기", "내용", "회신"], MSG_ROWS)}
 

@@ -356,7 +356,7 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | 시작 순서 | 각 프로세스는 다음 단계에 연결된 뒤 자기 이름을 붙임 (P4 → P3 → P2 → P1) |
 | 시간 제한 | `TimerTimeout`으로 보내기와 회신에 제한. 샘플 기본 5 ms, 주행 시작·끝 1 s. 상대가 죽으면 1초에 한 번까지 재연결 |
 | 우선순위 (SCHED_RR) | P1 40, P2 30, P3 20, P4 15. 서버 우선순위 상속으로 pidin에서는 P2~P4도 40으로 보일 수 있음 |
-| P1 주기 | `clock_nanosleep` 절대 시각. QNX 1 ms 틱 때문에 깨어남이 약 1 ms 늦음 (중앙값 973 µs) |
+| P1 주기 | `clock_nanosleep` 절대 시각. QNX 1 ms 틱 때문에 깨어남이 약 1 ms 늦음 (중앙값 953 µs, v007 실시간) |
 | P3 입력 | VEH 71개 + 폰마다 G8(tol, 비활성이라 NaN) + G10 = 77개. `enabled=false` 칸은 NaN. 폰이 없으면 기본 프로필 "default" 한 행 (C17) |
 | 폰 수 | 최대 9대 (`kMaxPhones`, Q9) |
 
@@ -488,16 +488,16 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | S1 | TU Delft Oman 재현 (필터 없음) | MAE 0.97, K0 48.7 | 0.97 ± 0.05 | `ml/verify/out/` |
 | S1 | 필터 넣고 K0 | 51.4 | – | 같음 |
 | S1 | LOPO MAE | K0만 1.32, K0 × sens 1.26 | – | 같음 |
-| AC-01 | Python 대비 QNX 확률 차이 (4,202행: NaN, 0, 분기 기준값 ±1e-9 포함) | 최대 2.2e-16, Tier 결정 100% 일치. T-22·T-23 뒤 새 모델은 Mac verify_model로만 통과(차이 0), Pi 재실행 대기 | < 1e-6, 100% | `ml/verify/out/parity/result.json` |
-| AC-02 | P1 100 Hz 샘플 손실 | 200,535 → 200,535, 빠짐 0, 전송 실패 0 | 0 | `controller/bringup/README.md` |
-| AC-02 | 10초 주기 P2 벡터 → P4 정책 끝 | 중앙값 0.78 ms, 최대 1.84 ms | 10 s 안 | 같음 |
-| AC-02 | Pi 파이프라인 vs Mac featurize + Python 추론 + 재생 | 확률 차이 1.1e-16, ON/OFF 불일치 0 (200주기 × 4기기). T-22 이전 모델 기준, Pi 재실행 대기 | – | `ml/verify/pipeline_check.py` |
+| AC-01 | Python 대비 QNX 확률 차이 (4,202행: NaN, 0, 분기 기준값 ±1e-9 포함) | 최대 2.2e-16, Tier 결정 100% 일치 (모델 v007, Pi 2026-11-17) | < 1e-6, 100% | `ml/out/runs/v007/parity/result.json` |
+| AC-02 | P1 100 Hz 샘플 손실 | 186,518 → 186,518, 빠짐 0, 전송 실패 0 (실시간, 모델 v007) | 0 | `controller/bringup/README.md` |
+| AC-02 | 10초 주기 P2 벡터 → P4 정책 끝 | 실시간 중앙값 0.57 ms, 최대 2.03 ms (빠른 재생 0.62 / 0.76 ms) | 10 s 안 | 같음 |
+| AC-02 | Pi 파이프라인 vs Mac featurize + Python 추론 + 재생 | 확률 차이 1.1e-16, ON/OFF 불일치 0 (186주기 × 4기기, 모델 v007, Pi 2026-11-17) | – | `ml/verify/pipeline_check.py` |
 | AC-03 | 사람 단위 5-fold PR-AUC (모델 / Oman만) | k3 0.860 / 0.841, k4 0.496 / 0.467, k5 0.210 / 0.202, k6 0.056 / 0.086 (모델 v007, 피처 v3). 보정 전(0.941, 0.710, 0.391, 0.200)보다 낮은 것은 주로 양성 비율이 낮아졌기 때문(k4 0.37 → 0.21). ROC-AUC는 k3 0.85, k4 0.81, k5 0.84, k6 0.88. k6는 아직 Oman만보다 낮음 (T-24) | 보고 | `ml/out/runs/v007/train/report.md` |
 | AC-03 | G8 포함 / 제외 | G8이 v1에서 꺼져 있어 같은 모델 | 둘 다 보고 | 같음 |
 | AC-04 | 그룹 결측 강건성 (P(≥3) / P(≥4) PR-AUC) | G2~G7 중 하나를 지워도 0.855~0.860 / 0.492~0.497. G10을 NaN으로 0.850 / 0.484, 기본 프로필(폰 없음)로 0.849 / 0.483. G1+G9로 학습한 모델 0.843 / 0.468 | G1+G9 모델 이상 | 같음 |
 | AC-05 | 정책 재생 (시험 fold 평균) | Tier 1 탐지 84%, 리드 4.2분, 오경보 1.12/h. Tier 2 27%, 4.2분, 0.47/h. Tier 3 12%, 5.4분, 0.23/h | 보고 | 같음 |
 | AC-09 | 개인화 4가지 경우 | 통과 | 통과 | `controller/tests/test_policy.cpp` |
-| Q9 | 모델 5개 로드, 한 주기 추론 (폰 9대), 메모리 | 126 ms, 중앙값 1.48 ms (최대 2.0), 약 13 MB | 1 s, 10 ms, 200 MB | `controller/bringup/README.md` |
+| Q9 | 모델 5개 로드, 한 주기 추론 (폰 9대), 메모리 | 95 ms, 중앙값 0.85 ms (최대 0.90), 약 12.6 MB (모델 v007) | 1 s, 10 ms, 200 MB | `controller/bringup/README.md` |
 | AC-06/07/08 | 다중 연결, 안전 차단, 재연결 | [미구현] (S10) | – | – |
 
 **AC-04.** 보정(T-23) 뒤 데이터셋에서는 기본 프로필(폰 없음)도 G1+G9 모델 이상입니다 (v007: P(≥3) 0.849 대 0.843, P(≥4) 0.483 대 0.468). G10을 NaN으로 두어도 0.850 / 0.484로 기준 이상입니다 (T-24 전에는 P(≥4) 0.468로 0.004 낮았음). 보정 전에는 기본 프로필이 0.002 낮았습니다 (T-21).
@@ -527,7 +527,7 @@ P1 acq ──SAMPLE 100 Hz──▶ P2 feat ──VEH 10 s──▶ P3 infer ─
 | T-15 | 낮음 | 시야 항 (바깥을 봄 / 화면을 봄) | 모델에 없음. 슬라롬 확인에서 바깥 보는 조건을 설명 못 함 | 폰 화면 ON·응시 신호(P6)를 라벨과 피처에 반영할지 결정 | `sim.py`, `feature_order.json` |
 | T-16 | – | 폰이 없을 때 P3 기본 프로필 (C17) | **해결 (2026-11-11)**. AC-04에 "기본 프로필" 조건 추가, Pi에서 폰 없이 돌린 결과가 Mac과 같음 | – | – |
 | T-21 | 해결 | 기본 프로필일 때 AC-04 P(≥4) | T-23 보정 데이터셋에서 0.478로 G1+G9 모델(0.472) 이상. 보정 전에는 0.002 낮았음 | 데이터셋이 바뀌면 다시 확인 (train.py가 매번 보고) | `ml/out/train/report.md` |
-| T-22 | 해결 | featurize 시작 1분 rms_z | 2026-11-12 해결: Wf와 0.63 Hz 저역통과를 첫 샘플의 정상상태로 시작 (C++ `Biquad::prime`, Python `wf.weight`, `oman.input_signal(prime=True)`). 시뮬레이터 첫 1분 rms_z_1m 중앙값 1.02 → 0.005. 데이터셋·모델 다시 만듦, 최종 문턱은 그대로(0.63/0.65/0.77). Mac AC-01 통과 | **Pi에서 다시 빌드하고 AC-01, AC-02 재실행** (보드 연결 안 됨) | `controller/bringup/README.md` |
+| T-22 | 해결 | featurize 시작 1분 rms_z | 2026-11-12 해결: Wf와 0.63 Hz 저역통과를 첫 샘플의 정상상태로 시작 (C++ `Biquad::prime`, Python `wf.weight`, `oman.input_signal(prime=True)`). 시뮬레이터 첫 1분 rms_z_1m 중앙값 1.02 → 0.005. 데이터셋·모델 다시 만듦, 최종 문턱은 그대로(0.63/0.65/0.77). Mac AC-01 통과 | 2026-11-17 Pi에서 v007로 다시 빌드, AC-01·AC-02 통과 | `controller/bringup/README.md` |
 | T-23 | 1차 완료 | 시뮬레이터를 실차 분포에 맞추기 | 2026-11-12: 고속도로 구간, 가감속·저크·정차 시간, 노면 굴곡, 차로 유지 흔들림을 BATON-Sample 사람 운전에 맞춤. 피처 15개 평균 KS 0.38 → 0.14, P(≥4) 0.37 → 0.21 (실차 0.20). 문턱 0.54 / 0.46 / 0.53 ([REALDATA.md](REALDATA.md) 6장) | BATON 전체(운전자 150명)와 국내 도심(KAIST, 직접 녹화)으로 다시 맞추기. 운전자 2명에 맞춘 값이라 과적합 가능 | `ml/simulator/sim_config.json`, `ml/realdata/calibrate.py` |
 | T-24 | 일부 해결 | k5·k6 모델이 거의 빈 모델 | 2026-11-12: 강한 규제(잎 7, 잎당 최소 1,000행, L2 10, 학습률 0.03) + 최소 100회. 트리 4, 1개 → 100, 102개. k5 PR-AUC 0.186 → 0.203 (Oman만 0.202), k6 0.062 → 0.055 (Oman만 0.086). 문턱 0.53 / 0.51 / 0.59. 남은 문제: oman_score × 민감도 하나가 모델보다 나음 (PR k4 0.549 대 0.499, k5 0.275 대 0.203). 트리가 K·민감도 곱을 드문 k에서 못 배움 | 2026-11-16 시험(피처 v2, `ml/out/runs/v001` 보관): oman_personal 추가 + mssq·sensitivity를 모델 입력에서 끔. 시뮬레이터 PR은 k3~k6 0.867 / 0.520 / 0.241 / 0.075로 올랐지만, BATON PR k4 0.52 → 0.48, k5 0.39 → 0.26, TU Delft PR k3 0.80 → 0.76, AC-04 기본 프로필 0.481 → 0.471(기준 0.472 미달)로 실차에서는 나빠져 **채택 안 함**. 시뮬레이터 라벨이 Oman × 민감도라 곱 피처는 그 안에서만 이득. 함께 확인한 것: mssq에 제약이 없으면 트리가 사람 ID로 씀(기본 프로필이 실제 프로필보다 P(≥4) 0.508 대 0.492). k6 모델은 라벨에 효과 없는 seatback_angle 8.9%, soc 4.3%, ev_experience 3.8%에 기댐 | 개인 K 보정(승객 피드백)이 효과가 더 큼 (TU Delft 0.74). 라벨에 효과 없는 피처 정리(soc, 배터리 출력, ev_experience) 시험 | `ml/train/common.py`, `ml/verify/tudelft_replay.py` |
 | T-17 | 높음 | 프로필의 EV 경험, 차량 유형 (C16) | 저장 안 함 | 프로필 파일과 PROFILES 메시지에 ev, vtype 추가 (P6에서 받음) | `store.cpp`, `messages.hpp` |
