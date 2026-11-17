@@ -1,5 +1,5 @@
 # Mac:  cmake -S controller -B build && cmake --build build && ctest --test-dir build
-# Pi:   같은 명령 (QNX 위 clang). LightGBM 경로를 주면 P3와 QNX 프로세스 P1~P4도 빌드 (P5, P6은 나중에)
+# Pi:   같은 명령 (QNX 위 clang). LightGBM 경로를 주면 P3와 QNX 프로세스 P1~P4도 빌드. P5, P6, rf_stub은 QNX면 항상 빌드
 cmake_minimum_required(VERSION 3.16)
 project(mermaid_controller CXX)
 
@@ -37,6 +37,49 @@ add_executable(test_store tests/test_store.cpp)
 target_link_libraries(test_store mmcommon)
 target_compile_definitions(test_store PRIVATE MM_CONFIG_DIR="${MM_CONFIG_DIR}")
 add_test(NAME store COMMAND test_store)
+
+# RF: P6 통신 코어(comm), P5 기기 관리 코어(devmgr). 표준 C++, 메시지 구조체는 qnx/rf_messages.hpp
+add_library(mmrf STATIC common/comm.cpp common/devmgr.cpp)
+target_include_directories(mmrf PUBLIC common qnx)
+target_link_libraries(mmrf PUBLIC mmcommon)
+
+add_executable(test_comm tests/test_comm.cpp)
+target_link_libraries(test_comm mmrf)
+add_test(NAME comm COMMAND test_comm)
+
+add_executable(test_devmgr tests/test_devmgr.cpp)
+target_link_libraries(test_devmgr mmrf)
+add_test(NAME devmgr COMMAND test_devmgr)
+
+add_executable(test_rf_flow tests/test_rf_flow.cpp)
+target_link_libraries(test_rf_flow mmrf)
+add_test(NAME rf_flow COMMAND test_rf_flow)
+
+# Pi 없이 P5·P6 프로세스를 함께 돌리는 시험 (Mac, Linux): QNX 메시지 전달은 tests/qnxsim이 Unix 소켓으로 흉내,
+# UART는 가상 터미널, ESP32는 tests/rf_sim_test.py. 프로세스 코드는 Pi와 같은 qnx/*.cpp. 약 1분 걸림
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  find_package(Threads REQUIRED)
+  add_library(qnxsim STATIC tests/qnxsim/qnxsim.cpp)
+  target_include_directories(qnxsim PUBLIC tests/qnxsim)
+  target_link_libraries(qnxsim PUBLIC Threads::Threads)
+  foreach(p p5_devmgr p6_comm rf_stub)
+    add_executable(${p}_sim qnx/${p}.cpp)
+    target_link_libraries(${p}_sim mmrf qnxsim)
+  endforeach()
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    add_test(NAME rf_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rf_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(rf_sim PROPERTIES TIMEOUT 240)
+  endif()
+endif()
+
+# QNX 프로세스 P5, P6과 시험용 대역 rf_stub (LightGBM 필요 없음). 보드에서만 빌드
+if(CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  foreach(p p5_devmgr p6_comm rf_stub)
+    add_executable(${p} qnx/${p}.cpp)
+    target_link_libraries(${p} mmrf)
+  endforeach()
+endif()
 
 # P3 추론 (lib_lightgbm 4.6.0). 경로를 주면 빌드:
 #   Pi:  -DMM_LIGHTGBM_INCLUDE=$HOME/mermaid/LightGBM/include -DMM_LIGHTGBM_LIB=$HOME/mermaid/LightGBM/lib_lightgbm.so

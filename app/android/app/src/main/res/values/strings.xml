@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MerMaid</string>
+    <string name="tile_label">모션 큐</string>
+    <string name="channel_link">차량 연결</string>
+    <string name="channel_link_desc">차량과 연결된 동안 표시되는 상주 알림 (소리 없음)</string>
+</resources>

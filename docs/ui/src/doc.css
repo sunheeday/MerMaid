@@ -1,0 +1,64 @@
+/* MerMaid 문서 공통 서식 — 발표 디자인 기준(LG 레드 #A50034, 웜 차콜 #1E1B1D, 웜 오프화이트 #F6F3F0, 왼쪽 세로 레드 라인)
+   Chrome 헤드리스로 PDF 출력: docs/build_pdf.ps1 */
+:root {
+  --red: #a50034; --red-soft: #f5e3e9; --ink: #1e1b1d; --ink-2: #4a4346; --muted: #7a7074;
+  --paper: #ffffff; --warm: #f6f3f0; --line: #e4ddd8; --line-2: #cfc6c0;
+  --t1: #1683d8; --t2: #d61f69; --t3: #c77700; --ok: #1f9d68; --bad: #c62828;
+  --font: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --mono: Consolas, "Cascadia Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font-family: var(--font); color: var(--ink); font-size: 9.6pt; line-height: 1.55; word-break: keep-all; overflow-wrap: anywhere; background: var(--paper); }
+/* 왼쪽 세로 레드 라인: position:fixed는 인쇄 시 모든 쪽에 반복됨 */
+.rail { position: fixed; left: 0; top: 0; bottom: 0; width: 1.4mm; background: var(--red); }
+.page { position: relative; break-after: page; padding-left: 6mm; }
+.page:last-child { break-after: auto; }
+
+h1, h2, h3, h4 { margin: 0; line-height: 1.3; }
+h2 { font-size: 15pt; margin: 0 0 3mm; padding-bottom: 2mm; border-bottom: 0.4mm solid var(--ink); display: flex; gap: 3mm; align-items: baseline; }
+h2 .no { color: var(--red); font-size: 13pt; }
+h3 { font-size: 11pt; margin: 5mm 0 2mm; color: var(--ink); }
+h3 .no { color: var(--red); margin-right: 1.5mm; }
+p { margin: 0 0 2mm; }
+.lead { color: var(--ink-2); }
+.muted { color: var(--muted); }
+small { font-size: 8pt; }
+code, .mono { font-family: var(--mono); font-size: 8.4pt; background: var(--warm); padding: 0 1mm; border-radius: 1mm; }
+
+table { width: 100%; border-collapse: collapse; margin: 1.5mm 0 3mm; font-size: 8.6pt; }
+th, td { border: 0.25mm solid var(--line-2); padding: 1.4mm 2mm; text-align: left; vertical-align: top; }
+th { background: var(--ink); color: #fff; font-weight: 700; white-space: nowrap; }
+tbody tr:nth-child(even) td { background: #faf8f6; }
+tr { break-inside: avoid; }
+td.id { font-family: var(--mono); font-size: 8pt; white-space: nowrap; color: var(--red); font-weight: 700; }
+td.c, th.c { text-align: center; }
+.pri { display: inline-block; min-width: 7mm; text-align: center; border-radius: 1mm; padding: 0 1mm; font-size: 7.8pt; font-weight: 700; }
+.pri.h { background: var(--red); color: #fff; } .pri.m { background: #f0d9a8; color: #5a3d00; } .pri.l { background: var(--line); color: var(--ink-2); }
+.new { display: inline-block; font-size: 7pt; font-weight: 700; color: var(--red); border: 0.25mm solid var(--red); border-radius: 1mm; padding: 0 0.8mm; margin-left: 1mm; vertical-align: 1px; }
+
+.box { border: 0.3mm solid var(--line-2); border-radius: 2mm; padding: 3mm 4mm; background: var(--warm); margin: 2mm 0 3mm; break-inside: avoid; }
+.box.red { background: var(--red-soft); border-color: #e2b3c2; }
+.box h4 { font-size: 9.6pt; margin-bottom: 1mm; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+ul.tight { margin: 0 0 2mm; padding-left: 4.5mm; } ul.tight li { margin: 0.6mm 0; }
+
+/* 표지 */
+.cover { height: 100%; display: grid; grid-template-rows: 1fr auto; padding: 0 0 0 6mm; }
+.cover .lane { position: absolute; right: 0; top: 0; bottom: 0; width: 38%; background: var(--ink); overflow: hidden; }
+.cover .lane::before, .cover .lane::after { content: ""; position: absolute; left: 50%; width: 1.6mm; transform: translateX(-50%);
+  background: repeating-linear-gradient(180deg, #f6f3f0 0 14mm, transparent 14mm 26mm); top: 0; bottom: 0; }
+.cover .lane::after { left: 15%; width: 0.8mm; background: #f6f3f0; opacity: 0.35; }
+.cover .lane .curve { position: absolute; inset: 0; }
+.cover .t { align-self: center; max-width: 58%; }
+.cover .kicker { color: var(--red); font-weight: 700; letter-spacing: 0.08em; font-size: 10pt; }
+.cover h1 { font-size: 30pt; margin: 3mm 0 4mm; }
+.cover .sub { font-size: 12pt; color: var(--ink-2); }
+.cover table { width: 58%; font-size: 8.8pt; }
+.cover th { width: 26mm; background: var(--warm); color: var(--ink); border-color: var(--line); }
+.cover td { border-color: var(--line); }
+
+/* 진행 바 (발표 서식의 주행 진행 바를 문서 하단에) */
+.progress { position: absolute; left: 6mm; right: 0; bottom: 0; display: flex; gap: 1mm; font-size: 6.8pt; color: var(--muted); }
+.progress span { flex: 1; border-top: 0.6mm solid var(--line); padding-top: 0.8mm; }
+.progress span.on { border-color: var(--red); color: var(--ink); font-weight: 700; }

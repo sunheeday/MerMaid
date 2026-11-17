@@ -1,0 +1,62 @@
+/* MerMaid 화면 공용 토큰 — 발표 디자인 기준: LG 레드 #A50034, 웜 차콜 #1E1B1D, 웜 오프화이트 #F6F3F0
+   차량 화면·HUD는 항상 어두운 테마. 앱은 시스템 설정을 따름 (app.css). 외부 글꼴 없음 (현장 오프라인 대비) */
+:root {
+  --bg: #0f0d0e;
+  --surface: #1e1b1d;
+  --surface-2: #29252a;
+  --surface-3: #352f33;
+  --line: rgba(246, 243, 240, 0.09);
+  --line-2: rgba(246, 243, 240, 0.16);
+  --text: #f6f3f0;
+  --muted: #a79d99;
+  --faint: #6f6662;
+  --brand: #a50034;
+  --brand-hi: #e3245f;
+  --t1: #4fb3ff;  /* Tier 1 송풍 */
+  --t2: #ff4f8b;  /* Tier 2 앰비언트 */
+  --t3: #ffb547;  /* Tier 3 모션 큐 */
+  --ok: #3ddc97;
+  --warn: #ffb547;
+  --bad: #ff5a5f;
+  --r-sm: 10px; --r-md: 16px; --r-lg: 24px;
+  --font: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; word-break: keep-all; overflow-wrap: anywhere; }
+button { font: inherit; color: inherit; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* 연결 칩 */
+.chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--line); font-size: 14px; color: var(--muted); white-space: nowrap; }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.chip[data-s="connected"] .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.chip[data-s="connected"] { color: var(--text); }
+.chip[data-s="connecting"] .dot { background: var(--warn); animation: blink 1s infinite; }
+.chip[data-s="lost"], .chip[data-s="closed"] { color: #ffd6d7; border-color: rgba(255, 90, 95, 0.4); background: rgba(255, 90, 95, 0.12); }
+.chip[data-s="lost"] .dot, .chip[data-s="closed"] .dot { background: var(--bad); }
+@keyframes blink { 50% { opacity: 0.3; } }
+
+/* 토글 스위치 */
+.switch { position: relative; width: 58px; height: 34px; flex: none; border: 0; border-radius: 999px; padding: 0;
+  background: var(--surface-3); cursor: pointer; transition: background 0.2s; }
+.switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border-radius: 50%;
+  background: #fff; transition: transform 0.22s cubic-bezier(0.3, 0.7, 0.4, 1); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+.switch[aria-checked="true"]::after { transform: translateX(24px); }
+.switch[aria-checked="true"] { background: var(--sw, var(--brand-hi)); }
+.switch[data-pending="true"] { opacity: 0.6; }
+.switch:disabled { opacity: 0.35; cursor: not-allowed; }
+.switch:focus-visible, .btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 18px;
+  border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface-2); cursor: pointer; font-size: 15px; white-space: nowrap; }
+.btn:hover { background: var(--surface-3); }
+.btn.primary { background: var(--brand); border-color: transparent; color: #fff; }
+.btn.primary:hover { background: #bd0a42; }
+.btn[aria-pressed="true"] { border-color: var(--text); }
+
+/* 로그 */
+.log { font: 12px/1.5 var(--mono); color: var(--muted); overflow: auto; white-space: pre-wrap; word-break: break-all; }
+.log .rx { color: #9fe3c4; } .log .tx { color: #9cc8ff; } .log .err { color: #ff9fa2; }
