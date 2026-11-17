@@ -1,0 +1,155 @@
+/* 탑승객 앱 (웹 시연판) — 화면정의서 MM-UI-001 v0.1과 같은 규격·디자인
+   기준 화면 Galaxy S22+ 384 × 832 dp (가로 832 × 384). 무대를 그 크기로 그리고 창에 맞춰 같은 비율로 확대/축소한다.
+   색·글자·컴포넌트는 docs/src/screens.css의 목업 스타일을 1:1로 옮김 */
+:root {
+  --brand: #a50034; --ink: #1e1b1d; --ink-2: #4a4346; --paper: #f6f3f0; --muted: #7a7074; --line: #ece6e1; --line-2: #e4ddd8;
+  --t1: #1683d8; --t2: #d61f69; --t3: #c77700; --ok: #1f9d68; --bad: #c62828;
+  --font: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0a0a; font-family: var(--font); word-break: keep-all; }
+body.bare { background: var(--paper); }
+button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
+[hidden] { display: none !important; }
+
+/* ───────── 무대 (폰 화면) */
+/* 확대된 무대가 모바일 레이아웃 뷰포트를 넓히지 않도록 고정·잘림 컨테이너 안에 둠 */
+.vp { position: fixed; inset: 0; overflow: hidden; }
+.stage { position: absolute; left: 50%; top: 50%; transform-origin: center; }
+.ph { position: relative; width: 384px; height: 832px; border-radius: 46px; overflow: hidden; background: var(--paper); color: var(--ink);
+  font-size: 15px; line-height: 1.4; box-shadow: 0 0 0 9px #161314, 0 0 0 10.5px #57504f, 0 30px 80px rgba(0,0,0,.6); }
+.ph.land { width: 832px; height: 384px; }
+body.bare .ph { border-radius: 0; box-shadow: none; }
+.sb { height: 34px; display: flex; justify-content: space-between; align-items: center; padding: 6px 26px 0; font-size: 13px; font-weight: 700; position: relative; z-index: 30; }
+.sb .ic { display: flex; gap: 5px; align-items: center; font-size: 11px; }
+.sb .ic i { display: inline-block; width: 15px; height: 9px; border: 1.6px solid currentColor; border-radius: 2px; position: relative; }
+.sb .ic i::after { content: ""; position: absolute; left: 1px; top: 1px; bottom: 1px; width: 65%; background: currentColor; }
+.hole { position: absolute; top: 11px; left: 50%; width: 13px; height: 13px; margin-left: -6.5px; border-radius: 50%; background: #0c0b0b; z-index: 40; }
+.land .hole { top: 50%; left: 11px; margin: -6.5px 0 0; }
+.gbar { position: absolute; bottom: 9px; left: 50%; width: 118px; height: 5px; margin-left: -59px; border-radius: 3px; background: rgba(30,27,29,.45); z-index: 40; }
+.ph.vid .gbar, .ph.vid .sb { color: #fff; } .ph.vid .gbar { background: rgba(255,255,255,.55); }
+body.bare .sb, body.bare .hole, body.bare .gbar { display: none; }
+body.bare .scr { top: 0; }
+
+/* 화면 전환 */
+.screen { display: none; }
+.screen.on { display: flex; }
+.scr { position: absolute; inset: 34px 0 0; padding: 10px 20px 30px; flex-direction: column; gap: 12px; overflow-y: auto; scrollbar-width: none; }
+.scr::-webkit-scrollbar { display: none; }
+
+/* ───────── 공통 컴포넌트 (screens.css와 동일) */
+.apbar { display: flex; align-items: center; justify-content: space-between; height: 44px; flex: none; }
+.logo { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 19px; }
+.chipm { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 15px; background: #fff; border: 1px solid var(--line-2);
+  font-size: 13px; font-weight: 600; white-space: nowrap; flex: none; }
+.chipm .d { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.chipm.bad { color: var(--bad); border-color: #f0b8b8; background: #fdeeee; } .chipm.bad .d { background: var(--bad); }
+.chipm.wait .d { background: var(--t3); }
+.chipm.none { color: var(--muted); } .chipm.none .d { background: #bbb; }
+.card { background: #fff; border-radius: 20px; padding: 16px; border: 1px solid var(--line); flex: none; }
+.h1 { font-size: 24px; font-weight: 800; line-height: 1.3; }
+.h2 { font-size: 18px; font-weight: 800; line-height: 1.35; }
+.mut { color: var(--muted); font-size: 13.5px; }
+.btnm { height: 52px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px;
+  background: var(--brand); color: #fff; flex: none; width: 100%; }
+.btnm:active { filter: brightness(.92); }
+.btnm.ghost { background: transparent; color: var(--ink-2); border: 1px solid #d8d0ca; }
+.btnm.sm { height: 38px; font-size: 14px; border-radius: 12px; padding: 0 14px; width: auto; }
+.btnm:disabled { opacity: .45; cursor: default; }
+.link { color: var(--muted); text-align: center; font-size: 13.5px; padding: 6px; }
+.sw { width: 46px; height: 28px; border-radius: 14px; background: #d8d0ca; position: relative; flex: none; transition: background .2s; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .2s; }
+.sw.on { background: var(--c, var(--brand)); } .sw.on::after { left: 21px; }
+.sw.pend { opacity: .6; } .sw:disabled { opacity: .4; cursor: default; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tiers .row { padding: 11px 0; border-bottom: 1px solid #f0ebe7; }
+.tiers .row:last-child { border-bottom: 0; }
+.tiers.off { opacity: .5; }
+.tdot { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 14%, #fff); color: var(--c);
+  font-weight: 800; font-size: 12px; flex: none; }
+.lbl { flex: 1; min-width: 0; } .lbl b { display: block; font-size: 15.5px; } .lbl span { font-size: 12.5px; color: var(--muted); }
+.step { display: flex; gap: 6px; flex: none; } .step i { flex: 1; height: 4px; border-radius: 2px; background: var(--line-2); } .step i.on { background: var(--brand); }
+.perm { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 16px; background: #fff; border: 1px solid var(--line); flex: none; }
+.perm.cur { border: 2px solid var(--brand); padding: 11px 13px; }
+.perm .pi { width: 34px; height: 34px; border-radius: 10px; background: var(--paper); display: grid; place-items: center; font-size: 17px; flex: none; }
+.ok { color: var(--ok); font-weight: 700; font-size: 13px; }
+.tag { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 8px; background: #f5e3e9; color: var(--brand); white-space: nowrap; }
+.seg { display: grid; grid-template-columns: repeat(var(--n, 2), 1fr); background: #ebe5e0; border-radius: 12px; padding: 4px; font-size: 13.5px; text-align: center; flex: none; }
+.seg button { padding: 8px; border-radius: 9px; color: var(--muted); } .seg button.on { background: #fff; color: var(--ink); font-weight: 700; }
+.q { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 6px; font-size: 13px; flex: none; }
+.opts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.opts button { height: 32px; border-radius: 8px; background: #fff; border: 1px solid var(--line-2); display: grid; place-items: center; font-size: 11.5px; color: var(--muted); }
+.opts button.on { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
+.opts button.na.on { background: var(--ink-2); border-color: var(--ink-2); }
+.optlbl { margin-left: 80px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; font-size: 10.5px; color: var(--muted); text-align: center; flex: none; }
+.range { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--brand) var(--p, 50%), var(--line-2) var(--p, 50%)); outline: none; margin: 10px 0 4px; }
+.range::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 2px solid var(--brand); }
+.range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid var(--brand); }
+.sect { font-size: 12.5px; font-weight: 700; color: var(--brand); margin: 4px 0 -4px; letter-spacing: .02em; flex: none; }
+.kvm { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; font-size: 13px; margin: 0; flex: 1; }
+.kvm dt { color: var(--muted); margin: 0; } .kvm dd { margin: 0; text-align: right; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logm { font: 11px/1.55 Consolas, monospace; color: var(--ink-2); background: #fff; border-radius: 14px; padding: 10px 12px; border: 1px solid var(--line);
+  flex: 1; min-height: 120px; overflow-y: auto; word-break: break-all; }
+.logm .rx { color: #1f7a52; } .logm .tx { color: #1660b0; } .logm .err { color: var(--bad); }
+.back { font-size: 22px; padding-right: 4px; }
+.colordot { width: 26px; height: 26px; border-radius: 50%; border: 1px solid #d8d0ca; }
+.colordot.on { border: 2px solid var(--brand); }
+
+/* 미리보기 (APP-02, APP-06) */
+.preview { position: relative; height: 150px; border-radius: 20px; background: #1a1418; overflow: hidden; border: 0; padding: 0; flex: none; }
+.preview .pv { position: absolute; inset: 14px 40px; border-radius: 16px; background: linear-gradient(135deg, #3d2b4f, #8a3e5c 55%, #e8956a); }
+.preview canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.preview.sm { height: 92px; border-radius: 14px; } .preview.sm .pv { inset: 10px 30px; border-radius: 10px; }
+
+/* APP-03a 시스템 기기 선택 창 */
+.dim { position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 50; }
+.sheet { position: absolute; left: 10px; right: 10px; bottom: 14px; background: #fff; border-radius: 30px; padding: 26px 22px 22px; z-index: 51; display: grid; gap: 14px; }
+.sheet .dev { padding: 12px 14px; border-radius: 14px; text-align: left; width: 100%; }
+.sheet .dev.sel { background: #eef3fb; }
+.sheet .acts { display: flex; justify-content: flex-end; gap: 28px; color: #3e7bfa; font-weight: 700; padding-right: 8px; }
+
+/* ───────── OVL: 타 앱(동영상 앱) — 브랜드 요소 없는 일반 화면 */
+.ph.vid { background: #0f0f10; color: #eee; }
+.app2 { position: absolute; inset: 0; }
+.vplayer { position: absolute; left: 0; right: 0; top: 34px; height: 216px; background: linear-gradient(135deg, #3d2b4f, #8a3e5c 55%, #e8956a); }
+.vplayer .prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.3); }
+.vplayer .prog i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; background: #e33; }
+.vplayer .fs { position: absolute; right: 10px; bottom: 10px; width: 34px; height: 34px; border-radius: 8px; background: rgba(0,0,0,.45); color: #fff; font-size: 16px; }
+.vmeta { position: absolute; left: 0; right: 0; top: 262px; padding: 0 16px; display: grid; gap: 9px; }
+.bar { height: 12px; border-radius: 6px; background: #3a3a3c; } .bar.w { background: #8d8d92; }
+.vlist { position: absolute; left: 16px; right: 16px; top: 400px; display: grid; gap: 16px; }
+.vitem { display: grid; grid-template-columns: 150px 1fr; gap: 12px; } .vitem .th { height: 86px; border-radius: 10px; background: #2b2b2e; }
+.vitem .th.a { background: linear-gradient(135deg, #234, #3a6a7a); } .vitem .th.b { background: linear-gradient(135deg, #432, #9a6a3a); } .vitem .th.c { background: linear-gradient(135deg, #324, #6a3a8a); }
+.vitem > div:last-child { display: grid; gap: 8px; align-content: start; padding-top: 4px; }
+.landvid { position: absolute; inset: 0; background: linear-gradient(120deg, #1f2a44, #3f5c7a 45%, #d7a36a 80%, #5a3a2a); }
+.landvid .sun { position: absolute; left: 40%; top: 30%; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(#ffe2a8, #ffb36b 60%, transparent 62%); }
+.landvid .fs { position: absolute; right: 14px; bottom: 12px; width: 34px; height: 34px; border-radius: 8px; background: rgba(0,0,0,.45); color: #fff; font-size: 16px; z-index: 2; }
+.pullhint { position: absolute; left: 0; right: 0; top: 0; height: 34px; z-index: 35; cursor: pointer; }
+.cue { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+.pill { position: absolute; left: 50%; transform: translateX(-50%); top: 44px; z-index: 25; padding: 7px 14px; border-radius: 18px; background: rgba(30,27,29,.82);
+  color: #fff; font-size: 13px; font-weight: 600; display: flex; gap: 7px; align-items: center; white-space: nowrap; transition: opacity .3s; pointer-events: none; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #ffb547; }
+
+/* SYS-01 알림창 */
+.shade { position: absolute; inset: 0; z-index: 60; background: #e9eef3; color: #111; overflow-y: auto; scrollbar-width: none;
+  transform: translateY(-100%); visibility: hidden; transition: transform .28s cubic-bezier(.2,.8,.3,1), visibility 0s linear .28s; }
+.shade.open { transform: none; visibility: visible; transition-delay: 0s; }
+.ph.shading .sb { z-index: 70; color: #111; }
+.shade .head { display: flex; justify-content: space-between; padding: 44px 22px 10px; font-size: 13px; color: #555; }
+.qs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 10px; padding: 8px 18px; }
+.qt { display: grid; justify-items: center; gap: 6px; font-size: 11.5px; color: #333; }
+.qt b { width: 54px; height: 54px; border-radius: 27px; background: #fff; display: grid; place-items: center; font-size: 20px; color: #666; }
+.qt.on b { background: #3e7bfa; color: #fff; } .qt.mm b { background: var(--t3); color: #fff; } .qt.na b { opacity: .45; }
+.qt small { font-size: 10px; color: #777; margin-top: -4px; }
+.bright { margin: 10px 22px 4px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #3e7bfa 62%, #cfd6de 62%); position: relative; }
+.bright::after { content: ""; position: absolute; left: 62%; top: -7px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: #fff; border: 2px solid #3e7bfa; }
+.noti { margin: 6px 12px; background: #fff; border-radius: 22px; padding: 14px 16px; display: grid; gap: 6px; }
+.noti .app { display: flex; gap: 6px; align-items: center; font-size: 12px; color: #666; }
+.noti .app i { width: 18px; height: 18px; border-radius: 6px; background: var(--brand); display: inline-block; }
+.noti b { font-size: 15px; } .noti .acts { display: flex; gap: 18px; margin-top: 4px; font-size: 13.5px; font-weight: 700; color: var(--brand); }
+.shade .close { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); width: 60px; height: 5px; border-radius: 3px; background: #9aa5b1; }
+
+/* 무대 밖 시연 도구 (데스크톱에서만) */
+.tools { position: fixed; left: 50%; transform: translateX(-50%); bottom: 14px; display: flex; gap: 8px; z-index: 100; font-size: 12.5px; white-space: nowrap; }
+.tools button { background: #2a2628; color: #ddd; border: 1px solid #4a4346; border-radius: 10px; padding: 8px 12px; }
+body.bare .tools { display: none; }

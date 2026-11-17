@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MerMaid 차량 디스플레이</title>
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/display.css">
+</head>
+<body>
+  <!-- 1920×720 고정 무대를 화면 크기에 맞춰 축소/확대 (차량 와이드 디스플레이 비율) -->
+  <div class="stage" id="stage">
+    <div class="glow glow-l" id="glowL"></div>
+    <div class="glow glow-r" id="glowR"></div>
+
+    <header class="top">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M4 22c4-8 8-8 12 0s8 8 12 0" fill="none" stroke="var(--brand-hi)" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="9" r="3" fill="var(--text)"/></svg>
+        <span>MerMaid</span><em>멀미 케어</em>
+      </div>
+      <div class="clock num" id="clock">--:--</div>
+      <div class="top-right">
+        <span class="chip num" id="speed" hidden>0 km/h</span>
+        <span class="chip" id="linkChip" data-s="idle"><span class="dot"></span><span id="linkText">연결 안 됨</span></span>
+      </div>
+    </header>
+
+    <main class="grid">
+      <!-- 왼쪽: 에이전트 상태 + 개입 3단계 -->
+      <section class="panel agent">
+        <p class="eyebrow">에이전트</p>
+        <h1 id="headline">편안한 주행이에요</h1>
+        <p class="sub" id="subline">흔들림이 쌓이면 멀미가 오기 전에 먼저 움직여요.</p>
+
+        <ul class="tiers">
+          <li class="tier" data-tier="1" id="tier1" style="--c: var(--t1)">
+            <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h15a3 3 0 1 1-3 3M3 16h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+            <div class="tx"><b>송풍</b><small>Tier 1 · 시원한 바람으로 먼저 대비</small></div>
+            <span class="pill" id="pill1">꺼짐</span>
+            <button class="switch" role="switch" aria-checked="false" aria-label="송풍 수동 켜기/끄기" id="sw1" style="--sw: var(--t1)"></button>
+          </li>
+          <li class="tier" data-tier="2" id="tier2" style="--c: var(--t2)">
+            <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg></span>
+            <div class="tx"><b>앰비언트 · 화면 큐</b><small>Tier 2 · 빛이 차의 움직임을 먼저 알려 줌</small></div>
+            <span class="pill" id="pill2">꺼짐</span>
+            <button class="switch" role="switch" aria-checked="false" aria-label="앰비언트 수동 켜기/끄기" id="sw2" style="--sw: var(--t2)"></button>
+          </li>
+          <li class="tier" data-tier="3" id="tier3" style="--c: var(--t3)">
+            <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9.5" cy="8" r="1.2" fill="currentColor"/><circle cx="14.5" cy="8" r="1.2" fill="currentColor"/><circle cx="9.5" cy="13" r="1.2" fill="currentColor"/><circle cx="14.5" cy="13" r="1.2" fill="currentColor"/></svg></span>
+            <div class="tx"><b>폰 모션 큐</b><small>Tier 3 · 사람마다 따로, 각 폰에서 조절</small></div>
+            <div class="seats" id="seats"><span class="seat" data-seat="A">A</span><span class="seat" data-seat="B">B</span></div>
+          </li>
+        </ul>
+
+        <div class="ticker" id="ticker" hidden><span class="tag" id="tickTag">ACT</span><span id="tickText"></span></div>
+      </section>
+
+      <!-- 가운데: 콘텐츠 + 화면 모션 큐 -->
+      <section class="panel media">
+        <div class="media-view" id="mediaView">
+          <div class="scenery" aria-hidden="true"><div class="sun"></div><div class="hill h1"></div><div class="hill h2"></div><div class="road"></div></div>
+          <canvas class="dots" id="dots"></canvas>
+          <div class="media-meta">
+            <span class="live">재생 중</span>
+            <b>해질녘 해안도로 드라이브</b>
+            <small>화면 큐가 켜지면 가장자리 점이 차의 움직임을 따라 움직여요</small>
+          </div>
+          <div class="media-bar"><i id="mediaProg"></i></div>
+        </div>
+      </section>
+
+      <!-- 오른쪽: 차량 움직임 (MOT) -->
+      <section class="panel motion">
+        <p class="eyebrow">차량 움직임 <small>MOT · 10 Hz</small></p>
+        <div class="gmeter">
+          <svg viewBox="-100 -100 200 200" aria-label="가속도 방향">
+            <circle r="92" class="ring"/><circle r="61" class="ring"/><circle r="30" class="ring"/>
+            <line x1="-92" x2="92" class="axis"/><line y1="-92" y2="92" class="axis"/>
+            <text y="-74" class="lbl">가속</text><text y="84" class="lbl">제동</text>
+            <text x="-80" y="4" class="lbl">좌</text><text x="80" y="4" class="lbl">우</text>
+            <circle r="9" class="ghost" id="gGhost"/>
+            <circle r="11" class="ball" id="gBall"/>
+          </svg>
+        </div>
+        <div class="readout num">
+          <div><small>전후 ax</small><b id="vAx">0.00</b></div>
+          <div><small>좌우 ay</small><b id="vAy">0.00</b></div>
+          <div><small>2초 뒤 예측</small><b id="vPred">—</b></div>
+        </div>
+        <canvas class="spark" id="spark"></canvas>
+        <div class="fan" id="fan"><svg viewBox="0 0 40 40" aria-hidden="true"><g id="fanBlades"><path d="M20 20c0-8 2-14 7-14s3 8-7 14Zm0 0c8 0 14 2 14 7s-8 3-14-7Zm0 0c0 8-2 14-7 14s-3-8 7-14Zm0 0c-8 0-14-2-14-7s8-3 14 7Z" fill="currentColor"/></g><circle cx="20" cy="20" r="3" fill="var(--surface)"/></svg><span id="fanText">송풍 대기</span></div>
+      </section>
+    </main>
+
+    <footer class="dock">
+      <div class="grp">
+        <button class="btn primary" id="bBle">BLE 브리지 연결</button>
+        <button class="btn" id="bWs">서버 연결</button>
+        <button class="btn" id="bDemo">데모</button>
+      </div>
+      <div class="grp">
+        <button class="btn" id="bHud">HUD 창 열기</button>
+        <button class="btn" id="bScr" aria-pressed="true">화면 ON</button>
+        <button class="btn" id="bDrop" hidden>끊김 재현</button>
+        <button class="btn" id="bLog">RF 로그</button>
+      </div>
+    </footer>
+
+    <div class="safe" id="safe" hidden>
+      <b>RF 연결이 끊겼어요</b>
+      <span>안전을 위해 모든 개입을 껐어요 · 다시 연결되면 상태를 이어받아요</span>
+    </div>
+    <div class="off" id="screenOff" hidden><b>화면 꺼짐</b><span>Tier 2 게이트 닫힘 (SCR on=false) · 눌러서 켜기</span></div>
+
+    <aside class="drawer" id="drawer" hidden>
+      <header><b>RF 로그</b><span class="num" id="stat"></span><button class="btn" id="bLogClose">닫기</button></header>
+      <div class="log" id="log"></div>
+    </aside>
+  </div>
+  <script type="module" src="js/display.js"></script>
+</body>
+</html>

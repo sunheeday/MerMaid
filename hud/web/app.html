@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f3f0">
+  <title>MerMaid 탑승객 앱</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<!-- 화면정의서 MM-UI-001 v0.1과 같은 화면 (Galaxy S22+ 384 × 832 dp). 웹 시연판: 타 앱 위 오버레이·알림창은 시뮬레이션 -->
+<div class="vp"><div class="stage" id="stage">
+  <div class="ph" id="ph">
+    <div class="hole"></div>
+    <div class="sb"><span id="clock">9:41</span><span class="ic"><span id="sbBt"></span> LTE <i></i></span></div>
+
+    <!-- APP-01 시작 -->
+    <section class="screen scr" id="s-welcome" style="padding-top:70px; gap:18px">
+      <svg viewBox="0 0 64 64" width="72" height="72" style="flex:none"><path d="M8 44c8-16 16-16 24 0s16 16 24 0" fill="none" stroke="#a50034" stroke-width="6" stroke-linecap="round"/><circle cx="32" cy="18" r="6" fill="#1e1b1d"/></svg>
+      <div class="h1" style="font-size:28px">멀미가 오기 전에,<br>먼저 움직입니다</div>
+      <div class="mut" style="font-size:15px">MerMaid는 차와 연결되어 흔들림을 미리 알고 화면에 작은 점으로 알려 드려요.</div>
+      <div class="card" style="display:grid; gap:14px; margin-top:6px">
+        <div class="row" style="justify-content:flex-start"><span class="tdot" style="--c:#a50034">1</span><div class="lbl"><b>차에 타면 자동 연결</b><span>앱을 열지 않아도 돼요</span></div></div>
+        <div class="row" style="justify-content:flex-start"><span class="tdot" style="--c:#c77700">2</span><div class="lbl"><b>쓰던 앱 그대로</b><span>YouTube 위에도 점이 나타나요</span></div></div>
+        <div class="row" style="justify-content:flex-start"><span class="tdot" style="--c:#1683d8">3</span><div class="lbl"><b>나에게 맞춰 학습</b><span>끄고 켜는 것을 기억해요</span></div></div>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btnm" data-go="perms">시작하기</button>
+      <div class="mut" style="text-align:center">설정은 2분이면 끝나요</div>
+    </section>
+
+    <!-- APP-02 권한 안내 -->
+    <section class="screen scr" id="s-perms">
+      <div class="step" id="permStep"><i></i><i></i><i></i><i></i></div>
+      <div class="mut" id="permCount">1 / 4 단계</div>
+      <div class="h1" id="permTitle"></div>
+      <div class="preview" id="permPreview"><div class="pv"></div><canvas data-mini="5"></canvas></div>
+      <div class="mut" id="permWhy"></div>
+      <div id="permList" style="display:grid; gap:12px; flex:none"></div>
+      <div style="flex:1"></div>
+      <button class="btnm" id="permBtn">허용하기</button>
+      <button class="link" id="permSkip">나중에 할게요</button>
+    </section>
+
+    <!-- APP-03a 차량 등록 + 시스템 기기 선택 창 -->
+    <section class="screen scr" id="s-register">
+      <div class="h1" style="margin-top:14px">차에 연결하기</div>
+      <div class="mut">차 안의 MerMaid 장치(MSAgent)를 찾고 있어요. 차에 시동이 걸려 있어야 해요.</div>
+      <div class="card"><b style="font-size:15.5px">처음 한 번만 등록하면</b><div class="mut" style="margin-top:4px">다음부터는 차에 타면 자동으로 연결돼요. 기기 선택 창은 Android가 띄우는 화면이에요.</div></div>
+      <div class="mut" id="regError" style="color:var(--bad)" hidden></div>
+      <div style="flex:1"></div>
+      <button class="btnm" id="regFind">차 찾기</button>
+      <button class="link" id="regLater">나중에 등록할게요</button>
+    </section>
+    <div class="dim" id="regDim" hidden></div>
+    <div class="sheet" id="regSheet" hidden>
+      <div style="text-align:center; font-size:17px; font-weight:700">MerMaid에서 관리할 기기를 선택하세요</div>
+      <div class="mut" style="text-align:center; font-size:12.5px">이 앱은 기기가 근처에 있을 때 자동으로 연결하고, 백그라운드에서 실행될 수 있습니다.</div>
+      <div id="regDevs" style="display:grid; gap:4px"></div>
+      <div class="acts"><button id="regCancel">취소</button><button id="regAllow">허용</button></div>
+    </div>
+
+    <!-- APP-03b 등록 완료 -->
+    <section class="screen scr" id="s-registered" style="padding-top:80px; gap:16px">
+      <div style="width:110px; height:110px; border-radius:34px; background:#e3f3ec; display:grid; place-items:center; font-size:54px; color:#1f9d68; flex:none">✓</div>
+      <div class="h1"><span id="regName">MSAgent</span><br>등록했어요</div>
+      <div class="mut" style="font-size:15px">다음부터는 <b style="color:#1e1b1d">차에 타면 자동으로 연결</b>돼요. 앱을 열 필요가 없어요.</div>
+      <div class="card" style="display:grid; gap:10px">
+        <div class="row"><span class="mut">페어링</span><b class="ok" id="regPair">암호화 완료</b></div>
+        <div class="row"><span class="mut">자동 연결</span><button class="sw on" id="regAuto" role="switch" aria-label="자동 연결"></button></div>
+        <div class="row"><span class="mut">내 기기 ID</span><b style="font-size:13px" id="regDev">—</b></div>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btnm" id="regNext">다음: 멀미 프로필</button>
+    </section>
+
+    <!-- APP-04a MSSQ-Short 설문 -->
+    <section class="screen scr" id="s-survey" style="gap:10px">
+      <div class="row"><button class="back" id="svBack">←</button><button class="mut" id="svSkip">건너뛰기</button></div>
+      <div class="h2">탈것마다 얼마나 자주<br>멀미를 느꼈나요?</div>
+      <div class="seg" id="svTab"><button class="on" data-sec="0">어릴 때 (12세 전)</button><button data-sec="1">최근 10년</button></div>
+      <div class="optlbl"><span>없음</span><span>전혀</span><span>가끔</span><span>때때로</span><span>자주</span></div>
+      <div id="svRows" style="display:grid; gap:10px; flex:none"></div>
+      <div style="flex:1"></div>
+      <div class="row card" style="padding:12px 16px"><div class="lbl"><span id="svCount">응답 0 / 18</span><b id="svScore">지금 점수 0.0</b></div><button class="btnm sm" id="svNext">다음</button></div>
+    </section>
+
+    <!-- APP-04b 결과 -->
+    <section class="screen scr" id="s-result" style="gap:16px">
+      <div class="h1" style="margin-top:20px">내 멀미 프로필</div>
+      <div class="card" style="display:grid; justify-items:center; gap:6px; padding:24px">
+        <svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="62" fill="none" stroke="#ece6e1" stroke-width="14"/><circle id="rsArc" cx="75" cy="75" r="62" fill="none" stroke="#a50034" stroke-width="14" stroke-linecap="round" stroke-dasharray="0 390" transform="rotate(-90 75 75)"/><text id="rsScore" x="75" y="78" text-anchor="middle" font-size="34" font-weight="800" fill="#1e1b1d">0.0</text><text x="75" y="102" text-anchor="middle" font-size="13" fill="#7a7074">/ 54</text></svg>
+        <b style="font-size:17px" id="rsSens">민감도 1.00</b>
+        <span class="tag" id="rsLabel">보통</span>
+      </div>
+      <div class="mut" style="font-size:14px">이 값은 차량 컨트롤러로 보내져 <b style="color:#1e1b1d">언제 개입할지</b> 판단하는 데 쓰여요. 주행 중 끄고 켜는 기록에 따라 조금씩 바뀌어요.</div>
+      <div class="card" style="display:grid; gap:8px; font-size:13px">
+        <div class="row"><span class="mut">어릴 때 (A)</span><b id="rsA">0.0</b></div>
+        <div class="row"><span class="mut">최근 10년 (B)</span><b id="rsB">0.0</b></div>
+        <div class="row"><span class="mut">컨트롤러 저장값</span><b id="rsCtrl">—</b></div>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btnm" id="rsSave">저장하고 시작하기</button>
+      <button class="btnm ghost" id="rsRedo">다시 하기</button>
+    </section>
+
+    <!-- APP-05 홈 -->
+    <section class="screen scr" id="s-home">
+      <div class="apbar"><div class="logo"><svg viewBox="0 0 32 32" width="24" height="24"><path d="M4 22c4-8 8-8 12 0s8 8 12 0" fill="none" stroke="#a50034" stroke-width="3.4" stroke-linecap="round"/><circle cx="16" cy="9" r="3.4" fill="#1e1b1d"/></svg>MerMaid</div><button class="chipm" id="homeChip" data-go="diag"><span class="d"></span><span>연결됨</span></button></div>
+      <div id="homeCard"></div>
+      <div class="sect">지금 차 안</div>
+      <div class="card tiers" id="tiers" style="padding:4px 16px">
+        <div class="row"><span class="tdot" style="--c:#1683d8">T1</span><div class="lbl"><b>송풍</b><span id="tv1">차 안 공용 · 꺼짐</span></div><button class="sw" id="sw1" style="--c:#1683d8" role="switch" aria-label="송풍"></button></div>
+        <div class="row"><span class="tdot" style="--c:#d61f69">T2</span><div class="lbl"><b>앰비언트 빛</b><span id="tv2">차 안 공용 · 꺼짐</span></div><button class="sw" id="sw2" style="--c:#d61f69" role="switch" aria-label="앰비언트 빛"></button></div>
+        <div class="row"><span class="tdot" style="--c:#c77700">T3</span><div class="lbl"><b>내 화면 모션 큐</b><span id="tv3">이 폰에만 · 꺼짐</span></div><button class="sw" id="sw3" style="--c:#c77700" role="switch" aria-label="내 화면 모션 큐"></button></div>
+      </div>
+      <div class="mut" style="font-size:12.5px">켜진 지 30초 안에 끄면 다음부터 덜 켜져요. 꺼진 큐를 직접 켜면 민감도를 올려요.</div>
+      <button class="card row" style="padding:12px 16px; text-align:left" data-go="survey"><div class="lbl"><b>멀미 프로필</b><span id="homeProf">아직 설문 전</span></div><span class="mut">›</span></button>
+      <div class="row" style="justify-content:space-around; font-size:13px; color:#4a4346; margin-top:auto; flex:none"><button data-go="settings">⚙ 설정</button><button data-go="diag">⌁ RF 진단</button></div>
+    </section>
+
+    <!-- APP-06 설정 -->
+    <section class="screen scr" id="s-settings" style="gap:10px">
+      <div class="row" style="justify-content:flex-start; gap:12px"><button class="back" data-go="home">←</button><div class="h2">설정</div></div>
+      <div class="sect">모션 큐</div>
+      <div class="card" style="display:grid; gap:14px">
+        <div class="preview sm"><div class="pv"></div><canvas data-mini="3"></canvas></div>
+        <div><div class="row"><b style="font-size:14px">움직임 크기</b><span class="mut" id="stGainV">중</span></div>
+          <div class="seg" id="stGain" style="--n:3; margin-top:8px"><button data-v="16">약</button><button data-v="24" class="on">중</button><button data-v="32">강</button></div></div>
+        <div><div class="row"><b style="font-size:14px">진하기</b><span class="mut" id="stAlphaV">0.8 (최대)</span></div>
+          <input class="range" id="stAlpha" type="range" min="0.3" max="0.8" step="0.05" value="0.8" aria-label="진하기"></div>
+        <div class="row"><b style="font-size:14px">점 색</b><div style="display:flex; gap:8px"><button class="colordot on" id="stWhite" style="background:#fff" aria-label="흰색"></button><button class="colordot" id="stAmber" style="background:#ffb547" aria-label="앰버"></button></div></div>
+        <div class="row"><b style="font-size:14px">시작 안내 표시</b><button class="sw on" id="stPill" role="switch" aria-label="시작 안내 표시"></button></div>
+      </div>
+      <div class="sect">연결</div>
+      <div class="card" style="display:grid; gap:12px">
+        <div class="row"><b style="font-size:14px">차에 타면 자동 연결</b><button class="sw on" id="stAuto" role="switch" aria-label="자동 연결"></button></div>
+        <div class="row" id="stCarRow"><div class="lbl"><b style="font-size:14px" id="stCar">MSAgent</b><span>등록된 차량</span></div><button class="tag" id="stUnreg">해제</button></div>
+      </div>
+      <div class="sect">기타</div>
+      <div class="card" style="display:grid; gap:10px; font-size:14px">
+        <button class="row" data-go="survey"><span>멀미 프로필 다시 하기</span><span class="mut">›</span></button>
+        <button class="row" data-go="perms"><span>권한 상태</span><span class="ok" id="stPerm">모두 허용</span></button>
+        <div class="row"><span>버전 · 기기 ID</span><span class="mut" id="stVer">0.2.0 · —</span></div>
+      </div>
+    </section>
+
+    <!-- APP-07 RF 진단 -->
+    <section class="screen scr" id="s-diag" style="gap:12px">
+      <div class="row" style="justify-content:flex-start; gap:12px"><button class="back" data-go="home">←</button><div class="h2">RF 진단</div></div>
+      <div class="card row" style="gap:16px">
+        <svg width="104" height="104" viewBox="0 0 120 120" style="flex:none"><circle cx="60" cy="60" r="50" fill="none" stroke="#ece6e1" stroke-width="10"/><circle id="dgArc" cx="60" cy="60" r="50" fill="none" stroke="#1f9d68" stroke-width="10" stroke-linecap="round" stroke-dasharray="0 314" transform="rotate(-90 60 60)"/><text id="dgAge" x="60" y="62" text-anchor="middle" font-size="22" font-weight="800" fill="#1e1b1d">—</text><text x="60" y="82" text-anchor="middle" font-size="11" fill="#7a7074">마지막 수신</text></svg>
+        <dl class="kvm">
+          <dt>상태</dt><dd id="dgState">대기</dd>
+          <dt>브리지</dt><dd id="dgName">—</dd>
+          <dt>방식</dt><dd id="dgKind">—</dd>
+          <dt>MTU</dt><dd id="dgMtu">—</dd>
+          <dt>HB 보냄/받음</dt><dd id="dgHb">—</dd>
+          <dt>SCR</dt><dd id="dgScr">—</dd>
+        </dl>
+      </div>
+      <div class="row" style="gap:8px"><button class="btnm sm ghost" style="flex:1" id="dgRe">다시 연결</button><button class="btnm sm ghost" style="flex:1" id="dgClear">로그 지우기</button></div>
+      <div class="row" style="gap:8px"><button class="btnm sm ghost" style="flex:1" id="dgDemo">데모 모드</button><button class="btnm sm ghost" style="flex:1" id="dgDrop">끊김 재현</button></div>
+      <div class="logm" id="dgLog"></div>
+      <div class="mut" style="font-size:12px">로그는 이 폰에만 저장되고 밖으로 보내지 않아요. 최근 300줄.</div>
+    </section>
+
+    <!-- OVL-01 타 앱 사용 중 (시뮬레이션) -->
+    <section class="screen app2" id="s-app2">
+      <div class="vplayer"><div class="prog"><i></i></div><button class="fs" id="toLand" aria-label="전체 화면">⛶</button></div>
+      <div class="vmeta"><div class="bar w" style="width:88%"></div><div class="bar w" style="width:60%"></div><div class="bar" style="width:40%; margin-top:6px"></div>
+        <div style="display:flex; gap:8px; margin-top:8px"><div class="bar" style="width:70px; height:30px; border-radius:15px"></div><div class="bar" style="width:70px; height:30px; border-radius:15px"></div><div class="bar" style="width:70px; height:30px; border-radius:15px"></div></div></div>
+      <div class="vlist">
+        <div class="vitem"><div class="th a"></div><div><div class="bar w"></div><div class="bar" style="width:70%"></div></div></div>
+        <div class="vitem"><div class="th b"></div><div><div class="bar w"></div><div class="bar" style="width:60%"></div></div></div>
+        <div class="vitem"><div class="th c"></div><div><div class="bar w"></div><div class="bar" style="width:75%"></div></div></div>
+      </div>
+    </section>
+    <!-- OVL-02 가로 전체 화면 -->
+    <section class="screen app2" id="s-land"><div class="landvid"><div class="sun"></div><button class="fs" id="toPort" aria-label="전체 화면 끝내기">⛶</button></div></section>
+
+    <canvas class="cue" id="cue"></canvas>
+    <div class="pill" id="pill" style="opacity:0">모션 큐 시작</div>
+    <div class="pullhint" id="pull" title="알림창 내리기" hidden></div>
+
+    <!-- SYS-01 알림창 (시뮬레이션) -->
+    <div class="shade" id="shade">
+      <div class="head"><span id="shDate">11월 17일 (월)</span><span>⚙</span></div>
+      <div class="qs">
+        <div class="qt on"><b>⌔</b>Wi-Fi</div><div class="qt on"><b>ᛒ</b>블루투스</div><div class="qt"><b>◐</b>소리</div>
+        <button class="qt" id="qsCue"><b>⁘</b>모션 큐<small id="qsCueSub">꺼짐</small></button>
+        <div class="qt"><b>✈</b>비행기</div><div class="qt"><b>⟳</b>자동 회전</div><div class="qt"><b>☾</b>방해 금지</div><div class="qt"><b>⚡</b>절전</div>
+      </div>
+      <div class="bright"></div>
+      <div class="noti" id="noti">
+        <div class="app"><i></i><span id="notiApp">MerMaid · 차량과 연결됨</span></div>
+        <b id="notiTitle">차량과 연결됨</b>
+        <span style="font-size:13px; color:#555" id="notiText">편안한 주행이에요</span>
+        <div class="acts"><button id="notiCue">모션 큐 켜기</button><button id="notiOpen">앱 열기</button></div>
+      </div>
+      <button class="close" id="shadeClose" aria-label="알림창 닫기"></button>
+    </div>
+
+    <div class="gbar"></div>
+  </div>
+</div></div>
+
+<div class="tools" id="tools">
+  <button id="tApp2">다른 앱으로 (OVL)</button>
+  <button id="tShade">알림창 (SYS)</button>
+  <button id="tReset">처음부터</button>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
