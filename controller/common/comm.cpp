@@ -163,6 +163,8 @@ void Comm::on_device_json(uint8_t conn, const std::string& text, Actions& out) {
             msg::copy_id(m.sender, c.dev);
             m.on = on;
             m.att = !hud && on && att;  // HUD는 응시 없음. 화면이 꺼져 있으면 응시도 아님
+            c.scr = m;
+            c.has_scr = true;
             out.emplace_back(m);
         } else if (t == "OVR") {
             const std::string dev = v.at("dev").string();
@@ -184,6 +186,8 @@ void Comm::on_device_json(uint8_t conn, const std::string& text, Actions& out) {
             msg::copy_id(m.phone, c.dev);
             m.mssq = mssq;
             m.sens = sens;
+            c.prof = m;
+            c.has_prof = true;
             out.emplace_back(m);
         } else {
             log("unknown t " + t + " from " + from);
@@ -209,6 +213,20 @@ Actions Comm::on_tick(int64_t now_ms) {
             const Conn& c = conn_[i];
             if (!c.registered || c.delivered) continue;
             out.emplace_back(make_hello(static_cast<uint8_t>(i)));
+        }
+        // 마지막 SCR·PROF를 P4에: 못 보냈으면 1초마다, 아니면 10초마다 (P4가 재시작해도 10초 안에 다시 안다)
+        if (next_refresh_ms_ < 0) next_refresh_ms_ = now_ms + kCtxRefreshMs;
+        if (p4_down_ || now_ms >= next_refresh_ms_) {
+            next_refresh_ms_ = now_ms + kCtxRefreshMs;
+            for (const Conn& c : conn_) {
+                if (!c.registered || !(c.has_scr || c.has_prof)) continue;
+                CtxResend r;
+                r.has_scr = c.has_scr;
+                r.has_prof = c.has_prof;
+                r.scr = c.scr;
+                r.prof = c.prof;
+                out.emplace_back(r);
+            }
         }
         // 조금 늦으면 원래 박자를 지키고, 한 주기 넘게 밀리면 몰아서 보내지 않고 지금부터 다시
         if (next_hb_ms_ < 0 || now_ms - next_hb_ms_ >= kHbPeriodMs) next_hb_ms_ = now_ms + kHbPeriodMs;

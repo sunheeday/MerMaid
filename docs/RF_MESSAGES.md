@@ -147,10 +147,10 @@ cmake -S controller -B build && cmake --build build && ctest --test-dir build --
 - P5 시작 직후 1초 안에 기록 없는 새 기기가 먼저 HELLO 하면 Tier 1·2를 OFF로 정한다 (드묾).
 - P6을 다시 시작하면 기기가 몇 초 끊겼다 다시 붙는다 (앱·HUD의 자동 재연결에 기댐).
 
-## 7. 김승희 쪽에서 바꿀 곳 (통합 단계)
+## 7. 진짜 P4·P2 연결 (통합 단계)
 
-- P4: `--phone`/`--hud` 대신 DEV_SYNC 회신으로 등록 (`add_phone`, `remove_phone`, `set_hud_connected`)
-- P4: CTX_SCREEN·CTX_OVR·CTX_PROF를 받아 `on_screen`·`on_override`·`on_profile`에 넘기기
-- P4: `CMD` stdout과 함께 TIER_CMD를 P5로 보내기
-- P2: MOTION을 100 ms마다 P6로 보내기
-- P4: TIER_CMD를 보내다 실패하고 연결이 닫혔으면 (`!connected()`) 바로 한 번 더 보내기 (P5가 다시 시작한 직후, §2-2)
+구현됨: P4 `--rf`, P2 `--motion`, P6의 SCR·PROF 다시 보내기. 동작과 실행 방법, 검증 항목은 [`RF_AI_LINK.md`](RF_AI_LINK.md).
+
+- P4: DEV_SYNC 회신으로 등록 (`add_phone`, `remove_phone`, `set_hud_connected`), CTX_SCREEN·CTX_OVR·CTX_PROF → `on_screen`·`on_override`·`on_profile`, `CMD` stdout과 함께 TIER_CMD를 P5로
+- P2: MOTION을 100 ms마다 P6로
+- P4: DEV_SYNC·TIER_CMD가 실패하고 연결이 닫혔으면 (`!connected()`) 바로 한 번 더 (P5가 다시 시작한 직후, §2-2)
