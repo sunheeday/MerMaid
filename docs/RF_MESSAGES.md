@@ -132,7 +132,7 @@ cmake -S controller -B build && cmake --build build && ctest --test-dir build --
 
 알려진 문제 (2026-11-18 Pi 시험에서 발견, `controller/bringup/README.md` RF 절):
 - ~~P4가 없을 때 온 SCR·PROF를 P6이 버림~~ → 2026-11-18 고침: P6이 연결마다 기억했다가 다시 보낸다 (§3 표의 "SCR·PROF 재전송")
-- 맥 Chrome(Web Bluetooth) ↔ ESP32: 연결은 되지만 페어링이 끝나지 않아 HELLO가 안 나감. 원인 미확인
+- 맥 Chrome(Web Bluetooth) ↔ ESP32: 연결은 되지만 페어링이 끝나지 않아 HELLO가 안 나감 → 원인: 브리지 펌웨어 v6이 페어링을 시작하게 하지 않았음. v7에서 고침 (`fix/rf-esp32` 브랜치의 `bridge/README.md`). 맥 bleak로 확인, Chrome·Android 앱은 다시 확인 필요
 
 ## 7. P4·P2 연결 (2026-11-18 완료, 김승희)
 

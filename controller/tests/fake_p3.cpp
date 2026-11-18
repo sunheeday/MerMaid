@@ -1,4 +1,4 @@
-// fake_p3: Mac 시험용 P3 대역 (LightGBM 없이). 진짜 P3처럼 mermaid_p3 이름으로 VEH를 받고,
+// fake_p3: P3 대역 (LightGBM 없이). Mac 시험(pipeline_rf_sim)과 Pi 시연(bringup/demo_phone.sh)용. 진짜 P3처럼 mermaid_p3 이름으로 VEH를 받고,
 // 주기마다 P4에 PROFILES를 물은 뒤 정해진 확률로 RISK를 보낸다. 주행 경계는 그대로 넘긴다.
 //   fake_p3 [--p P2,P3,P4,P5,P6] [--once]
 // stdout: 주기마다 "PROFILES <n> <id>:<mssq>:<sens>:<ev> ..." (P4가 RF 명부를 P3에 넘기는지 확인용)

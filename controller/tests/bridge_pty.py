@@ -28,7 +28,7 @@ def main():
     a = ap.parse_args()
 
     fd = os.open(a.master, os.O_RDWR | os.O_NOCTTY)
-    log = open(a.log, "w")
+    log = open(a.log, "w", buffering=1)  # 줄마다 기록 (tail -f로 실시간 보기)
     lock = threading.Lock()
     conns = []  # (연결 번호, 역할, dev, mssq, sens)
     for i, p in enumerate(a.phone):

@@ -168,7 +168,26 @@ P6이 연결마다 마지막 SCR·PROF를 기억해 P4에 못 보냈으면 1초�
 RF 없는 AC-02(`out/fast`)와 비교하면 Tier 1·2는 같은 시각이고 Tier 3만 1,180초 → 1,340초다. 재전송 탓이 아니다:
 AC-02의 phone-0은 EV 경험이 `0.0`인데 RF로 들어온 폰은 PROF에 EV가 없어 NaN이라 P3 확률이 170초부터 달라진다 (T-17).
 
-**맥 Chrome ↔ ESP32 (미해결, 2026-11-18):** HUD 웹(`hud/web/app.html`)에서 `MSAgent-…`가 보이고 BLE 연결과 MTU 247까지는 되지만
+## 폰 시연: 실제 ESP32로 Tier 1·2·3 (2026-11-18)
+
+위험 확률을 모델 대신 `fake_p3`가 0.95로 고정하고(데이터 조작), 흔들림이 큰 가짜 주행(`controller/tests/make_demo_trip.py`)을 실시간으로 재생한다.
+HUD 기기가 없어도 Tier 1·2가 보이게 P4는 `--rf --hud`. 정책은 그대로라 주행 시작 후 Tier 1 10초, Tier 2 60초, Tier 3 120초에 켜진다.
+
+```bash
+ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && WAIT=40 sh controller/bringup/demo_phone.sh 420 0.95'
+```
+
+`WAIT`초 안에 폰 앱(또는 맥 BLE 흉내)을 차(MSAgent)에 연결한다. 늦게 붙어도 10초 안에 등록된다.
+
+브리지 펌웨어는 v7이어야 한다 (`fix/rf-esp32` 브랜치). v6은 페어링을 시작하지 않아 HELLO가 버려진다.
+
+| 확인 | 결과 (맥이 폰 대신 BLE로 연결, 브리지 v7) |
+|---|---|
+| 페어링 | 브리지 보안 요청 → `encrypted=1 bonded=1`, HELLO → P5 등록, INT 1·2·3 OFF 상태 수신 |
+| Tier | 주행 시작 후 10초 Tier 1 ON, 60초 Tier 2 ON, 120초 Tier 3 ON → 맥에 INT |
+| MOT | Tier 3 ON 뒤 10 Hz (`ax`, `ay`, `pax`, `pay`) |
+
+**맥 Chrome ↔ ESP32 (원인 찾음, 브리지 v7(`fix/rf-esp32`)에서 고침, Chrome으로는 다시 확인 필요):** HUD 웹(`hud/web/app.html`)에서 `MSAgent-…`가 보이고 BLE 연결과 MTU 247까지는 되지만
 페어링(암호화)이 끝나지 않는다. ESP32 로그에 `security: encrypted=1`이 없고, 페이지는 `startNotifications`에서 기다리느라 HELLO를 보내지 않는다.
 확인할 것: 맥의 블루투스 페어링 요청 창, 맥 Bluetooth 설정의 옛 `MSAgent` 삭제, ESP32에 저장된 본딩 정리.
 ESP32 전원과 로그는 맥 USB(보드의 "UART" 포트, CP2102 → `/dev/cu.usbserial-*`)로 받는다. Pi 핀 3가닥(7·29·9)은 데이터선이라 전원이 없다.
