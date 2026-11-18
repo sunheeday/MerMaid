@@ -89,7 +89,8 @@ class MainActivity : ComponentActivity() {
         val cdm = getSystemService(CompanionDeviceManager::class.java)
         // 광고 패킷에 이름과 128비트 UUID가 다 안 들어갈 수 있어 두 조건 중 하나만 맞아도 표시
         val byName = BluetoothLeDeviceFilter.Builder()
-            .setNamePattern(Pattern.compile(Pattern.quote(Proto.NAME_PREFIX) + ".*")).build()
+            // 이미 본딩된 폰은 광고 이름(MSAgent-xxxx) 대신 저장된 GAP 이름(MSAgent)으로 보인다 → 둘 다 받는다
+            .setNamePattern(Pattern.compile(Pattern.quote(Proto.NAME_PREFIX.trimEnd('-')) + "(-.*)?")).build()
         val byService = BluetoothLeDeviceFilter.Builder()
             .setScanFilter(ScanFilter.Builder().setServiceUuid(ParcelUuid(Proto.SERVICE)).build()).build()
         val req = AssociationRequest.Builder().addDeviceFilter(byName).addDeviceFilter(byService).setSingleDevice(false).build()
