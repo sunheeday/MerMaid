@@ -147,9 +147,15 @@ Outs DevMgr::on_tier_cmd(const msg::TierCmd& m) {
         return out;
     }
     const bool on = m.on != 0;
-    if (safe_off_ && on) {
-        log("safe off: ignore TIER_CMD " + device + " ON until DEV_SYNC comes back");
-        return out;
+    if (safe_off_) {
+        // P4가 다시 뜨면 첫 주기에 TIER_CMD를 먼저, DEV_SYNC를 그 뒤에 보낸다. 여기서 ON을 버리면 P4는 켰다고 믿고
+        // 기기는 꺼진 채로 남는다 → 잡아 두었다가 DEV_SYNC로 안전 OFF가 풀린 뒤 다음 박자에 적용한다
+        held_.erase(device);
+        if (on) {
+            held_[device] = m;
+            log("safe off: hold TIER_CMD " + device + " ON until DEV_SYNC comes back");
+            return out;
+        }
     }
     if (tier == 1 || tier == 2) {
         (tier == 1 ? airflow_ : display_) = on;
@@ -198,9 +204,19 @@ Outs DevMgr::on_tick(int64_t now_ms) {
     // 시작: P6에게 등록된 기기를 다시 알려 달라고 한다 (P5만 다시 시작했을 때 명부를 되찾음). 전달될 때까지 매번
     if (!resync_done_) out.emplace_back(msg::OutResync{});
     if (last_sync_ < 0) last_sync_ = now_ms;  // 시작부터 30초 유예
+    if (!safe_off_ && !held_.empty()) {  // 안전 OFF가 풀림: 그동안 잡아 둔 ON을 적용
+        const std::map<std::string, msg::TierCmd> held = std::move(held_);
+        held_.clear();
+        for (const auto& h : held) {
+            log("safe off cleared: apply held TIER_CMD " + h.first + " ON");
+            Outs o = on_tier_cmd(h.second);
+            out.insert(out.end(), o.begin(), o.end());
+        }
+    }
     if (safe_off_ || now_ms - last_sync_ < safety_ms_) return out;
 
     safe_off_ = true;
+    held_.clear();
     airflow_ = display_ = false;
     airflow_known_ = display_known_ = true;
     for (auto& d : dots_) d.second = false;

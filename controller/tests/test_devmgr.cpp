@@ -170,11 +170,17 @@ static void safety_off() {
     EXPECT(m.on_tick(31000), "INT 0 1 0", "INT 0 2 0", "INT 0 3 0", "STR 0 0", "INT 1 1 0", "INT 1 2 0", "STR 1 0");
     CHECK(m.safe_off() && !m.is_on("airflow-01") && !m.is_on(kA), "everything off");
     CHECK(m.on_tick(40000).empty(), "safe off only once");
-    CHECK(m.on_tier_cmd(cmd(kA, 3, true)).empty() && !m.is_on(kA), "ON refused while safe off");
+    CHECK(m.on_tier_cmd(cmd(kA, 3, true)).empty() && !m.is_on(kA), "ON held while safe off");
     CHECK(!m.on_tier_cmd(cmd(kA, 3, false)).empty(), "OFF still passes");
+    CHECK(m.on_tick(40500).empty(), "an OFF after the held ON drops it");
 
+    // P4가 다시 뜬 첫 주기: TIER_CMD ON이 DEV_SYNC보다 먼저 온다 → 잡아 두었다가 풀린 뒤 다음 박자에 적용
+    CHECK(m.on_tier_cmd(cmd("airflow-01", 1, true)).empty() && !m.is_on("airflow-01"), "ON held, not applied yet");
+    CHECK(m.on_tick(40800).empty(), "still safe off: nothing applied");
     m.on_sync(msg::DevSync{}, 41000);
     CHECK(!m.safe_off(), "DEV_SYNC clears safe off");
+    EXPECT(m.on_tick(41100), "INT 0 1 1", "INT 1 1 1");
+    CHECK(m.is_on("airflow-01") && m.on_tick(42000).empty(), "held ON applied once");
     EXPECT(m.on_tier_cmd(cmd(kA, 3, true)), "INT 0 3 1", "STR 0 1");
 }
 
