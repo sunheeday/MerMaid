@@ -58,6 +58,9 @@ public:
         : log_(std::move(log)), link_timeout_ms_(link_timeout_ms) {}
 
     // ---- UART 스레드 ----
+    // 시작할 때 한 번: 브리지의 모든 연결을 끊고(0~8|DROP) P5 명부도 비운다(DEV_BYE ALL).
+    // P6이 다시 시작하면 표가 비어 있으므로, 기기가 다시 붙어 HELLO를 보내게 하는 것이 유일한 복구 방법이다
+    Actions on_start();
     Actions on_uart_line(const std::string& line, int64_t now_ms);  // ESP32에서 온 한 줄
     Actions on_tick(int64_t now_ms);                                // 자주 (예: 100 ms마다)
     // DEV_HELLO를 P5에 보내는 데 성공하면 부른다. 못 보낸 HELLO는 1초마다 다시 나온다 (P5가 늦게 뜬 경우)
@@ -68,6 +71,9 @@ public:
     Actions on_out_stream(const msg::OutStream& m);  // UART로 나가는 것은 없고 스트림 표만 바뀐다
     Actions on_out_prof(const msg::OutProf& m);
     Actions on_out_drop(const msg::OutDrop& m);
+    // P5가 다시 시작함: 등록된 연결을 모두 'P5에 아직 못 알림'으로 되돌린다. 다음 on_tick(1초 박자)이 DEV_HELLO를
+    // 다시 내보낸다 (받기 스레드는 MsgSend 하지 않으므로 표만 바꾼다)
+    void on_resync();
     Actions on_motion(const msg::Motion& m);  // 스트림이 켜진 연결마다 MOT 한 줄
 
     bool registered(int conn) const { return valid(conn) && conn_[conn].registered; }
@@ -80,6 +86,8 @@ private:
         int64_t hello_due = -1;   // -1: 기다리는 중 아님
         int64_t last_rx = 0;      // 이 연결에서 마지막으로 받은 시각
         bool delivered = false;   // DEV_HELLO가 P5에 전달됨
+        uint8_t int_known = 0;    // 이 연결에 보낸 INT (bit t-1 = Tier t). DEV_HELLO에 실어 P5 재시작 때 쓴다
+        uint8_t int_on = 0;
         msg::Role role = msg::Role::App;
         std::string dev;          // 연결 → 기기 ID (Ctx*의 sender를 채우려고)
     };
@@ -89,6 +97,7 @@ private:
         if (log_) log_(s);
     }
     void forget(uint8_t conn, Actions& out);
+    msg::DevHello make_hello(uint8_t conn) const;
     void on_device_json(uint8_t conn, const std::string& text, Actions& out);
 
     Conn conn_[msg::kMaxConn];

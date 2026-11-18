@@ -9,6 +9,9 @@
 //   UART 스레드(main): UART 읽기 → 규칙 → UART 쓰기 / P5·P4에 MsgSend. 100 ms마다 시계(HB, HELLO 5초, 무응답 5초)
 //   받기 스레드: mermaid_p6로 P5(OUT_*)와 P2(MOTION)를 받아 바로 회신 → 규칙 → UART 쓰기. MsgSend 하지 않는다
 // 시작 순서: P6이 가장 먼저 (P5, P2가 P6에 보낸다). P5가 늦게 떠도 등록은 1초마다 다시 보낸다.
+// 다시 시작 (docs/RF_MESSAGES.md §6):
+//   P6이 다시 시작 → 시작할 때 0~8|DROP으로 브리지의 모든 연결을 끊고 P5에 DEV_BYE ALL. 기기가 다시 붙어 HELLO
+//   P5가 다시 시작 → P5가 OUT_RESYNC를 보냄 → 등록된 기기의 DEV_HELLO를 다음 1초 박자에 다시 보냄
 #include <atomic>
 #include <cerrno>
 #include <cstdio>
@@ -102,6 +105,7 @@ union Inbox {
     msg::OutStream out_stream;
     msg::OutProf out_prof;
     msg::OutDrop out_drop;
+    msg::OutResync out_resync;
     msg::Motion motion;
     _pulse pulse;
     Inbox() {}
@@ -135,6 +139,11 @@ void receive_loop(Shared& sh, ipc::Server& srv) {
             ipc::Server::reply(rcvid);
             std::lock_guard<std::mutex> lk(sh.core_mu);
             acts = sh.core->on_out_drop(m);
+        } else if (type == msg::OUT_RESYNC) {
+            ipc::Server::reply(rcvid);
+            log_line("P5", "RESYNC (P5 restarted)");
+            std::lock_guard<std::mutex> lk(sh.core_mu);
+            sh.core->on_resync();  // 표만 바꾼다. HELLO는 UART 스레드의 on_tick이 보낸다
         } else if (type == msg::MOTION) {
             const msg::Motion m = in.motion;
             ipc::Server::reply(rcvid);
@@ -199,9 +208,14 @@ int main(int argc, char** argv) {
         // UART 스레드 (main)
         ipc::Client p5(msg::kNameP5, 200 * 1000000ULL);
         ipc::Client p4(msg::kNameP4, 200 * 1000000ULL);
+        // 상대가 다시 시작했으면 옛 연결로 보낸 첫 번은 실패하고 연결이 닫힌다 → 바로 한 번 더 (새로 연결).
+        // 시간 초과(상대가 바쁨)는 연결이 남으므로 다시 보내지 않는다
+        auto send_to = [](ipc::Client& c, const void* m, size_t n) {
+            return c.send(m, n) || (!c.connected() && c.send(m, n));
+        };
         bool p5_warned = false, p4_warned = false;
         auto send_p5 = [&](const void* m, size_t n, const std::string& what) {
-            if (p5.send(m, n)) {
+            if (send_to(p5, m, n)) {
                 if (p5_warned) log_line("..", "P5 reachable again");
                 p5_warned = false;
                 return true;
@@ -213,7 +227,7 @@ int main(int argc, char** argv) {
         auto send_p4 = [&](const void* m, size_t n, const std::string& what) {
             log_line("P4", what);
             if (no_p4) return;
-            if (p4.send(m, n)) {
+            if (send_to(p4, m, n)) {
                 p4_warned = false;
                 return;
             }
@@ -232,7 +246,8 @@ int main(int argc, char** argv) {
                         core.hello_delivered(h->conn, h->dev);
                     }
                 } else if (const auto* b = std::get_if<msg::DevBye>(&a)) {
-                    const std::string what = "BYE conn " + std::to_string(b->conn);
+                    const std::string what =
+                        b->conn == msg::kConnAll ? std::string("BYE ALL") : "BYE conn " + std::to_string(b->conn);
                     if (send_p5(b, sizeof *b, what)) log_line("P5", what);
                 } else if (const auto* s = std::get_if<msg::CtxScreen>(&a)) {
                     send_p4(s, sizeof *s,
@@ -246,6 +261,16 @@ int main(int argc, char** argv) {
                 }
             }
         };
+
+        // 시작: 브리지의 모든 연결을 끊는다 (P6만 다시 시작했을 때 기기가 다시 HELLO 하게)
+        {
+            comm::Actions acts;
+            {
+                std::lock_guard<std::mutex> lk(sh.core_mu);
+                acts = core.on_start();
+            }
+            run(acts);
+        }
 
         comm::LineAssembler asm_;
         int64_t next_stat = now_ms() + 10000;

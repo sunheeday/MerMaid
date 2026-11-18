@@ -19,7 +19,7 @@ namespace mm::devmgr {
 
 constexpr int64_t kSafetyTimeoutMs = 30000;  // policy.json safety_timeout_s
 
-using Out = std::variant<msg::OutInt, msg::OutStream, msg::OutProf, msg::OutDrop>;
+using Out = std::variant<msg::OutInt, msg::OutStream, msg::OutProf, msg::OutDrop, msg::OutResync>;
 using Outs = std::vector<Out>;
 
 class DevMgr {
@@ -35,7 +35,10 @@ public:
     Outs on_bye(const msg::DevBye& m);        // P6: 기기 해제
     Outs on_tier_cmd(const msg::TierCmd& m);  // P4: 기기 하나 ON/OFF
     msg::DevSyncReply on_sync(const msg::DevSync& m, int64_t now_ms);  // P4: 10초마다, 회신 = 명부
-    Outs on_tick(int64_t now_ms);  // 1초마다: DEV_SYNC가 30초 없으면 전부 OFF
+    // 1초마다: P6에 OUT_RESYNC가 전달될 때까지 다시 보냄 + DEV_SYNC가 30초 없으면 전부 OFF
+    Outs on_tick(int64_t now_ms);
+    // OUT_RESYNC를 P6에 보내는 데 성공하면 부른다. 그 뒤로는 on_tick이 OUT_RESYNC를 내지 않는다
+    void resync_delivered() { resync_done_ = true; }
 
     // ---- 조회 (테스트·로그) ----
     int conn_of(const std::string& dev) const;  // 없으면 -1
@@ -59,7 +62,12 @@ private:
     Entry e_[msg::kMaxConn];
     bool airflow_ = false;               // Tier 1 (공용)
     bool display_ = false;               // Tier 2 (공용)
-    std::map<std::string, bool> dots_;   // Tier 3, 폰 ID별. 끊겨도 기억 (재연결 때 다시 보냄)
+    // Tier 1·2를 아는지. P5가 시작하면 모른다 → 첫 DEV_HELLO에 실린 'P6이 마지막으로 보낸 INT'로 되찾는다
+    // (P5만 다시 시작했을 때 P4는 바뀐 것이 없으면 명령을 다시 보내지 않으므로). 모르는 채면 OFF로 보낸다
+    bool airflow_known_ = false;
+    bool display_known_ = false;
+    bool resync_done_ = false;           // OUT_RESYNC가 P6에 전달됨
+    std::map<std::string, bool> dots_;   // Tier 3, 폰 ID별. 끊겨도 기억 (재연결 때 다시 보냄). 없으면 모름
     int64_t last_sync_ = -1;             // -1: 아직 시계 시작 전
     bool safe_off_ = false;
     ProfileFn load_profile_;
