@@ -1,4 +1,6 @@
-// mermaid_bridge (v6) — ESP32-S3 BLE ↔ UART 브리지. 설명은 bridge/README.md
+// mermaid_bridge (v7) — ESP32-S3 BLE ↔ UART 브리지. 설명은 bridge/README.md
+// v7: 연결되면 브리지가 먼저 보안 요청(페어링)을 보내고, 암호화가 끝난 뒤에야 Pi에 CONNECT를 알린다.
+//     v6은 페어링을 시작하게 하는 것이 없어서 (RX가 응답 없는 쓰기뿐 → 거절 에러가 없음) 맥·Chrome·앱의 HELLO가 조용히 버려졌다
 // UUID·광고 이름은 protocol/uuids.json, UART 프레임은 protocol/PROTOCOL.md §1
 // 보드: ESP32S3 Dev Module, Flash 16MB, PSRAM Disabled. Arduino-ESP32 3.3.12, NimBLE-Arduino 2.x
 // nimconfig.h: CONFIG_BT_NIMBLE_MAX_CONNECTIONS = 3 (현재). 9는 기기 모이면 시험
@@ -9,6 +11,7 @@
 #define MAX_SLOTS 9
 #define EMPTY 0xFFFF
 #define MAX_MSG 512
+#define SECURE_TIMEOUT_MS 15000  // 연결 후 이 안에 암호화가 안 되면 끊음
 
 static const char* SVC_UUID = "cd820001-2f55-4bae-8e0f-8474006c441e";
 static const char* RX_UUID  = "cd820002-2f55-4bae-8e0f-8474006c441e";
@@ -16,6 +19,8 @@ static const char* TX_UUID  = "cd820003-2f55-4bae-8e0f-8474006c441e";
 
 NimBLEServer* server; NimBLECharacteristic* txChar;
 uint16_t slotHandle[MAX_SLOTS];
+bool slotSecure[MAX_SLOTS];          // 암호화 끝남 = Pi에 CONNECT를 보냄
+unsigned long slotSince[MAX_SLOTS];  // 연결된 시각 (암호화 시간 제한용)
 String fromPi, fromUsb;
 unsigned long piLines = 0, usbLines = 0, chunksOk = 0, chunksFail = 0, lastStat = 0;
 
@@ -38,20 +43,27 @@ int notifyChunked(uint16_t h, const String& payload){
 class ServerCB : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* s, NimBLEConnInfo& info) override {
     int id=findSlot(EMPTY); if(id<0){ s->disconnect(info.getConnHandle()); return; }
-    slotHandle[id]=info.getConnHandle(); sendToPi(String(id)+"|CONNECT");
-    Serial.printf("[BLE] id %d connected\r\n", id); NimBLEDevice::startAdvertising(); }
+    slotHandle[id]=info.getConnHandle(); slotSecure[id]=false; slotSince[id]=millis();
+    // 기기가 페어링을 먼저 시작하지 않으므로 브리지가 요청한다 (Just Works, 본딩된 기기는 바로 암호화)
+    bool ok=NimBLEDevice::startSecurity(info.getConnHandle());
+    Serial.printf("[BLE] id %d connected, security request %s\r\n", id, ok?"sent":"failed"); NimBLEDevice::startAdvertising(); }
   void onDisconnect(NimBLEServer* s, NimBLEConnInfo& info, int reason) override {
-    int id=findSlot(info.getConnHandle()); if(id>=0){ slotHandle[id]=EMPTY; sendToPi(String(id)+"|DISCONNECT"); }
+    int id=findSlot(info.getConnHandle());
+    if(id>=0){ if(slotSecure[id]) sendToPi(String(id)+"|DISCONNECT"); slotHandle[id]=EMPTY; slotSecure[id]=false; }
     Serial.printf("[BLE] id %d disconnected (reason %d)\r\n", id, reason); NimBLEDevice::startAdvertising(); }
   void onAuthenticationComplete(NimBLEConnInfo& info) override {
-    Serial.printf("[BLE] id %d security: encrypted=%d bonded=%d\r\n", findSlot(info.getConnHandle()), info.isEncrypted(), info.isBonded()); }
+    int id=findSlot(info.getConnHandle());
+    Serial.printf("[BLE] id %d security: encrypted=%d bonded=%d\r\n", id, info.isEncrypted(), info.isBonded());
+    if(id<0) return;
+    if(!info.isEncrypted()){ server->disconnect(info.getConnHandle()); return; }  // 페어링 실패
+    if(!slotSecure[id]){ slotSecure[id]=true; sendToPi(String(id)+"|CONNECT"); } }
   void onMTUChange(uint16_t mtu, NimBLEConnInfo& info) override {
     Serial.printf("[BLE] id %d MTU = %u\r\n", findSlot(info.getConnHandle()), mtu); }
 };
 
 class RxCB : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
-    int id=findSlot(info.getConnHandle()); if(id<0) return;
+    int id=findSlot(info.getConnHandle()); if(id<0 || !slotSecure[id]) return;
     NimBLEAttValue v=c->getValue(); String all((const char*)v.data(), v.length());
     int start=0, lines=0;
     while(start<(int)all.length()){ int nl=all.indexOf('\n',start); if(nl<0) nl=all.length();
@@ -65,17 +77,17 @@ void handleLine(const String& line, const char* src){
   int bar=line.indexOf('|'); if(bar<=0) return;
   String target=line.substring(0,bar), payload=line.substring(bar+1);
   if(payload.length()>MAX_MSG){ Serial.printf("[BLE] dropped: too long (%u)\r\n", payload.length()); return; }
-  if(target=="ALL"){ for(int i=0;i<MAX_SLOTS;i++) if(slotHandle[i]!=EMPTY) notifyChunked(slotHandle[i],payload);
+  if(target=="ALL"){ for(int i=0;i<MAX_SLOTS;i++) if(slotHandle[i]!=EMPTY && slotSecure[i]) notifyChunked(slotHandle[i],payload);
     Serial.printf("[BLE] %s -> ALL (%u bytes)\r\n", src, payload.length()); return; }
   if(!isDigit(target[0])) return; int id=target.toInt();
-  if(id>=MAX_SLOTS || slotHandle[id]==EMPTY) return;
+  if(id>=MAX_SLOTS || slotHandle[id]==EMPTY || !slotSecure[id]) return;
   if(payload=="DROP"){ server->disconnect(slotHandle[id]); Serial.printf("[BLE] id %d dropped by %s\r\n", id, src); return; }
   int n=notifyChunked(slotHandle[id],payload);
   Serial.printf("[BLE] %s -> id %d (%u bytes, %d chunk)\r\n", src, id, payload.length(), n); }
 
 void setup(){
   Serial.begin(115200); Serial1.setRxBufferSize(4096); Serial1.begin(115200, SERIAL_8N1, PI_RX, PI_TX);
-  for(int i=0;i<MAX_SLOTS;i++) slotHandle[i]=EMPTY; delay(500);
+  for(int i=0;i<MAX_SLOTS;i++){ slotHandle[i]=EMPTY; slotSecure[i]=false; } delay(500);
   NimBLEDevice::init("MSAgent");
   NimBLEAddress a=NimBLEDevice::getAddress(); const uint8_t* b=a.getBase()->val;  // NimBLE 2.x
   char name[16]; snprintf(name, sizeof name, "MSAgent-%02X%02X", b[1], b[0]);
@@ -84,14 +96,19 @@ void setup(){
   NimBLEDevice::setSecurityAuth(true,false,true); NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
   server=NimBLEDevice::createServer(); server->setCallbacks(new ServerCB());
   NimBLEService* svc=server->createService(SVC_UUID);
-  NimBLECharacteristic* rx=svc->createCharacteristic(RX_UUID, NIMBLE_PROPERTY::WRITE_NR|NIMBLE_PROPERTY::WRITE_ENC);
+  // WRITE도 허용: 응답 있는 쓰기는 암호화 전이면 '암호화 필요' 에러가 돌아가 기기 쪽에서도 페어링이 시작된다
+  NimBLECharacteristic* rx=svc->createCharacteristic(RX_UUID, NIMBLE_PROPERTY::WRITE|NIMBLE_PROPERTY::WRITE_NR|NIMBLE_PROPERTY::WRITE_ENC);
   rx->setCallbacks(new RxCB());
   txChar=svc->createCharacteristic(TX_UUID, NIMBLE_PROPERTY::NOTIFY|NIMBLE_PROPERTY::READ_ENC); svc->start();
   NimBLEAdvertising* adv=NimBLEDevice::getAdvertising(); adv->setName(name); adv->addServiceUUID(SVC_UUID); adv->start();
-  Serial.printf("BLE bridge v6 ready, name %s, stored bonds %d\r\n", name, NimBLEDevice::getNumBonds());
+  Serial.printf("BLE bridge v7 ready, name %s, stored bonds %d\r\n", name, NimBLEDevice::getNumBonds());
 }
 
 void loop(){
+  for(int i=0;i<MAX_SLOTS;i++)
+    if(slotHandle[i]!=EMPTY && !slotSecure[i] && millis()-slotSince[i]>SECURE_TIMEOUT_MS){
+      Serial.printf("[BLE] id %d not encrypted in %d s, disconnect\r\n", i, SECURE_TIMEOUT_MS/1000);
+      server->disconnect(slotHandle[i]); slotSince[i]=millis(); }
   while(Serial1.available()){ char c=Serial1.read(); if(c=='\n'){ piLines++; handleLine(fromPi,"Pi"); fromPi=""; } else if(c!='\r') fromPi+=c; }
   while(Serial.available()){ char c=Serial.read(); if(c=='\n'){ usbLines++; handleLine(fromUsb,"USB"); fromUsb=""; } else if(c!='\r') fromUsb+=c; }
   if(millis()-lastStat>=10000){ lastStat=millis();
