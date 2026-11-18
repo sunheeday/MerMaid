@@ -11,6 +11,8 @@
 실행:
   ~/SE_project/venv-ble/bin/python bridge/tools/ble_check.py p6     # 시험 C: Pi에서 p6_comm --no-p4 만
   ~/SE_project/venv-ble/bin/python bridge/tools/ble_check.py full   # 시험 D: p6_comm → p5_devmgr → rf_stub --cycle --motion
+  ~/SE_project/venv-ble/bin/python bridge/tools/ble_check.py ai     # 진짜 P1~P6 (run_pipeline.sh RF=1 또는 bringup/demo_phone.sh), 약 6분
+  ~/SE_project/venv-ble/bin/python bridge/tools/ble_check.py watch  # 연결해 두고 받은 것만 출력 (P4를 껐다 켜 볼 때)
 
 옵션: --name MSAgent-xxxx (브리지가 여러 개일 때), --dev ID (이 맥이 쓸 폰 ID),
       --with-response (응답 있는 쓰기), --skip-link-timeout (p6_comm을 --no-link-timeout으로 띄웠을 때),
@@ -326,9 +328,119 @@ async def run_full(ph, args):
         check(3.5 <= ph.disc_at - t9 <= 7.5, f"약 5초 뒤 ({ph.disc_at - t9:.1f}초)")
 
 
+async def register(ph, args, n0):
+    """HELLO → PROF → SCR (앱과 같은 순서) 뒤 INT 상태 3개를 받는다."""
+    await ph.hello()
+    ph.start_hb()
+    await ph.send({"t": "PROF", "mssq": args.mssq, "sens": args.sens})
+    await ph.send({"t": "SCR", "on": True, "att": True})
+    got = {}
+    for tier in (1, 2, 3):
+        r = await ph.wait_msg(lambda m, k=tier: is_int(m, k), 4, n0)
+        if r:
+            got[tier] = r[2].get("on")
+    return got
+
+
+async def run_ai(ph, args):
+    print("AI 연결 시험: Pi에서 진짜 P1·P2·P4·P5·P6 (+ P3 또는 fake_p3). docs/RF_AI_LINK.md §6\n"
+          "정책 시간: 위험이 계속되면 Tier 1 약 10초, Tier 2 60초, Tier 3 120초 뒤에 켜진다 (이 폰이 등록된 뒤부터)")
+    if not await check_connect_and_hb(ph, "[1]"):
+        return
+
+    step("[2] V1: HELLO·PROF·SCR → P5 등록 → P4가 명부로 이 폰을 앎",
+         "p4.out에 'REG phone " + args.dev + " on' (다음 RISK, 10초 안)")
+    n0 = len(ph.msgs)
+    t_reg = now()
+    got = await register(ph, args, n0)
+    check(set(got) == {1, 2, 3}, f"HELLO 후 INT tier 1·2·3 상태 수신 {got}")
+
+    step("[3] V2: P4의 결정이 폰까지 (Tier 1 → 2 → 3). 최대 " + str(args.tier3_wait) + "초 기다림",
+         "p4.out의 'CMD <t> ... 1'과 같은 순서")
+    seen = {}
+    for tier, limit in ((1, 60), (2, 110), (3, args.tier3_wait)):
+        r = await ph.wait_msg(lambda m, k=tier: is_int(m, k, True), max(1, limit - (now() - t_reg)), n0)
+        if check(r is not None, f"INT tier {tier} on" + (f" (등록 후 {r[1] - t_reg:.0f}초)" if r else "")):
+            seen[tier] = r[1]
+    if 3 not in seen:
+        say("Tier 3이 안 켜졌다: 모델이 위험하다고 보지 않았거나(진짜 P3), 화면 게이트·유지 시간. p4.out, cycles.csv 확인")
+        return
+
+    step("[4] V3: Tier 3 동안 P2의 MOTION이 MOT 10 Hz로", "p2.out 끝의 mot_fail 0")
+    await asyncio.sleep(3.2)
+    mots = ph.count(lambda m: m.get("t") == "MOT", seen[3] + 1.0, seen[3] + 3.0)
+    check(15 <= len(mots) <= 25, f"MOT 약 10 Hz (2초에 {len(mots)}줄)")
+    ok = bool(mots) and all(isinstance(m.get("ax"), (int, float)) and isinstance(m.get("ay"), (int, float)) for m in mots)
+    check(ok, "MOT에 ax·ay 숫자" + (f" (예: {mots[0]})" if mots else ""))
+
+    step("[5] V4: 화면 끔(SCR off) → Tier 3 게이트 닫힘 → INT tier 3 off (다음 RISK, 10초 안)", "p4.out 'CMD ... 3 0'")
+    n5 = len(ph.msgs)
+    await ph.send({"t": "SCR", "on": False, "att": False})
+    r = await ph.wait_msg(lambda m: is_int(m, 3, False), 15, n5)
+    check(r is not None, "INT tier 3 off")
+    if r:
+        await asyncio.sleep(1.5)
+        late = ph.count(lambda m: m.get("t") == "MOT", r[1] + 0.5, now())
+        check(not late, f"OFF 뒤 MOT 멈춤 ({len(late)}줄)")
+
+    step("[6] 화면 다시 켬 → Tier 3 다시 ON (유지 시간을 다시 채워야 하면 최대 " + str(args.tier3_wait) + "초)")
+    n6 = len(ph.msgs)
+    t6 = now()
+    await ph.send({"t": "SCR", "on": True, "att": True})
+    r = await ph.wait_msg(lambda m: is_int(m, 3, True), args.tier3_wait, n6)
+    if check(r is not None, "INT tier 3 on 다시" + (f" ({r[1] - t6:.0f}초 뒤)" if r else "")):
+        await asyncio.sleep(1.0)
+        step("[7] V5·V8: 수동 끄기 OVR off → P4 정책 → INT off (왕복 시간 측정)",
+             "p4.out 'CMD ... 3 0', state/tolerance/" + args.dev + ".json")
+        n7 = len(ph.msgs)
+        t7 = now()
+        await ph.send({"t": "OVR", "dev": args.dev, "on": False})
+        r = await ph.wait_msg(lambda m: is_int(m, 3, False), 3, n7)
+        if check(r is not None, "INT tier 3 off"):
+            say(f"V8 왕복 지연: 폰 OVR 보냄 → P6 → P4 → P5 → P6 → 폰 INT 받음 = {(r[1] - t7) * 1000:.0f} ms")
+        await asyncio.sleep(12)
+        again = [m for _, m in ph.msgs[n7:] if is_int(m, 3, True)]
+        check(not again, "쿨다운: 끈 뒤 다음 주기에도 Tier 3이 다시 켜지지 않음")
+
+    step("[8] V6: 끊고 다시 연결 → 상태와 저장된 프로필 회신", "state/profiles/" + args.dev + ".json")
+    await ph.disconnect()
+    await asyncio.sleep(2)
+    if not await check_connect_and_hb(ph, "[8] 다시 연결"):
+        return
+    n8 = len(ph.msgs)
+    got = await register(ph, args, n8)
+    check(set(got) == {1, 2, 3}, f"재연결 후 INT tier 1·2·3 다시 수신 {got}")
+    r = await ph.wait_msg(lambda m: m.get("t") == "PROF", 3, n8)
+    if check(r is not None, "저장된 프로필 PROF 회신"):
+        m = r[2]
+        check(abs(m.get("mssq", -1) - args.mssq) < 0.01 and abs(m.get("sens", -1) - args.sens) < 0.001,
+              f"회신 값이 보낸 설문값과 같음 ({m})")
+
+
+async def run_watch(ph, args):
+    print(f"지켜보기: 연결·등록한 뒤 {args.seconds}초 동안 받은 것을 그대로 출력 (P4를 껐다 켜는 V7 확인용)")
+    if not await check_connect_and_hb(ph, "[1]"):
+        return
+    n0 = len(ph.msgs)
+    got = await register(ph, args, n0)
+    check(set(got) == {1, 2, 3}, f"HELLO 후 INT 상태 {got}")
+    end = now() + args.seconds
+    while now() < end and ph.connected:
+        await asyncio.sleep(1)
+    ints = [(round(t, 1), m["tier"], m["on"]) for t, m in ph.msgs[n0:] if m.get("t") == "INT"]
+    say(f"받은 INT (시각, tier, on): {ints}")
+    check(ph.connected, "끝까지 연결 유지")
+
+
+
 async def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=["p6", "full"], help="p6 = 시험 C (P6 혼자), full = 시험 D (P6+P5+rf_stub)")
+    ap.add_argument("mode", choices=["p6", "full", "ai", "watch"],
+                    help="p6 = P6 혼자, full = P6+P5+rf_stub, ai = 진짜 P1~P6 (RF_AI_LINK.md V1~V6·V8), watch = 지켜보기 (V7)")
+    ap.add_argument("--mssq", type=float, default=20.0, help="ai·watch: PROF로 보낼 MSSQ")
+    ap.add_argument("--sens", type=float, default=1.3, help="ai·watch: PROF로 보낼 설문 민감도")
+    ap.add_argument("--tier3-wait", type=int, default=170, help="ai: Tier 3 ON을 기다리는 최대 초")
+    ap.add_argument("--seconds", type=int, default=120, help="watch: 지켜보는 초")
     ap.add_argument("--name", help="브리지 광고 이름 (예: MSAgent-1A2B). 없으면 MSAgent-로 시작하는 첫 기기")
     ap.add_argument("--dev", default="mac-check-01", help="이 맥이 HELLO에 쓸 폰 ID")
     ap.add_argument("--with-response", action="store_true", help="RX에 응답 있는 쓰기 (기본: 앱처럼 응답 없는 쓰기)")
@@ -338,7 +450,7 @@ async def main():
 
     ph = Phone(args)
     try:
-        await (run_p6 if args.mode == "p6" else run_full)(ph, args)
+        await {"p6": run_p6, "full": run_full, "ai": run_ai, "watch": run_watch}[args.mode](ph, args)
     except Exception as e:  # noqa: BLE001
         check(False, f"중단: {e}")
     finally:
