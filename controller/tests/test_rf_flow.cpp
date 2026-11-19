@@ -1,5 +1,6 @@
 // P6 코어(comm)와 P5 코어(devmgr)를 이어 붙인 흐름 시험. QNX 메시지 전달 자리는 함수 호출로 대신한다.
 // docs/RF_MESSAGES.md와 인수인계 §6-0-1의 예시: 폰 연결 → 등록 → P4 명령 → 폰 화면 → 수동 끔 → 끊김
+// 이어서 다시 시작: P5만 (새 DevMgr) → OUT_RESYNC로 명부·Tier 되찾기, P6만 (새 Comm) → 시작 DROP → 기기 재연결
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -36,6 +37,10 @@ struct Pi {
             else if (const auto* s = std::get_if<msg::OutStream>(&o)) a = p6.on_out_stream(*s);
             else if (const auto* p = std::get_if<msg::OutProf>(&o)) a = p6.on_out_prof(*p);
             else if (const auto* d = std::get_if<msg::OutDrop>(&o)) a = p6.on_out_drop(*d);
+            else if (std::holds_alternative<msg::OutResync>(o)) {
+                p6.on_resync();
+                p5.resync_delivered();
+            }
             run_p6(a);
         }
     }
@@ -50,6 +55,8 @@ struct Pi {
             else if (const auto* s = std::get_if<msg::CtxScreen>(&a)) to_p4_scr.push_back(*s);
         }
     }
+    void p5_tick(int64_t t) { run_p5(p5.on_tick(t)); }
+    void p6_tick(int64_t t) { run_p6(p6.on_tick(t)); }
     void from_bridge(const std::string& line, int64_t t) { run_p6(p6.on_uart_line(line, t)); }
     void from_p4(const std::string& device, int tier, bool on) {
         msg::TierCmd m;
@@ -130,6 +137,48 @@ int main() {
     pi.from_bridge("2|{\"t\":\"HELLO\",\"role\":\"app\",\"dev\":\"" + A + "\",\"v\":1}", 7100);
     EXPECT_UART(pi, "2|{\"t\":\"INT\",\"tier\":1,\"on\":false}", "2|{\"t\":\"INT\",\"tier\":2,\"on\":true}",
                 "2|{\"t\":\"INT\",\"tier\":3,\"on\":false}");
+
+    // 7. P5만 다시 시작. 그 전에 Tier 3 ON (폰 A는 conn 2, HUD는 conn 1, Tier 2 ON)
+    pi.from_p4(A, 3, true);
+    pi.p6_tick(8000);
+    pi.take();
+    pi.p5 = devmgr::DevMgr{nullptr};  // 명부도 Tier 기억도 비었다
+    CHECK(pi.p5.on_sync(msg::DevSync{}, 8100).n == 0, "new P5 knows nobody");
+    pi.p5_tick(8200);  // OUT_RESYNC → P6 표만 바뀜
+    EXPECT_UART(pi);
+    CHECK(pi.p5.on_tick(8300).empty(), "RESYNC sent once");
+    pi.p6_tick(9000);  // 다음 박자에 HELLO 재전송 → P5가 기록으로 Tier 되찾고 같은 상태를 다시 보냄
+    EXPECT_UART(pi, "ALL|{\"t\":\"HB\",\"seq\":1}", "1|{\"t\":\"INT\",\"tier\":1,\"on\":false}",
+                "1|{\"t\":\"INT\",\"tier\":2,\"on\":true}", "2|{\"t\":\"INT\",\"tier\":1,\"on\":false}",
+                "2|{\"t\":\"INT\",\"tier\":2,\"on\":true}", "2|{\"t\":\"INT\",\"tier\":3,\"on\":true}");
+    r = pi.p5.on_sync(msg::DevSync{}, 9100);
+    CHECK(r.n == 2 && std::string(r.e[0].dev) == "hud-01" && A == r.e[1].dev, "registry back: %u", r.n);
+    CHECK(pi.p5.is_on("display-01") && pi.p5.is_on(A), "Tier 2 and A's Tier 3 recovered");
+    pi.from_p4(A, 3, false);  // P4의 다음 명령이 새 P5에서 그 폰으로 간다
+    EXPECT_UART(pi, "2|{\"t\":\"INT\",\"tier\":3,\"on\":false}");
+    pi.run_p6(pi.p6.on_motion(m));
+    EXPECT_UART(pi, "1|{\"t\":\"MOT\",\"ax\":0.500,\"ay\":-0.200}");  // HUD 스트림은 그대로
+
+    // 8. P6만 다시 시작: 시작 DROP + 명부 비움 → 브리지가 끊고 기기가 다시 붙어 HELLO → P5가 기억한 상태를 보냄
+    pi.p6 = comm::Comm{nullptr, 0};
+    pi.run_p6(pi.p6.on_start());
+    EXPECT_UART(pi, "0|DROP", "1|DROP", "2|DROP", "3|DROP", "4|DROP", "5|DROP", "6|DROP", "7|DROP", "8|DROP");
+    CHECK(pi.p5.on_sync(msg::DevSync{}, 10000).n == 0, "P5 registry emptied by DEV_BYE ALL");
+    pi.from_bridge("2|{\"t\":\"SCR\",\"on\":true,\"att\":false}", 10050);  // 끊기기 전에 온 줄: 버림
+    CHECK(pi.to_p4_scr.size() == 1, "message from a forgotten conn is dropped");
+    pi.from_bridge("1|DISCONNECT", 10100);
+    pi.from_bridge("2|DISCONNECT", 10100);
+    pi.from_bridge("0|CONNECT", 11000);
+    pi.from_bridge("0|{\"t\":\"HELLO\",\"role\":\"hud\",\"dev\":\"hud-01\",\"v\":1}", 11100);
+    pi.from_bridge("1|CONNECT", 11200);
+    pi.from_bridge("1|{\"t\":\"HELLO\",\"role\":\"app\",\"dev\":\"" + A + "\",\"v\":1}", 11300);
+    EXPECT_UART(pi, "0|{\"t\":\"INT\",\"tier\":1,\"on\":false}", "0|{\"t\":\"INT\",\"tier\":2,\"on\":true}",
+                "1|{\"t\":\"INT\",\"tier\":1,\"on\":false}", "1|{\"t\":\"INT\",\"tier\":2,\"on\":true}",
+                "1|{\"t\":\"INT\",\"tier\":3,\"on\":false}");
+    pi.run_p6(pi.p6.on_motion(m));
+    EXPECT_UART(pi, "0|{\"t\":\"MOT\",\"ax\":0.500,\"ay\":-0.200}");  // 스트림도 복구 (HUD는 이제 conn 0)
+    r = pi.p5.on_sync(msg::DevSync{}, 12000);
+    CHECK(r.n == 2, "registry back after P6 restart: %u", r.n);
 
     if (failures) {
         std::printf("%d failure(s)\n", failures);

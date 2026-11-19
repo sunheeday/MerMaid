@@ -69,6 +69,31 @@ void Comm::forget(uint8_t conn, Actions& out) {
     conn_[conn] = Conn{};
 }
 
+msg::DevHello Comm::make_hello(uint8_t conn) const {
+    const Conn& c = conn_[conn];
+    msg::DevHello m;
+    m.conn = conn;
+    m.role = c.role;
+    m.ver = 1;
+    msg::copy_id(m.dev, c.dev);
+    m.int_known = c.int_known;
+    m.int_on = c.int_on;
+    return m;
+}
+
+Actions Comm::on_start() {
+    Actions out;
+    for (int i = 0; i < msg::kMaxConn; i++) {
+        out.emplace_back(UartLine{std::to_string(i) + "|DROP"});  // 브리지는 빈 번호의 DROP을 무시한다
+        conn_[i] = Conn{};
+    }
+    msg::DevBye bye;
+    bye.conn = msg::kConnAll;
+    out.emplace_back(bye);
+    log("start: drop all bridge connections, devices will reconnect and HELLO");
+    return out;
+}
+
 Actions Comm::on_uart_line(const std::string& line, int64_t now_ms) {
     Actions out;
     Frame f;
@@ -114,17 +139,13 @@ void Comm::on_device_json(uint8_t conn, const std::string& text, Actions& out) {
             } else {
                 throw std::runtime_error("bad role " + role);
             }
+            if (c.registered && c.dev != dev) c.int_known = c.int_on = 0;  // 다른 기기: 보낸 INT 기록은 무효
             c.registered = true;
             c.delivered = false;
             c.hello_due = -1;
             c.role = role == "hud" ? msg::Role::Hud : msg::Role::App;
             c.dev = dev;
-            msg::DevHello m;
-            m.conn = conn;
-            m.role = c.role;
-            m.ver = static_cast<uint16_t>(ver);
-            msg::copy_id(m.dev, dev);
-            out.emplace_back(m);
+            out.emplace_back(make_hello(conn));
             return;
         }
 
@@ -187,12 +208,7 @@ Actions Comm::on_tick(int64_t now_ms) {
         for (int i = 0; i < msg::kMaxConn; i++) {
             const Conn& c = conn_[i];
             if (!c.registered || c.delivered) continue;
-            msg::DevHello m;
-            m.conn = static_cast<uint8_t>(i);
-            m.role = c.role;
-            m.ver = 1;
-            msg::copy_id(m.dev, c.dev);
-            out.emplace_back(m);
+            out.emplace_back(make_hello(static_cast<uint8_t>(i)));
         }
         // 조금 늦으면 원래 박자를 지키고, 한 주기 넘게 밀리면 몰아서 보내지 않고 지금부터 다시
         if (next_hb_ms_ < 0 || now_ms - next_hb_ms_ >= kHbPeriodMs) next_hb_ms_ = now_ms + kHbPeriodMs;
@@ -227,7 +243,25 @@ Actions Comm::on_out_int(const msg::OutInt& m) {
     }
     out.emplace_back(UartLine{prefix(m.conn) + "{\"t\":\"INT\",\"tier\":" + std::to_string(m.tier) +
                               ",\"on\":" + tf(m.on) + "}"});
+    // 무엇을 보냈는지 기억 (P5가 다시 시작하면 DEV_HELLO에 실어 돌려준다)
+    const auto bit = static_cast<uint8_t>(1u << (m.tier - 1));
+    for (int i = 0; i < msg::kMaxConn; i++) {
+        Conn& c = conn_[i];
+        if (!c.registered || (m.conn != msg::kConnAll && m.conn != i)) continue;
+        c.int_known |= bit;
+        c.int_on = static_cast<uint8_t>(m.on ? (c.int_on | bit) : (c.int_on & ~bit));
+    }
     return out;
+}
+
+void Comm::on_resync() {
+    int n = 0;
+    for (auto& c : conn_) {
+        if (!c.registered) continue;
+        c.delivered = false;
+        n++;
+    }
+    log("P5 resync: will resend HELLO for " + std::to_string(n) + " device(s)");
 }
 
 Actions Comm::on_out_stream(const msg::OutStream& m) {

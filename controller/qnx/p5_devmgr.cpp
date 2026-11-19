@@ -4,7 +4,9 @@
 //   --safety-s  DEV_SYNC가 이만큼 없으면 전부 OFF (기본 30 = policy.json safety_timeout_s. 시험에서만 줄임)
 //
 // 받는 것 (mermaid_p5): P6의 DEV_HELLO·DEV_BYE, P4의 TIER_CMD·DEV_SYNC
-// 보내는 것: P6에 OUT_INT·OUT_STREAM·OUT_PROF (P6의 받기 스레드는 바로 회신하므로 멈추지 않는다)
+// 보내는 것: P6에 OUT_INT·OUT_STREAM·OUT_PROF·OUT_RESYNC (P6의 받기 스레드는 바로 회신하므로 멈추지 않는다)
+// 다시 시작: 시작하면 P6에 OUT_RESYNC (전달될 때까지 1초마다) → P6이 등록된 기기를 DEV_HELLO로 다시 알려 준다.
+//   그 HELLO에 실린 'P6이 마지막으로 보낸 INT'로 Tier 상태도 되찾는다 (docs/RF_MESSAGES.md §4)
 // P4에게는 먼저 보내지 않는다. 명부는 DEV_SYNC의 회신으로만 준다.
 // 안전: 1초마다 확인해서 DEV_SYNC가 30초 없으면 모든 개입 OFF.
 // 시작 순서: P6 다음, P4 전 (P6 → P5 → P4 → P3 → P2 → P1).
@@ -44,6 +46,8 @@ std::string show(const devmgr::Out& o) {
         std::snprintf(b, sizeof b, "PROF conn %d mssq %.2f sens %.3f", p->conn, p->mssq, p->sens);
     else if (const auto* d = std::get_if<msg::OutDrop>(&o))
         std::snprintf(b, sizeof b, "DROP conn %d", d->conn);
+    else if (std::holds_alternative<msg::OutResync>(o))
+        std::snprintf(b, sizeof b, "RESYNC");
     else
         b[0] = 0;
     return b;
@@ -102,9 +106,19 @@ int main(int argc, char** argv) {
 
         ipc::Client p6_main(msg::kNameP6, 200 * 1000000ULL);
         ipc::Client p6_tick(msg::kNameP6, 200 * 1000000ULL);  // Client는 스레드마다 하나
-        auto send_all = [](ipc::Client& p6, const devmgr::Outs& outs) {
+        // mu를 잡은 채 부른다
+        bool resync_warned = false;
+        auto send_all = [&](ipc::Client& p6, const devmgr::Outs& outs) {
             for (const auto& o : outs) {
-                const bool ok = std::visit([&](const auto& m) { return p6.send(&m, sizeof m); }, o);
+                // P6이 다시 시작했으면 옛 연결로 보낸 첫 번은 실패하고 연결이 닫힌다 → 바로 한 번 더 (새로 연결)
+                const bool ok = std::visit(
+                    [&](const auto& m) { return p6.send(&m, sizeof m) || (!p6.connected() && p6.send(&m, sizeof m)); }, o);
+                if (std::holds_alternative<msg::OutResync>(o)) {  // P6이 뜰 때까지 1초마다 → 실패 로그는 한 번만
+                    if (ok) core.resync_delivered();
+                    if (ok || !resync_warned) log_line(ok ? "P6" : "..", ok ? "RESYNC" : "P6 not up yet, RESYNC will retry");
+                    resync_warned = true;
+                    continue;
+                }
                 log_line(ok ? "P6" : "ERR", ok ? show(o) : "cannot send to P6: " + show(o));
             }
         };
@@ -113,13 +127,15 @@ int main(int argc, char** argv) {
         log_line("..", std::string("p5_devmgr up: name ") + msg::kNameP5 + ", state " + state_dir + ", safety " +
                            std::to_string(safety_s) + " s");
 
-        // 안전 감시 스레드: 1초마다
+        // 감시 스레드: 1초마다 (첫 번은 바로: OUT_RESYNC를 빨리 보내려고). 서버를 연 뒤라 다시 오는 HELLO를 받을 수 있다
         std::thread tick([&] {
             for (;;) {
+                {
+                    std::lock_guard<std::mutex> lk(mu);
+                    send_all(p6_tick, core.on_tick(now_ms()));
+                }
                 timespec ts{1, 0};
                 nanosleep(&ts, nullptr);
-                std::lock_guard<std::mutex> lk(mu);
-                send_all(p6_tick, core.on_tick(now_ms()));
             }
         });
         tick.detach();

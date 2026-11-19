@@ -50,7 +50,8 @@ bool send_cmd(ipc::Client& p5, const std::string& device, bool on) {
     msg::copy_id(m.device, device);
     m.tier = static_cast<uint8_t>(tier_of(device));
     m.on = on;
-    const bool ok = p5.send(&m, sizeof m);
+    // P5가 다시 시작했으면 옛 연결로 보낸 첫 번은 실패하고 연결이 닫힌다 → 바로 한 번 더 (진짜 P4도 이렇게 해야 함)
+    const bool ok = p5.send(&m, sizeof m) || (!p5.connected() && p5.send(&m, sizeof m));
     log_line(ok ? "P5" : "ERR", std::string(ok ? "" : "cannot send ") + "TIER_CMD " + device + " tier " +
                                     std::to_string(m.tier) + (on ? " ON" : " OFF"));
     return ok;

@@ -28,6 +28,7 @@ enum RfType : uint16_t {
     OUT_STREAM = 0x8041,  // P5 -> P6, 이 연결에 MOT를 보낼지
     OUT_PROF = 0x8042,    // P5 -> P6, M06 PROF(저장된 프로필)를 보낼 것
     OUT_DROP = 0x8043,    // P5 -> P6, 연결을 끊을 것
+    OUT_RESYNC = 0x8044,  // P5 -> P6, P5가 (다시) 시작함: 등록된 기기를 DEV_HELLO로 다시 알려 달라
     MOTION = 0x8050,      // P2 -> P6, 100 ms마다 (constants.json mot_period_ms)
 };
 
@@ -46,11 +47,15 @@ struct DevHello {
     Role role = Role::App;
     uint16_t ver = 0;
     char dev[kIdLen] = {};  // 폰: 앱 UUID / HUD: 항상 hud-01
+    // 이 연결에 P6이 마지막으로 보낸 INT (bit t-1 = Tier t). P5가 다시 시작했을 때 Tier 상태를 되찾는 데 쓴다.
+    // int_known의 bit가 0이면 그 Tier의 INT를 아직 보낸 적 없음 (새 연결)
+    uint8_t int_known = 0;
+    uint8_t int_on = 0;
 };
 
 struct DevBye {
     Hdr h{DEV_BYE, 0, 0};
-    uint8_t conn = 0;
+    uint8_t conn = 0;  // kConnAll: 전부 (P6이 다시 시작해서 모든 연결을 끊었음)
 };
 
 // ---- P4 -> P5 (회신 있음) ----
@@ -126,6 +131,11 @@ struct OutProf {
 struct OutDrop {
     Hdr h{OUT_DROP, 0, 0};
     uint8_t conn = 0;
+};
+
+// P5가 시작할 때 (P6에 보내기 성공할 때까지 1초마다). P6은 등록된 모든 연결의 DEV_HELLO를 다시 보낸다
+struct OutResync {
+    Hdr h{OUT_RESYNC, 0, 0};
 };
 
 // ---- P2 -> P6 ----
