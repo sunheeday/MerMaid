@@ -197,6 +197,10 @@ struct RingSlot {            // 288바이트
 - **P1 쓰기:** `slot = &slots[head % cap]` → 내용 쓰기 → `slot->n = head` → `head.store(head+1, release)`.
 - **P7 읽기 (200 ms마다):** `h = head.load(acquire)`. `h − tail > cap`이면 넘친 것이다. 잃은 개수를 health에 적고 `tail = h − cap`으로 옮긴다. 칸을 복사한 뒤 `slot->n == tail`인지 다시 확인하고, 다르면 덮어쓰인 것이라 버린다.
 - RIDE_START·RIDE_END도 링에 들어가서 P7이 P2~P4와 같은 주행 경계를 쓴다. P7은 이것으로 주행 파일을 열고 닫는다.
+- RIDE_START 칸의 `row`는 샘플이 아니라 주행 정보다 (`sample_ring.hpp` `StartInfo`): 자이로 바이어스 3축, 보정 실패 여부,
+  가속도·자이로 범위. P7이 meta에 적는다. 재생 모드는 모두 NaN. (`imu_bias.json` 파일을 읽으면 P1이 쓰기 전에 읽을 수 있어서 링으로 넘긴다.)
+- P7은 **처음 링을 열 때 이미 쓰인 칸을 건너뛴다** (`Reader::skip_to_head`). 지난 실행에서 기록했거나 복구한 칸을 다시 쓰지 않기 위해서다.
+  P1이 다시 시작하면 epoch가 바뀌어 새 주행의 처음부터 읽는다.
 
 ## 6. P7 로거
 
@@ -208,9 +212,16 @@ p7_logger [--dir ~/mermaid/logs] [--device-id pi01] [--min-free-mb 1024] [--prio
 
 - **받기 스레드** (우선순위 11, 서비스 이름 `mermaid_p7`): LOG_* 메시지를 받으면 큐에 복사하고 바로 회신한다. 디스크 I/O를 하지 않는다.
 - **쓰기 스레드** (우선순위 9): 200 ms마다 링을 비우고 큐를 꺼내서 SQLite에 쓴다. 트랜잭션은 1초에 한 번.
+- RIDE_END를 읽은 뒤 **2초 더** 파일을 열어 둔다. 마지막 주기의 LOG_INFER·LOG_DECISION이 RIDE_END보다 늦게 올 수 있어서다.
+- RIDE_START 없이 샘플을 만나면(주행 중에 P7이 다시 시작) 그 샘플부터 새 파일을 연다 (`meta.joined_at_seq`).
+- 주행 밖에서 받은 SCR·PROF는 마지막 값만 기억했다가 다음 주행 파일을 열 때 `ctx`에 적는다(`t` NULL, `mono_ns < mono_start_ns`).
+  다른 주행 밖 메시지는 세기만 한다(`outside_ride`).
 - 큐: 고정 크기 512개. 차면 가장 오래된 것을 버리고 `queue_drop`을 센다(메모리가 늘지 않게).
 - P7은 **아무에게도 MsgSend 하지 않는다.** 그래서 교착 고리가 생기지 않는다.
-- 보내는 쪽 규칙: `ipc::Client(kNameP7, 2 ms)`. 실패하면 자기 통계 `log_fail`만 올리고 계속한다. P7이 없으면 `Client`가 1초에 한 번만 다시 연결을 시도한다(지금 `ipc.hpp` 동작).
+- 보내는 쪽 규칙: `ipc::Client(kNameP7, 2 ms)`. 실패하면 자기 통계 `log_fail`만 올리고 계속한다(P3·P4는 RIDE_END 통계 줄, P6은 10초 stat 줄).
+  P7이 없으면 `Client`가 1초에 한 번만 다시 연결을 시도한다(지금 `ipc.hpp` 동작).
+- Mac 시험 `log_sim` (구현됨): (a) 보통 주행, (b) 주행 중 `kill -9` 뒤 다시 띄워 복구, (c) 10초 SIGSTOP. 세 경우 모두 P1 전송 실패 0,
+  P4 주기 빠짐 0, (c)는 링 덕분에 멈춘 동안의 샘플도 모두 기록. 주기 시간 변화는 Pi에서 잰다.
 - **격리 시험 (완료 기준):** (a) P7 없이, (b) P7을 주행 중에 `kill -9`, (c) P7 쓰기 스레드를 SIGSTOP. 세 경우 모두 P1 샘플 손실 0, P2→P4 주기 최대 시간 변화 < 0.5 ms.
 
 ### 6-2. 새 QNX 메시지 (`controller/qnx/log_messages.hpp`, 0x8060~)
@@ -257,6 +268,11 @@ struct LogSym {
 
 - **시간 기준:** P3·P4는 주행 시각 `t`를 알지만 P6는 모른다. 모든 메시지에 `mono_ns`를 넣고, P7이 링의 `(seq, mono_ns)` 짝으로 `mono_ns → t`를 바꾼다(가장 가까운 샘플).
 - `policy.hpp`의 `Command`에는 이유가 없으므로 LOG_DECISION은 기기별 최종 상태(on, tier)와 이번 주기에 바뀌었는지(`changed`)만 남긴다. 지금 `cycles.csv`의 기기 칸과 같은 정보다.
+  기기 목록: airflow-01, display-01, 등록된 폰 (`tier`는 등록되지 않은 기기면 0).
+- LOG_CTX `value`는 P6이 구조체에서 만든 JSON이다: HELLO `{"conn","role","ver"}` (P5에 전달된 뒤 한 번), BYE `{"conn"}`
+  (sender는 `conn<N>` 또는 `all`. P6은 끊긴 연결 번호만 안다), SCR `{"on","att"}`, OVR `{"device","on"}`, PROF `{"mssq","sens"}`.
+  10초마다 다시 보내는 SCR·PROF(`CtxResend`)는 사건이 아니라서 보내지 않는다.
+- LOG_SYM 구조체와 `label` 표는 이번에 만들었고, P6이 보내는 부분은 4단계.
 
 ### 6-3. 파일 배치
 
@@ -276,6 +292,8 @@ struct LogSym {
 ### 6-4. SQLite
 
 - 공식 amalgamation **3.47.2**를 `controller/third_party/sqlite/`(`sqlite3.c`, `sqlite3.h`, 라이선스: public domain)에 넣고 CMake로 함께 빌드한다. 보드에 라이브러리가 있는지에 기대지 않는다.
+  CMake는 이 파일이 있으면 함께 빌드하고, 없으면 시스템 SQLite(`find_package(SQLite3)`, Mac SDK 3.43)를 쓴다. 둘 다 없으면 P7을 빌드하지 않는다.
+  (amalgamation은 아직 저장소에 넣지 않았다.)
 - 컴파일 옵션: `SQLITE_THREADSAFE=0`(DB는 쓰기 스레드만 만짐), `SQLITE_OMIT_LOAD_EXTENSION`, `SQLITE_DEFAULT_FOREIGN_KEYS=1`.
 - 열 때: `journal_mode=WAL`, `synchronous=NORMAL`, `temp_store=MEMORY`. 1초에 트랜잭션 한 번이므로 전원이 갑자기 꺼지면 최대 약 1초를 잃는다.
 
@@ -286,8 +304,11 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 -- schema_version, ride_id, device_id, session, ride_no, source ('live'|'replay'),
 -- columns (JSON: samples.data의 칸 이름, LIVE = ["ax","ay","az","gx","gy","gz"]),
 -- imu_mount (JSON R), imu_bias_dps (JSON), accel_range_g, gyro_range_dps,
--- model_version, thresholds (JSON), policy_hash (policy.json sha256), git_commit,
--- mono_start_ns, wall_start (NULL 가능), closed_reason ('ride_end'|'p1_restart'|'shutdown'|'recovered')
+-- model_version (첫 LOG_INFER), thresholds·policy_json (설정 파일 전체), git_commit (빌드할 때 git describe),
+-- sample_rate_hz, mono_start_ns, mono_end_ns, wall_start (2024년 이후 시계일 때만), p1_samples (RIDE_END의 보낸 수),
+-- bias_uncalibrated, joined_at_seq (주행 중간에 P7이 시작했을 때),
+-- closed_reason ('ride_end'|'p1_restart'|'shutdown'|'recovered')
+-- imu_bias_dps·accel_range_g·gyro_range_dps는 링 RIDE_START 칸에서 (§5), imu_mount는 --config의 파일 전체
 
 CREATE TABLE samples (            -- 1초(100샘플) 묶음
   seq0     INTEGER PRIMARY KEY,   -- 첫 샘플 번호. t = seq / 100
@@ -312,8 +333,9 @@ CREATE TABLE decision (
 CREATE TABLE ctx   (mono_ns INTEGER NOT NULL, t REAL, sender TEXT NOT NULL, kind TEXT NOT NULL, value TEXT);
 CREATE TABLE label (mono_ns INTEGER NOT NULL, t REAL, phone TEXT NOT NULL, misc INTEGER NOT NULL CHECK (misc BETWEEN 0 AND 10));
 CREATE TABLE health(mono_ns INTEGER NOT NULL, t REAL, key TEXT NOT NULL, value REAL NOT NULL);
--- health key: ring_overrun, queue_drop, hold_samples, i2c_error, fifo_overflow, bias_uncalibrated,
---             sample_rate_hz (1분마다), p3_log_fail, p4_log_fail, p6_log_fail (보내는 쪽 통계, RIDE_END 때)
+-- health key: ring_overrun, queue_drop, hold_samples (주행을 닫을 때), sample_rate_hz (1분마다), samples_paused
+--   (I2C 오류·FIFO 넘침은 P1이 주행을 끊고 다시 시작하므로 주행 경계와 P1 통계 줄에 남는다.
+--    보내는 쪽 log_fail은 P7이 받을 수 없을 때 생기는 값이라 각 프로세스의 통계 줄에 남긴다)
 CREATE INDEX label_phone ON label(phone, t);
 ```
 

@@ -1,6 +1,8 @@
 // MPU-6050 P1 LIVE 코어. 설명은 imu.hpp, 설계는 docs/DATA_LOGGING.md §4
 #include "imu.hpp"
 
+#include "sample_ring.hpp"
+
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -218,6 +220,13 @@ void Acquirer::start_ride(uint64_t now, std::vector<Out>& out) {
     st_.rate_hz = 0;
     Out o;
     o.kind = Out::RIDE_START;
+    o.row = ring::start_info_unknown();  // 링에 주행 정보로 들어간다 (sample_ring.hpp StartInfo)
+    o.row[ring::S_BIAS_X] = bias_[0];
+    o.row[ring::S_BIAS_Y] = bias_[1];
+    o.row[ring::S_BIAS_Z] = bias_[2];
+    o.row[ring::S_BIAS_UNCAL] = st_.bias_uncalibrated ? 1 : 0;
+    o.row[ring::S_ACCEL_RANGE_G] = 4;
+    o.row[ring::S_GYRO_RANGE_DPS] = 250;
     out.push_back(o);
 }
 

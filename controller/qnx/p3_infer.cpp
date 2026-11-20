@@ -4,6 +4,7 @@
 // MSSQ 12.90, 민감도 1.0, constants.json default_profile) "default" 한 행만 추론한다 (공용 기기
 // Tier 1·2는 그 값으로 동작). 기본 프로필의 EV 경험은 모르므로 NaN, 폰 허용도도 NaN.
 // feature_order에서 enabled=false인 칸(v1: svc_conflict, G8 허용도)은 학습 때처럼 NaN.
+// RISK를 보낸 뒤 P7에 LOG_INFER (77칸 입력과 확률, 2 ms 시간 초과). P7이 없거나 느려도 log_fail만 센다.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +15,7 @@
 
 #include "inference.hpp"
 #include "ipc.hpp"
+#include "log_messages.hpp"
 #include "messages.hpp"
 
 using namespace mm;
@@ -47,11 +49,14 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "p3: models loaded in %.0f ms\n", inf.load_ms());
         ipc::Client p4(msg::kNameP4, 1000000000ULL);
         if (!p4.wait_open(30)) std::fprintf(stderr, "p3: %s not found yet, will retry\n", msg::kNameP4);
+        ipc::Client p7(msg::kNameP7, msg::kLogTimeoutNs);
+        const std::string model_version = msg::model_version_from_path(models);
+        static msg::LogInfer lg;  // 6.7 KB
         ipc::Server srv(msg::kNameP3);  // 모델 로드와 P4 연결이 끝난 뒤에 이름을 붙인다
         const double nan = std::numeric_limits<double>::quiet_NaN();
         Inbox in;
         msg::ProfilesReply prof, last;  // P4에 못 물으면 마지막으로 받은 목록
-        uint64_t cycles = 0, prof_fail = 0, risk_fail = 0, infer_max_ns = 0;
+        uint64_t cycles = 0, prof_fail = 0, risk_fail = 0, log_fail = 0, infer_max_ns = 0;
         std::vector<double> X(static_cast<size_t>(msg::kMaxPhones) * proto::kNumFeatures);
         for (;;) {
             const int rcvid = srv.receive(&in, sizeof in);
@@ -93,17 +98,31 @@ int main(int argc, char** argv) {
                     out.p[r] = P[static_cast<size_t>(r)];
                 }
                 if (!p4.send(&out, sizeof out)) risk_fail++;
+                lg = msg::LogInfer{};
+                lg.seq = v.seq;
+                lg.t = v.t;
+                msg::copy_text(lg.model, model_version);
+                lg.n = out.n;
+                for (int r = 0; r < n; r++) {
+                    std::memcpy(lg.id[r], out.id[r], msg::kIdLen);
+                    std::memcpy(lg.x[r], &X[static_cast<size_t>(r) * proto::kNumFeatures], sizeof lg.x[r]);
+                    lg.p[r] = out.p[r];
+                    lg.cal_a[r] = 1;  // 개인 보정은 7단계
+                    lg.cal_b[r] = 0;
+                }
+                lg.mono_ns = ipc::now_ns();
+                if (!p7.send(&lg, sizeof lg)) log_fail++;
                 cycles++;
             } else if (type == msg::RIDE_START || type == msg::RIDE_END) {
                 const msg::RideEdge e = in.e;
                 ipc::Server::reply(rcvid);
-                if (type == msg::RIDE_START) cycles = prof_fail = risk_fail = infer_max_ns = 0;
+                if (type == msg::RIDE_START) cycles = prof_fail = risk_fail = log_fail = infer_max_ns = 0;
                 if (!p4.send(&e, sizeof e)) std::fprintf(stderr, "p3: ride edge not delivered to p4\n");
                 if (type == msg::RIDE_END) {
                     std::printf("{\"proc\": \"p3\", \"cycles\": %llu, \"profiles_fail\": %llu, \"risk_fail\": %llu, "
-                                "\"infer_ms_max\": %.3f}\n",
+                                "\"log_fail\": %llu, \"infer_ms_max\": %.3f}\n",
                                 (unsigned long long)cycles, (unsigned long long)prof_fail,
-                                (unsigned long long)risk_fail, infer_max_ns / 1e6);
+                                (unsigned long long)risk_fail, (unsigned long long)log_fail, infer_max_ns / 1e6);
                     std::fflush(stdout);
                     if (once) return (prof_fail || risk_fail) ? 1 : 0;
                 }

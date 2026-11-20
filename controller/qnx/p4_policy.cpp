@@ -9,6 +9,7 @@
 // 허용도와 프로필은 --state 아래에 바뀔 때마다 저장하고(store.hpp), 시작할 때나 기기가 등록될 때 읽어 온다.
 // 명령은 stdout에 "CMD <t> <device> <tier> <0|1>", 주기 로그는 --log CSV.
 // 정책 시각은 주행 시각(RISK의 t)을 쓴다. OVR는 마지막 RISK의 t로 처리한다.
+// RISK를 처리한 뒤 P7에 LOG_DECISION (기기별 on, tier, 이번 주기에 바뀌었는지. 2 ms 시간 초과, 실패는 log_fail만).
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -22,6 +23,7 @@
 #include <vector>
 
 #include "ipc.hpp"
+#include "log_messages.hpp"
 #include "messages.hpp"
 #include "rf_messages.hpp"
 #include "json_min.hpp"
@@ -204,6 +206,28 @@ int main(int argc, char** argv) {
             std::fprintf(log, "\n");
         }
 
+        // ---- P7 로그: 주기마다 기기별 최종 상태 ----
+        ipc::Client p7(msg::kNameP7, msg::kLogTimeoutNs);
+        uint64_t log_fail = 0;
+        auto log_decision = [&](uint64_t seq, double t, const std::vector<Command>& cs) {
+            std::vector<std::string> devs = {proto::kDeviceAirflow, proto::kDeviceDisplay};
+            for (const auto& p : phones) devs.push_back(p.id);
+            for (const auto& id : rf_phones) devs.push_back(id);
+            msg::LogDecision m;
+            m.seq = seq;
+            m.t = t;
+            for (const auto& d : devs) {
+                if (m.n >= static_cast<uint32_t>(msg::kMaxDevices)) break;
+                msg::LogDecision::Dev& e = m.d[m.n++];
+                msg::copy_id(e.device, d);
+                e.on = pol.is_on(d) ? 1 : 0;
+                e.tier = static_cast<uint8_t>(pol.tier_of(d));
+                e.changed = std::any_of(cs.begin(), cs.end(), [&](const Command& c) { return c.device == d; }) ? 1 : 0;
+            }
+            m.mono_ns = ipc::now_ns();
+            if (!p7.send(&m, sizeof m)) log_fail++;
+        };
+
         ipc::Server srv(msg::kNameP4);
         Inbox in;
         uint64_t cycles = 0, gaps = 0, expect = 0, cmds = 0, saves = 0;
@@ -243,7 +267,9 @@ int main(int argc, char** argv) {
                 for (uint32_t i = 0; i < r.n && i < static_cast<uint32_t>(msg::kMaxPhones); i++)
                     risk[id_of(r.id[i])] = r.p[i];
                 last_t = r.t;
-                cmds += emit(pol.on_risk(r.t, risk), r.t);
+                const std::vector<Command> cs = pol.on_risk(r.t, risk);
+                cmds += emit(cs, r.t);
+                log_decision(r.seq, r.t, cs);
                 sync();  // 다음 주기의 명부 (P3는 이 회신 뒤에 PROFILES를 묻는다)
                 saves += static_cast<uint64_t>(st.save_dirty(pol));
                 const double lat = (ipc::now_ns() - r.t_emit_ns) / 1e6;
@@ -265,7 +291,7 @@ int main(int argc, char** argv) {
                 if (type == msg::RIDE_START) {
                     sync();
                     pol.on_ride_start();
-                    cycles = gaps = expect = cmds = 0;
+                    cycles = gaps = expect = cmds = log_fail = 0;
                     lat_ms.clear();
                 } else {
                     pol.on_ride_end();
@@ -273,9 +299,10 @@ int main(int argc, char** argv) {
                     std::vector<double> s = lat_ms;
                     std::sort(s.begin(), s.end());
                     std::printf("{\"proc\": \"p4\", \"cycles\": %llu, \"risk_gaps\": %llu, \"commands\": %llu, "
-                                "\"files_saved\": %llu, \"latency_ms_median\": %.3f, \"latency_ms_max\": %.3f",
+                                "\"files_saved\": %llu, \"log_fail\": %llu, \"latency_ms_median\": %.3f, "
+                                "\"latency_ms_max\": %.3f",
                                 (unsigned long long)cycles, (unsigned long long)gaps, (unsigned long long)cmds,
-                                (unsigned long long)saves, s.empty() ? 0.0 : s[s.size() / 2],
+                                (unsigned long long)saves, (unsigned long long)log_fail, s.empty() ? 0.0 : s[s.size() / 2],
                                 s.empty() ? 0.0 : s.back());
                     if (rf)
                         std::printf(", \"rf_phones\": %zu, \"rf_hud\": %d, \"sync_fail\": %llu, \"tier_cmd_fail\": %llu",

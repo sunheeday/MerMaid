@@ -5,6 +5,7 @@
 // - 칸마다 seqlock: 쓰는 동안 n = kWriting, 다 쓰면 n = 칸 번호. 읽은 뒤 n이 그대로인지 다시 확인한다.
 #pragma once
 #include <atomic>
+#include <limits>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -20,6 +21,18 @@ constexpr uint32_t kDefaultCap = 3000;   // 30초 (100 Hz)
 constexpr uint64_t kWriting = ~0ULL;
 
 enum Kind : uint32_t { SAMPLE = 0, RIDE_START = 1, RIDE_END = 2 };
+
+// RIDE_START 칸의 row는 샘플이 아니라 주행 정보다 (P7이 주행 파일 meta에 적는다). 모르면 NaN (재생)
+enum StartInfo : int {
+    S_BIAS_X = 0, S_BIAS_Y = 1, S_BIAS_Z = 2,  // 이번 주행의 자이로 바이어스 (°/s, 센서 축)
+    S_BIAS_UNCAL = 3,                          // 1: 정지 판정을 못 얻고 저장값도 없어 0을 씀
+    S_ACCEL_RANGE_G = 4, S_GYRO_RANGE_DPS = 5,
+};
+inline Row start_info_unknown() {
+    Row r;
+    r.fill(std::numeric_limits<double>::quiet_NaN());
+    return r;
+}
 
 struct Header {
     std::atomic<uint32_t> magic;  // 다 만든 뒤에 kMagic (그 전에는 0)
@@ -88,6 +101,8 @@ public:
     // 새 칸을 out 끝에 붙인다. 최대 max개
     size_t poll(std::vector<Item>& out, size_t max = ~size_t(0));
     uint32_t col_mask() const;
+    // 지금까지 쓴 칸은 건너뛴다 (P7이 처음 시작할 때: 지난 실행의 칸을 다시 기록하지 않게)
+    void skip_to_head();
     const ReadStats& stats() const { return st_; }
     void close();
 

@@ -183,6 +183,10 @@ bool Reader::open(const std::string& name, std::string& err) {
 
 uint32_t Reader::col_mask() const { return hdr_ ? hdr_->col_mask : 0; }
 
+void Reader::skip_to_head() {
+    if (hdr_) tail_ = hdr_->head.load(std::memory_order_acquire);
+}
+
 size_t Reader::poll(std::vector<Item>& out, size_t max) {
     if (!hdr_) return 0;
     if (hdr_->magic.load(std::memory_order_acquire) != kMagic) {  // 쓰는 쪽이 링을 다시 만드는 중이거나 지웠다

@@ -103,7 +103,7 @@ int run_replay(int argc, char** argv) {
     }
 
     const uint64_t start = ipc::now_ns();
-    rw.push(ring::RIDE_START, 0, 0, start, Row{});
+    rw.push(ring::RIDE_START, 0, 0, start, ring::start_info_unknown());
     if (!send_edge(p2, msg::RIDE_START, 0)) std::fprintf(stderr, "p1: RIDE_START not delivered\n");
 
     const uint64_t period = speed > 0 ? static_cast<uint64_t>(1e9 / proto::kSampleRateHz / speed) : 0;

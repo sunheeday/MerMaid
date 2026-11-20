@@ -1,5 +1,6 @@
 # Mac:  cmake -S controller -B build && cmake --build build && ctest --test-dir build
-# Pi:   같은 명령 (QNX 위 clang). LightGBM 경로를 주면 P3와 QNX 프로세스 P2~P4도 빌드. P1, P5, P6, rf_stub은 QNX면 항상 빌드
+# Pi:   같은 명령 (QNX 위 clang). LightGBM 경로를 주면 P3와 QNX 프로세스 P2~P4도 빌드. P1, P5, P6, rf_stub은 QNX면 항상,
+#       P7은 SQLite가 있으면 (third_party/sqlite 또는 시스템)
 cmake_minimum_required(VERSION 3.16)
 project(mermaid_controller CXX)
 
@@ -47,6 +48,40 @@ add_executable(test_sample_ring tests/test_sample_ring.cpp)
 target_link_libraries(test_sample_ring mmcommon)
 add_test(NAME sample_ring COMMAND test_sample_ring)
 
+# P7 로거 코어 (SQLite). controller/third_party/sqlite/sqlite3.c(공식 amalgamation)가 있으면 함께 빌드하고 (보드),
+# 없으면 시스템 SQLite를 쓴다 (Mac SDK). 둘 다 없으면 P7을 빌드하지 않는다
+set(MM_SQLITE "")
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite/sqlite3.c)
+  enable_language(C)
+  add_library(mmsqlite STATIC third_party/sqlite/sqlite3.c)
+  target_include_directories(mmsqlite PUBLIC third_party/sqlite)
+  target_compile_definitions(mmsqlite PRIVATE SQLITE_THREADSAFE=0 SQLITE_OMIT_LOAD_EXTENSION SQLITE_DEFAULT_FOREIGN_KEYS=1)
+  set(MM_SQLITE mmsqlite)
+else()
+  find_package(SQLite3)
+  if(TARGET SQLite3::SQLite3)
+    set(MM_SQLITE SQLite3::SQLite3)
+  elseif(SQLite3_FOUND)
+    set(MM_SQLITE SQLite::SQLite3)  # CMake 3.28 전 이름
+  endif()
+endif()
+if(MM_SQLITE)
+  add_library(mmlog STATIC common/ride_log.cpp)
+  target_include_directories(mmlog PUBLIC common qnx)
+  target_link_libraries(mmlog PUBLIC mmcommon ${MM_SQLITE})
+  add_executable(test_ride_log tests/test_ride_log.cpp)
+  target_link_libraries(test_ride_log mmlog)
+  add_test(NAME ride_log COMMAND test_ride_log)
+  # 주행 파일 meta.git_commit
+  execute_process(COMMAND git describe --always --dirty WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                  OUTPUT_VARIABLE MM_GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  if(NOT MM_GIT_COMMIT)
+    set(MM_GIT_COMMIT "unknown")
+  endif()
+else()
+  message(STATUS "SQLite not found (no third_party/sqlite/sqlite3.c, no system SQLite3): skipping P7 logger")
+endif()
+
 # RF: P6 통신 코어(comm), P5 기기 관리 코어(devmgr). 표준 C++, 메시지 구조체는 qnx/rf_messages.hpp
 add_library(mmrf STATIC common/comm.cpp common/devmgr.cpp)
 target_include_directories(mmrf PUBLIC common qnx)
@@ -84,6 +119,11 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "QNX")
   add_executable(fake_p3_sim tests/fake_p3.cpp)
   target_include_directories(fake_p3_sim PRIVATE qnx)
   target_link_libraries(fake_p3_sim mmcommon qnxsim)
+  if(MM_SQLITE)
+    add_executable(p7_logger_sim qnx/p7_logger.cpp)
+    target_link_libraries(p7_logger_sim mmlog qnxsim)
+    target_compile_definitions(p7_logger_sim PRIVATE MM_GIT_COMMIT="${MM_GIT_COMMIT}")
+  endif()
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_FOUND)
     add_test(NAME rf_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rf_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
@@ -93,6 +133,11 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "QNX")
     # P1 LIVE를 가짜 IMU로: 보정 → 주행 → P2 → P3 대역 → P4 (약 30초)
     add_test(NAME live_fake_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/live_fake_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
     set_tests_properties(live_fake_sim PROPERTIES TIMEOUT 120)
+    if(MM_SQLITE)
+      # P7 로거: 주행 파일 내용과 격리 (P7 kill -9, SIGSTOP에도 P1~P4는 그대로). 약 1분 30초
+      add_test(NAME log_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/log_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
+      set_tests_properties(log_sim PROPERTIES TIMEOUT 240)
+    endif()
   endif()
 endif()
 
@@ -105,6 +150,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "QNX")
   add_executable(p1_acq qnx/p1_acq.cpp)
   target_include_directories(p1_acq PRIVATE qnx)
   target_link_libraries(p1_acq mmcommon)
+  if(MM_SQLITE)
+    add_executable(p7_logger qnx/p7_logger.cpp)
+    target_link_libraries(p7_logger mmlog)
+    target_compile_definitions(p7_logger PRIVATE MM_GIT_COMMIT="${MM_GIT_COMMIT}")
+  endif()
 endif()
 
 # P3 추론 (lib_lightgbm 4.6.0). 경로를 주면 빌드:

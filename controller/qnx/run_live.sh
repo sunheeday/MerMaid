@@ -6,7 +6,8 @@
 #   FAKE_IMU=1     가짜 IMU (IMU 없이 경로 시험)          DURATION_S=N  N초 주행 후 자동으로 끝
 #   RF=0           P5·P6 없이 (P4 --hud 고정 등록)        SER=/dev/ser3 ESP32 UART
 #   I2C=/dev/i2c1  IMU 버스                               MODELS=…      기본 ml/out/runs/<CURRENT>/models
-# 시작 순서: P6 → P5 → (P7 로거: 3단계에서 추가) → P4 → P3 → P2 → P1. LIVE는 센서 오류 뒤 새 주행이 이어질 수 있어서
+#   LOGS=DIR       P7 주행 로그 폴더 (기본 ~/mermaid/logs)  P7=0          로거 없이
+# 시작 순서: P6 → P5 → P7 로거 → P4 → P3 → P2 → P1. LIVE는 센서 오류 뒤 새 주행이 이어질 수 있어서
 # P2~P4를 --once 없이 띄운다. 상태(state/)는 지우지 않는다 (자이로 바이어스, 허용도, 프로필이 이어짐).
 B=${BUILD:-build}
 MODELS=${MODELS:-ml/out/runs/$(cat ml/out/runs/CURRENT 2>/dev/null)/models}
@@ -27,6 +28,11 @@ if [ "${RF:-1}" != "0" ]; then
     pids="$pids $!"
     sleep 1
 fi
+p7pid=""
+if [ "${P7:-1}" != "0" ] && [ -x "$B/p7_logger" ]; then
+    $B/p7_logger --dir "${LOGS:-$HOME/mermaid/logs}" --config controller/config > "$out/p7.out" 2>&1 &
+    p7pid=$!
+fi
 $B/p4_policy --config controller/config --state "$out/state" --log "$out/cycles.csv" $rf4 > "$out/p4.out" 2> "$out/p4.err" &
 pids="$pids $!"
 [ "$rf4" = "--rf" ] && sleep 2  # P6이 기억해 둔 SCR·PROF가 P4에 닿을 때까지
@@ -42,8 +48,13 @@ $B/p1_acq --live --i2c "${I2C:-/dev/i2c1}" --state "$out/state" $fake $dur > "$o
 r1=$?
 sleep 1  # RIDE_END가 P2 → P3 → P4로 지나가게
 for p in $pids; do kill "$p" 2>/dev/null; done
+if [ -n "$p7pid" ]; then
+    sleep 2  # P7은 RIDE_END 뒤 2초 동안 늦은 로그를 받고 주행 파일을 닫는다
+    kill "$p7pid" 2>/dev/null
+fi
 wait 2>/dev/null
 echo "p1 exit code: $r1"
 cat "$out/p1.out"
+[ -n "$p7pid" ] && tail -3 "$out/p7.out"  # RIDE_CLOSED <파일> <이유>, P7 통계
 for f in "$out"/p*.err; do [ -s "$f" ] && { echo "--- $f"; tail -20 "$f"; }; done
 [ $r1 -eq 0 ]
