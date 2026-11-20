@@ -213,11 +213,20 @@ static void test_normal_ride() {
     lg.on_msg(&rej, sizeof rej, now);
     msg::LogCtx so = ctx_msg("p5", msg::CtxKind::SAFE_OFF, "{\"no_sync_s\":30,\"conns\":1}", m0 + 180 * 10000000ULL);
     lg.on_msg(&so, sizeof so, now);
+    // 보내는 쪽이 회신을 못 받아 같은 사건을 다시 보냄 (시각과 내용이 같다) → 한 번만 적는다
+    lg.on_msg(&tx, sizeof tx, now);
+    lg.on_msg(&so, sizeof so, now);
+    msg::LogCtx tx2 = tx;  // 시각이 다르면 다른 사건
+    tx2.mono_ns += 1;
+    lg.on_msg(&tx2, sizeof tx2, now);
     msg::LogSym sym;
     sym.mono_ns = m0 + 200 * 10000000ULL;
     msg::copy_id(sym.phone, "phone-a");
     sym.misc = 4;
     lg.on_msg(&sym, sizeof sym, now);
+    lg.on_msg(&sym, sizeof sym, now);  // 다시 보낸 같은 점수
+    CHECK(lg.stats().dup_msgs == 3 && lg.stats().label_rows == 1, "resent events are written once (dup %llu)",
+          (unsigned long long)lg.stats().dup_msgs);
     msg::LogSym bad = sym;
     bad.misc = 11;
     lg.on_msg(&bad, sizeof bad, now);
@@ -287,7 +296,7 @@ static void test_normal_ride() {
     CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='HELLO' AND t IS NULL AND sender='phone-a'") == "1",
           "event before the ride is in the file with t NULL");
     CHECK(q1(f, "SELECT group_concat(kind) FROM (SELECT kind FROM ctx WHERE t IS NOT NULL ORDER BY mono_ns)") ==
-              "SAFE_CLEAR,OVR,INT,REJECT,SAFE_OFF",
+              "SAFE_CLEAR,OVR,INT,INT,REJECT,SAFE_OFF",
           "new kinds by name: %s", q1(f, "SELECT group_concat(kind) FROM (SELECT kind FROM ctx ORDER BY mono_ns)").c_str());
     CHECK(q1(f, "SELECT sender FROM ctx WHERE kind='SAFE_OFF'") == "p5", "P5 event sender");
     CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='CONNECT' AND t IS NULL") == "1", "pre-ride event that arrived late has t NULL");

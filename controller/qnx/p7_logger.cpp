@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
                                 "\"rides_refused\": %llu, \"samples\": %llu, \"hold_samples\": %llu, \"ring_lost\": %llu, "
                                 "\"infer_rows\": %llu, \"decision_rows\": %llu, \"ctx_rows\": %llu, \"label_rows\": %llu, "
                                 "\"queue_drop\": %llu, \"outside_ride\": %llu, \"bad_msgs\": %llu, \"sqlite_errors\": %llu, "
-                                "\"recovered\": %llu, \"broken\": %llu}\n",
+                                "\"recovered\": %llu, \"broken\": %llu, \"dup_msgs\": %llu}\n",
                                 (unsigned long long)lg.session(), (unsigned long long)s.rides_opened,
                                 (unsigned long long)s.rides_closed, (unsigned long long)s.rides_refused,
                                 (unsigned long long)s.samples, (unsigned long long)s.hold_samples,
@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
                                 (unsigned long long)s.label_rows, (unsigned long long)queue.dropped(),
                                 (unsigned long long)s.outside_ride, (unsigned long long)s.bad_msgs,
                                 (unsigned long long)s.sqlite_errors, (unsigned long long)s.recovered,
-                                (unsigned long long)s.broken);
+                                (unsigned long long)s.broken, (unsigned long long)s.dup_msgs);
                     std::fflush(stdout);
                     std::fflush(stderr);
                     _exit(0);  // 받기 스레드는 MsgReceive에 묶여 있다

@@ -88,17 +88,18 @@ public:
     using Item = std::variant<msg::LogCtx, msg::LogSym>;
     static constexpr size_t kMax = 256;
 
-    void ctx(const std::string& sender, msg::CtxKind kind, const std::string& value) {
+    // mono_ns = 0: 지금. 기기가 보낸 사건은 줄을 받은 시각을 넘겨 준다 (P4·P5에 전달한 뒤에 넣더라도)
+    void ctx(const std::string& sender, msg::CtxKind kind, const std::string& value, uint64_t mono_ns = 0) {
         msg::LogCtx m;
-        m.mono_ns = ipc::now_ns();  // 사건이 생긴 시각 (보내는 시각이 아니라)
+        m.mono_ns = mono_ns ? mono_ns : ipc::now_ns();  // 사건이 생긴 시각 (보내는 시각이 아니라)
         msg::copy_id(m.sender, sender);
         m.kind = kind;
         msg::copy_text(m.value, value);
         push(m);
     }
-    void sym(const std::string& phone, int misc) {
+    void sym(const std::string& phone, int misc, uint64_t mono_ns = 0) {
         msg::LogSym m;
-        m.mono_ns = ipc::now_ns();
+        m.mono_ns = mono_ns ? mono_ns : ipc::now_ns();
         msg::copy_id(m.phone, phone);
         m.misc = misc;
         push(m);
@@ -283,8 +284,11 @@ int main(int argc, char** argv) {
         };
         ipc::Client p7(msg::kNameP7, msg::kLogTimeoutNs);
         uint64_t log_fail = 0, log_sent = 0;
+        // 기기가 보낸 사건(HELLO·BYE·SCR·OVR·PROF)의 시각 = 그 줄을 받아 규칙을 통과한 때 (run이 시작할 때 한 번 찍는다).
+        // P4·P5에 전달한 뒤에 찍으면, 그 결과로 받기 스레드가 내보낸 INT가 원인인 OVR·HELLO보다 앞 시각으로 남는다
+        uint64_t batch_ns = 0;
         auto log_ctx = [&](const std::string& sender, msg::CtxKind kind, const std::string& value) {
-            logq.ctx(sender, kind, value);
+            logq.ctx(sender, kind, value, batch_ns);
         };
         // 큐를 비워 P7에 보낸다 (UART 스레드만). 한 번 실패하면 멈추고 남은 것은 큐에 되돌린다:
         // P7이 멈춰 있을 때 사건 수 × 2 ms를 기다리지 않게. 다음 바퀴(100 ms 안)에 다시 한 번 보내 본다
@@ -337,6 +341,7 @@ int main(int argc, char** argv) {
             return false;
         };
         auto run = [&](const comm::Actions& acts) {
+            batch_ns = ipc::now_ns();
             for (const auto& a : acts) {
                 if (const auto* u = std::get_if<comm::UartLine>(&a)) {
                     uart_write(sh, u->text);
@@ -386,7 +391,7 @@ int main(int argc, char** argv) {
                     }
                 } else if (const auto* y = std::get_if<comm::Sym>(&a)) {
                     log_line("P7", "SYM " + y->phone + " misc=" + std::to_string(y->misc));
-                    logq.sym(y->phone, y->misc);  // P4에는 보내지 않는다 (기록 전용)
+                    logq.sym(y->phone, y->misc, batch_ns);  // P4에는 보내지 않는다 (기록 전용)
                 }
             }
             flush_log();  // 받기 스레드가 넣은 사건도 여기서 나간다 (적어도 100 ms마다)

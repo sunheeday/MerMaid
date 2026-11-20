@@ -531,6 +531,19 @@ void Logger::on_p1_restart(uint64_t now) {
     if (file_ || refused_) close_ride(closing_ ? "ride_end" : "p1_restart", now);
 }
 
+// P6·P5는 P7로 보내기가 2 ms 안에 회신을 못 받으면 같은 사건을 다음 바퀴에 다시 보낸다 (사건을 잃지 않으려고).
+// 그런데 회신만 늦었고 P7은 이미 받은 경우가 있다 → 같은 사건이 두 번 온다. 사건마다 생긴 시각(ns)이 찍혀 있으므로
+// 시각과 내용이 모두 같은 것은 같은 사건이다: 한 번만 적는다
+bool Logger::seen_before(const std::string& key) {
+    if (std::find(recent_.begin(), recent_.end(), key) != recent_.end()) {
+        st_.dup_msgs++;
+        return true;
+    }
+    if (recent_.size() >= kRecentKeys) recent_.pop_front();
+    recent_.push_back(key);
+    return false;
+}
+
 void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_total) {
     (void)now;
     queue_drop_seen_ = std::max(queue_drop_seen_, queue_drop_total);
@@ -603,6 +616,7 @@ void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_t
             msg::LogCtx m;
             std::memcpy(&m, p, sizeof m);
             Ctx c{m.mono_ns, id_of(m.sender, msg::kIdLen), msg::ctx_kind_name(m.kind), id_of(m.value, sizeof m.value)};
+            if (seen_before(std::to_string(c.mono_ns) + "|" + c.sender + "|" + c.kind + "|" + c.value)) return;
             if (m.kind == msg::CtxKind::SCR || m.kind == msg::CtxKind::PROF) snapshot_[{c.sender, c.kind}] = c;
             if (!writable()) {
                 if (m.kind == msg::CtxKind::SCR || m.kind == msg::CtxKind::PROF) return;  // 마지막 값은 위에서 기억
@@ -637,6 +651,8 @@ void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_t
             msg::LogSym m;
             std::memcpy(&m, p, sizeof m);
             if (m.misc < 0 || m.misc > 10) break;
+            if (seen_before(std::to_string(m.mono_ns) + "|" + id_of(m.phone, msg::kIdLen) + "|SYM|" + std::to_string(m.misc)))
+                return;
             if (!writable()) {
                 st_.outside_ride++;
                 return;

@@ -191,6 +191,10 @@ def check_file(f, a):
         return out
 
     check(all(json.loads(r[4]) is not None for r in ctx), "every ctx value is valid JSON")
+    # P6·P5는 P7의 회신이 2 ms를 넘기면 같은 사건을 다시 보낸다 (Mac은 부하가 걸리면 자주). P7이 한 번만 적어야 한다
+    check(len(set(ctx)) == len(ctx), f"no event is written twice (P7 saw {a['s7'].get('dup_msgs')} resends)")
+    lab_all = rows(f, "SELECT mono_ns, phone, misc FROM label")
+    check(len(set(lab_all)) == len(lab_all), "no label is written twice")
     check(all(len(r[4]) <= 191 for r in ctx), "no ctx value was cut")
     check(not any(k in ("HB", "MOT") for k in kinds) and not any('"t":"MOT"' in r[4] or '"t":"HB"' in r[4] for r in ctx),
           "no HB or MOT in the log")

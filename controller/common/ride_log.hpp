@@ -27,6 +27,7 @@ constexpr uint64_t kCommitNs = 1000000000ULL;            // 트랜잭션 1초에
 constexpr uint64_t kCloseGraceNs = 2000000000ULL;        // RIDE_END 뒤 2초는 늦게 온 LOG_*를 같은 주행에
 constexpr uint64_t kStorageCheckNs = 60000000000ULL;     // 남은 공간 확인 60초마다
 constexpr uint64_t kRateHealthNs = 60000000000ULL;       // sample_rate_hz 1분마다
+constexpr size_t kRecentKeys = 256;                      // 다시 보낸 LOG_CTX·LOG_SYM을 알아보려고 기억하는 최근 사건 수
 constexpr size_t kPreRideCtx = 64;                       // 주행 밖에서 받은 기기 사건을 이만큼 기억했다가 다음 주행 파일에
 
 // 받기 스레드 → 쓰기 스레드. 칸 수와 칸 크기가 고정이라 메모리가 늘지 않는다. 차면 가장 오래된 것을 버린다
@@ -63,6 +64,7 @@ struct Stats {
     uint64_t samples = 0, hold_samples = 0, ring_lost = 0;
     uint64_t infer_rows = 0, decision_rows = 0, ctx_rows = 0, label_rows = 0, health_rows = 0;
     uint64_t outside_ride = 0, bad_msgs = 0, sqlite_errors = 0, deleted_uploaded = 0;
+    uint64_t dup_msgs = 0;  // 보내는 쪽이 다시 보낸 같은 사건 (한 번만 적는다)
     bool samples_paused = false;
 };
 
@@ -115,6 +117,8 @@ private:
     std::vector<std::pair<uint64_t, uint64_t>> anchors_;
     uint64_t rate_mono_ = 0, rate_seq_ = 0, last_mono_ = 0, last_seq_ = 0;
     std::map<std::pair<std::string, std::string>, Ctx> snapshot_;  // 주행 밖에서 받은 마지막 SCR·PROF
+    std::deque<std::string> recent_;  // 최근 LOG_CTX·LOG_SYM의 열쇠 (시각 + 내용)
+    bool seen_before(const std::string& key);
     std::deque<Ctx> pre_;  // 주행 밖에서 받은 그 밖의 사건 (HELLO, CONNECT, INT …), 최근 kPreRideCtx개
 
     void warn(const std::string& s);
