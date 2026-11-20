@@ -1,5 +1,5 @@
 # Mac:  cmake -S controller -B build && cmake --build build && ctest --test-dir build
-# Pi:   같은 명령 (QNX 위 clang). LightGBM 경로를 주면 P3와 QNX 프로세스 P1~P4도 빌드. P5, P6, rf_stub은 QNX면 항상 빌드
+# Pi:   같은 명령 (QNX 위 clang). LightGBM 경로를 주면 P3와 QNX 프로세스 P2~P4도 빌드. P1, P5, P6, rf_stub은 QNX면 항상 빌드
 cmake_minimum_required(VERSION 3.16)
 project(mermaid_controller CXX)
 
@@ -10,8 +10,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 add_compile_options(-Wall -Wextra)
 
-# 공용 코드: P2 피처, P4 정책 (표준 C++), P4 상태 파일 (POSIX)
-add_library(mmcommon STATIC common/features.cpp common/policy.cpp common/store.cpp)
+# 공용 코드: P2 피처, P4 정책, P1 LIVE IMU (표준 C++), P4 상태 파일, P1→P7 공유 메모리 링 (POSIX)
+add_library(mmcommon STATIC common/features.cpp common/policy.cpp common/store.cpp common/imu.cpp common/sample_ring.cpp)
 target_include_directories(mmcommon PUBLIC common)
 # 테스트와 도구가 저장소의 설정 파일을 찾는 경로 (Pi의 P4 프로세스는 실행 인자로 받는다)
 set(MM_CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/config")
@@ -37,6 +37,15 @@ add_executable(test_store tests/test_store.cpp)
 target_link_libraries(test_store mmcommon)
 target_compile_definitions(test_store PRIVATE MM_CONFIG_DIR="${MM_CONFIG_DIR}")
 add_test(NAME store COMMAND test_store)
+
+add_executable(test_imu tests/test_imu.cpp)
+target_link_libraries(test_imu mmcommon)
+target_compile_definitions(test_imu PRIVATE MM_CONFIG_DIR="${MM_CONFIG_DIR}")
+add_test(NAME imu COMMAND test_imu)
+
+add_executable(test_sample_ring tests/test_sample_ring.cpp)
+target_link_libraries(test_sample_ring mmcommon)
+add_test(NAME sample_ring COMMAND test_sample_ring)
 
 # RF: P6 통신 코어(comm), P5 기기 관리 코어(devmgr). 표준 C++, 메시지 구조체는 qnx/rf_messages.hpp
 add_library(mmrf STATIC common/comm.cpp common/devmgr.cpp)
@@ -81,15 +90,21 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "QNX")
     set_tests_properties(rf_sim PROPERTIES TIMEOUT 240)
     add_test(NAME pipeline_rf_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/pipeline_rf_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
     set_tests_properties(pipeline_rf_sim PROPERTIES TIMEOUT 240)
+    # P1 LIVE를 가짜 IMU로: 보정 → 주행 → P2 → P3 대역 → P4 (약 30초)
+    add_test(NAME live_fake_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/live_fake_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(live_fake_sim PROPERTIES TIMEOUT 120)
   endif()
 endif()
 
-# QNX 프로세스 P5, P6과 시험용 대역 rf_stub (LightGBM 필요 없음). 보드에서만 빌드
+# QNX 프로세스 P5, P6과 시험용 대역 rf_stub, P1 수집 (LightGBM 필요 없음). 보드에서만 빌드
 if(CMAKE_SYSTEM_NAME STREQUAL "QNX")
   foreach(p p5_devmgr p6_comm rf_stub)
     add_executable(${p} qnx/${p}.cpp)
     target_link_libraries(${p} mmrf)
   endforeach()
+  add_executable(p1_acq qnx/p1_acq.cpp)
+  target_include_directories(p1_acq PRIVATE qnx)
+  target_link_libraries(p1_acq mmcommon)
 endif()
 
 # P3 추론 (lib_lightgbm 4.6.0). 경로를 주면 빌드:
@@ -107,7 +122,7 @@ if(MM_LIGHTGBM_INCLUDE AND MM_LIGHTGBM_LIB)
   set_target_properties(verify_model PROPERTIES BUILD_RPATH ${MM_LIGHTGBM_LIBDIR})
   # QNX 프로세스 P1~P4 (MsgSend / MsgReceive). 보드에서만 빌드
   if(CMAKE_SYSTEM_NAME STREQUAL "QNX")
-    foreach(p p1_acq p2_feat p3_infer p4_policy)
+    foreach(p p2_feat p3_infer p4_policy)
       add_executable(${p} qnx/${p}.cpp)
       target_include_directories(${p} PRIVATE qnx)
       target_link_libraries(${p} mmcommon)
