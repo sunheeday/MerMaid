@@ -16,7 +16,8 @@
 
 옵션: --name MSAgent-xxxx (브리지가 여러 개일 때), --dev ID (이 맥이 쓸 폰 ID),
       --with-response (응답 있는 쓰기), --skip-link-timeout (p6_comm을 --no-link-timeout으로 띄웠을 때),
-      --verbose (HB·MOT까지 모두 출력)
+      --verbose (HB·MOT까지 모두 출력),
+      --sym N (full·ai: 등록 뒤 멀미 점수 M08 SYM을 한 번 보냄. 0~10 정수면 주행 로그 label 표에, 11 같은 값은 거부 사건으로)
 
 처음 실행하면 macOS가 블루투스 권한(터미널 앱)이나 "연결 요청" 창을 띄울 수 있다 → 허용.
 """
@@ -262,6 +263,7 @@ async def run_full(ph, args):
 
     step("[3] SCR 보내기", "rf_stub 창에 'SCR " + args.dev + " on=1 att=1'")
     await ph.send({"t": "SCR", "on": True, "att": True})
+    await send_sym(ph, args, "[3b]")
 
     step("[4] rf_stub 주기(10초씩: T1 ON → T2 ON → T3 ON → 모두 OFF)에서 Tier 3 ON 기다리기 (최대 45초)")
     r = await ph.wait_msg(lambda m: is_int(m, 3, True), 45, n0)
@@ -328,6 +330,22 @@ async def run_full(ph, args):
         check(3.5 <= ph.disc_at - t9 <= 7.5, f"약 5초 뒤 ({ph.disc_at - t9:.1f}초)")
 
 
+async def send_sym(ph, args, tag):
+    """M08 SYM 한 번 (--sym N). 회신이 없는 메시지라 Pi 쪽에서 확인한다."""
+    if args.sym is None:
+        return
+    ok = 0 <= args.sym <= 10
+    step(f"{tag} 멀미 점수 SYM {args.sym} 보내기 (회신 없음, Pi에서 확인)",
+         (f"P6 창에 'P7 SYM {args.dev} misc={args.sym}', 주행이 닫힌 뒤 주행 파일의 label 표에 한 줄" if ok
+          else "P6 창에 'bad message ... SYM misc not an integer 0..10', 주행 파일 ctx 표에 kind REJECT 한 줄"))
+    n = len(ph.msgs)
+    await ph.send({"t": "SYM", "misc": args.sym})
+    await asyncio.sleep(1.0)
+    check(ph.connected, "SYM을 보낸 뒤에도 연결 유지" + ("" if ok else " (범위 밖 값은 버려질 뿐 끊기지 않음)"))
+    extra = [m for _, m in ph.msgs[n:] if m.get("t") not in ("HB", "MOT", "INT", "PROF")]
+    check(not extra, f"SYM에는 회신이 없어야 함 {extra}")
+
+
 async def register(ph, args, n0):
     """HELLO → PROF → SCR (앱과 같은 순서) 뒤 INT 상태 3개를 받는다."""
     await ph.hello()
@@ -354,6 +372,7 @@ async def run_ai(ph, args):
     t_reg = now()
     got = await register(ph, args, n0)
     check(set(got) == {1, 2, 3}, f"HELLO 후 INT tier 1·2·3 상태 수신 {got}")
+    await send_sym(ph, args, "[2b]")
 
     step("[3] V2: P4의 결정이 폰까지 (Tier 1 → 2 → 3). 최대 " + str(args.tier3_wait) + "초 기다림",
          "p4.out의 'CMD <t> ... 1'과 같은 순서")
@@ -446,6 +465,7 @@ async def main():
     ap.add_argument("--with-response", action="store_true", help="RX에 응답 있는 쓰기 (기본: 앱처럼 응답 없는 쓰기)")
     ap.add_argument("--skip-link-timeout", action="store_true", help="무응답 DROP 확인 건너뛰기")
     ap.add_argument("--verbose", action="store_true", help="HB·MOT까지 출력")
+    ap.add_argument("--sym", type=int, help="full·ai: 등록 뒤 멀미 점수 SYM을 한 번 보냄 (0~10. 범위 밖이면 거부되는지 확인)")
     args = ap.parse_args()
 
     ph = Phone(args)
