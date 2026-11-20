@@ -7,6 +7,7 @@
   A. 보통: 주행 파일 하나가 닫히고, samples 수 = P1이 보낸 수, infer 2주기, decision 2주기 × 기기 3, meta
   B. 주행 중 P7 kill -9: P1~P4는 그대로 끝난다 (샘플 손실 0, P4 주기 그대로). 다시 띄운 P7이 남은 파일을 복구
   C. 주행 중 P7 SIGSTOP 10초: P1~P4는 그대로 (보내기는 2 ms 시간 초과). 다시 움직이면 링에 남은 샘플을 모두 기록
+  D. (FastAPI가 있으면) 세 주행 파일을 tools/collect_logs.py로 로그 서버(uvicorn)에 올리고 API로 다시 읽는다
 Mac은 실시간 OS가 아니라 주기 시간 변화(< 0.5 ms)는 Pi에서 잰다. 약 1분 30초.
 """
 import json
@@ -100,6 +101,64 @@ def wait_exit(proc, timeout):
         return proc.p.wait(timeout)
     except subprocess.TimeoutExpired:
         return None
+
+
+def server_stage(tmp, rides, env, s1_c):
+    """P7이 만든 진짜 주행 파일 → tools/collect_logs.py → uvicorn server.app (docs/DATA_LOGGING.md §8·§9)"""
+    try:
+        import fastapi  # noqa: F401
+        import httpx
+        import uvicorn  # noqa: F401
+    except ImportError:
+        print("D. log server: skipped (pip install -r server/requirements.txt)")
+        return
+    print("D. log server")
+    import socket
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        port = so.getsockname()[1]
+    key = "logsim-key"
+    senv = dict(env, MERMAID_API_KEY=key, MERMAID_DATA=os.path.join(tmp, "server"))
+    srv = Proc("server", [sys.executable, "-m", "uvicorn", "server.app:app", "--app-dir", REPO, "--host", "127.0.0.1", "--port", str(port)],
+               tmp, senv)
+    url = f"http://127.0.0.1:{port}"
+    try:
+        up = False
+        for _ in range(100):
+            try:
+                up = httpx.get(url + "/api/health", timeout=1).status_code == 200
+                if up:
+                    break
+            except httpx.HTTPError:
+                time.sleep(0.1)
+        check(up, "server up")
+        collect = [sys.executable, os.path.join(REPO, "tools", "collect_logs.py"), "--local", rides, "--server", url,
+                   "--key", key]
+        r = subprocess.run(collect, capture_output=True, text=True, timeout=120, env=senv)
+        out = json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {}
+        check(r.returncode == 0 and out.get("uploaded") == 3 and out.get("failed") == 0,
+              f"collected 3 ride files (A, recovered B, C): {out} {r.stderr.strip()[-200:]}")
+        r = subprocess.run(collect, capture_output=True, text=True, timeout=120, env=senv)
+        out = json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {}
+        check(out.get("uploaded") == 0 and out.get("exists") == 0, f"second run does nothing: {out}")
+        check(len([n for n in os.listdir(rides) if n.endswith(".uploaded")]) == 3, ".uploaded markers on the car side")
+        h = {"X-API-Key": key}
+        lst = httpx.get(url + "/api/rides", headers=h).json()
+        check([x["ride_id"] for x in lst] == ["pi01-00001-001", "pi01-00002-001", "pi01-00004-001"],
+              f"server list {[x['ride_id'] for x in lst]}")
+        a = httpx.get(url + "/api/rides/pi01-00001-001", headers=h).json()
+        check(a.get("n_cycles") == 2 and a.get("closed_reason") == "ride_end" and a.get("n_samples", 0) >= 2098,
+              f"ride A summary: cycles {a.get('n_cycles')}, samples {a.get('n_samples')}")
+        cy = httpx.get(url + "/api/rides/pi01-00001-001/cycles", headers=h).json()
+        check(len(cy["cycles"]) == 2 and cy["cycles"][0]["devices"]["airflow-01"]["on"] == 1
+              and cy["cycles"][0]["risk"]["phone-a"][0] == 0.95, "cycles: risk and device state")
+        sm = httpx.get(url + "/api/rides/pi01-00001-001/samples?from=5&to=6&cols=az", headers=h).json()
+        az = [v[0] for v in sm.get("data", [])]
+        check(len(az) == 100 and all(abs(v - 9.80665) < 0.01 for v in az), "raw samples: 100 Hz, az = 9.81 (fake IMU still)")
+        c = httpx.get(url + "/api/rides/pi01-00004-001", headers=h).json()
+        check(c.get("n_samples") == s1_c.get("samples"), "ride C on the server has every sample")
+    finally:
+        srv.kill()
 
 
 def main():
@@ -211,6 +270,9 @@ def main():
             check(n == s1.get("samples"), f"ring kept every sample while P7 was stopped ({n} = {s1.get('samples')})")
         else:
             check(False, "ride file of run C")
+
+        # ---------- D. 로그 서버로 수집 (FastAPI가 있을 때) ----------
+        server_stage(tmp, rides, env, s1)
     finally:
         for r in runs:
             r.kill()

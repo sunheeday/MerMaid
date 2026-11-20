@@ -371,12 +371,14 @@ CREATE INDEX label_phone ON label(phone, t);
 
 ## 8. 차 → 서버 수집 (v1: Mac이 가져옴)
 
-`tools/collect_logs.py [--host qnxuser@192.168.2.2] [--server http://localhost:8080]`
+`tools/collect_logs.py [--host qnxuser@192.168.2.2] [--remote-dir mermaid/logs/rides] [--local DIR] [--server http://localhost:8080] [--key KEY] [--dry-run]`
+(구현됨. API 키는 `--key` 또는 `MERMAID_API_KEY`. `--local`은 SSH 대신 폴더에서)
 
-1. `ssh host 'ls ~/mermaid/logs/rides'` → `.open`이 아니고 `.uploaded`가 없는 `*.sqlite` 목록.
-2. 파일마다 `scp`로 `server/data/incoming/`에 받기 → sha256 계산.
+1. `ssh host 'ls -1 mermaid/logs/rides'` → `<ride_id>.sqlite` 중 `.uploaded`가 없는 것 (`.open`, `.broken`은 이름 규칙에서 빠진다).
+2. 파일마다 `scp`로 임시 폴더에 받기 → sha256 계산.
 3. `POST /api/rides` (multipart, 파일 + sha256).
 4. 서버가 200(이미 있음)이나 201(새로 받음)을 돌려주면 `ssh host 'touch …/<id>.uploaded'`.
+   409·422는 표시만 하고 다음 파일로 (표시하지 않으므로 다음 실행에 다시 시도). 하나라도 실패하면 종료 코드 1.
 5. 몇 번을 다시 돌려도 결과가 같다 (멱등).
 
 v2(범위 밖): 차에 Wi-Fi가 있으면 P8 업로더가 직접 POST. QNX에 HTTP·TLS 클라이언트가 필요하다.
@@ -387,15 +389,17 @@ v2(범위 밖): 차에 Wi-Fi가 있으면 P8 업로더가 직접 POST. QNX에 HT
 
 ```
 server/
-  app.py            # FastAPI 라우트
+  app.py            # FastAPI 라우트 (create_app: 시험은 폴더와 키를 넘겨 만든다)
   db.py             # 중앙 DB 접근 (sqlite3 표준 라이브러리. PostgreSQL로 옮길 때 이 파일만 바꿈)
   ridefile.py       # 주행 파일 읽기·검증 (ml/realdata/mermaid.py도 이것을 씀)
-  requirements.txt  # fastapi, uvicorn, python-multipart, numpy
-  data/             # git 제외: incoming/, rides/, mermaid.db
-tests/server/       # pytest + httpx TestClient
+  requirements.txt  # fastapi, uvicorn, python-multipart, numpy, httpx
+  data/             # git 제외: incoming/ (받는 중), rides/ (읽기 전용 보관), mermaid.db
+tests/server/       # pytest + TestClient. 시험용 주행 파일은 ride_log.cpp의 kSchema를 그대로 읽어 만든다
 ```
 
-실행: `MERMAID_API_KEY=… uvicorn server.app:app --host 0.0.0.0 --port 8080`
+실행 (저장소 루트에서): `MERMAID_API_KEY=… uvicorn server.app:app --host 0.0.0.0 --port 8080`
+환경 변수: `MERMAID_DATA`(기본 `server/data`), `MERMAID_MAX_UPLOAD_MB`(기본 1024).
+시험: `python3 -m pytest tests/server`, 끝까지는 ctest `log_sim`의 D 단계 (P7이 만든 진짜 파일 → collect_logs → uvicorn).
 
 ### 9-1. 중앙 DB (`server/data/mermaid.db`)
 
@@ -409,8 +413,9 @@ CREATE TABLE ride (
   received_at TEXT NOT NULL, health TEXT                -- JSON 요약
 );
 CREATE TABLE cycle (ride_id TEXT, seq INTEGER, t REAL, phone TEXT,
-                    p2 REAL, p3 REAL, p4 REAL, p5 REAL, p6 REAL, PRIMARY KEY (ride_id, seq, phone));
-CREATE TABLE decision (ride_id TEXT, seq INTEGER, t REAL, device TEXT, on_ INTEGER, tier INTEGER,
+                    p2 REAL, p3 REAL, p4 REAL, p5 REAL, p6 REAL, cal_a REAL, cal_b REAL,
+                    PRIMARY KEY (ride_id, seq, phone));
+CREATE TABLE decision (ride_id TEXT, seq INTEGER, t REAL, device TEXT, on_ INTEGER, tier INTEGER, changed INTEGER,
                        PRIMARY KEY (ride_id, seq, device));
 CREATE TABLE label (ride_id TEXT, t REAL, phone TEXT, misc INTEGER);
 CREATE TABLE event (ride_id TEXT, t REAL, sender TEXT, kind TEXT, value TEXT);
@@ -423,14 +428,18 @@ CREATE TABLE event (ride_id TEXT, t REAL, sender TEXT, kind TEXT, value TEXT);
 | 메서드 | 경로 | 하는 일 | 응답 |
 |---|---|---|---|
 | POST | `/api/rides` | 주행 파일 업로드 | 201 새로 받음 / 200 같은 sha256 이미 있음 / 409 같은 id, 다른 sha256 / 422 검증 실패 |
-| GET | `/api/rides?device=&since=&has_labels=` | 목록 | `[{ride_id, wall_start, duration_s, n_labels, phones, health}]` |
-| GET | `/api/rides/{id}` | meta, 요약, health | JSON |
-| GET | `/api/rides/{id}/cycles` | 10초 기록 (cycle + decision + label을 t로 합침) | JSON 배열 |
-| GET | `/api/rides/{id}/samples?from=&to=&cols=` | 원본 구간 (최대 10분) | `{t0, hz, columns, data}` |
+| GET | `/api/rides?device=&since=&has_labels=` | 목록 (`since`는 받은 시각 `received_at` ISO 기준) | `[{ride_id, device_id, wall_start, received_at, duration_s, n_samples, n_cycles, n_labels, phones, closed_reason, health}]` |
+| GET | `/api/rides/{id}` | 요약, health, 주행 파일 meta 전체 | JSON |
+| GET | `/api/rides/{id}/cycles` | 10초 기록 | `{cycles: [{seq, t, risk: {폰: [p2..p6]}, devices: {기기: {on, tier, changed}}}], labels: [{t, phone, misc}], events: [{t, sender, kind, value}]}` |
+| GET | `/api/rides/{id}/samples?from=&to=&cols=` | 원본 구간 [from, to) (최대 10분, 빠진 샘플은 채우지 않음) | `{hz, columns, t, data (NaN은 null), hold (구간 안 인덱스)}` |
 | GET | `/api/rides/{id}/file` | 주행 파일 내려받기 | sqlite |
-| POST | `/api/export` | `{ride_ids \| filter, note}` → `build_real.py --source mermaid` 실행 | `{version: "v010"}` |
+| GET | `/api/health` | 살아 있는지 (키 없이) | `{ok, rides}` |
+| POST | `/api/export` | `{ride_ids \| filter, note}` → `build_real.py --source mermaid` 실행 (**6단계**, 아직 없음) | `{version: "v010"}` |
 
-**업로드 검증:** 파일 이름 = `meta.ride_id`, `schema_version == 1`, `PRAGMA integrity_check == ok`, 필수 표 존재, sha256 일치. 통과하면 `rides/`로 옮기고, 같은 트랜잭션에서 중앙 DB 표들을 채운다.
+**업로드 검증:** 파일 이름 = `meta.ride_id` (`<device>-<session:05d>-<ride:03d>` 규칙, 경로 문자 거부), `schema_version == 1`,
+`PRAGMA integrity_check == ok`, 필수 표 7개 존재, `meta.closed_reason` 있음(닫힌 파일만), sha256 일치, 크기 ≤ `MERMAID_MAX_UPLOAD_MB`.
+통과하면 `rides/`로 옮겨 읽기 전용으로 두고, 중앙 DB 표들을 한 트랜잭션으로 채운다(실패하면 옮긴 파일을 지운다).
+같은 ride_id를 동시에 올려도 잠금으로 하나만 받는다.
 
 인증: v1은 로컬 네트워크 전용 + API 키 하나. 밖으로 열 때(클라우드) HTTPS와 기기별 키를 다시 정한다.
 
