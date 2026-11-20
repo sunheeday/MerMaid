@@ -18,6 +18,13 @@ struct Biquad {
         return y;
     }
     void reset() { z1 = z2 = 0; }
+    // 입력이 오래전부터 x였던 것처럼 정상상태로 맞추고 그 출력을 돌려준다 (scipy sosfilt_zi * x와 같음)
+    double prime(double x) {
+        const double y = (b0 + b1 + b2) / (1.0 + a1 + a2) * x;
+        z2 = b2 * x - a2 * y;
+        z1 = b1 * x - a1 * y + z2;
+        return y;
+    }
 };
 
 // 2차 버터워스 저역통과, 쌍선형 변환 + 사전 왜곡 (ml/oman.py butter2_lowpass)
@@ -61,6 +68,9 @@ struct Wf {
     }
     void reset() {
         for (auto& q : s) q.reset();
+    }
+    void prime(double x) {
+        for (auto& q : s) x = q.prime(x);
     }
 };
 

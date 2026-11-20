@@ -81,7 +81,13 @@ void FeatureExtractor::reset() {
 
 bool FeatureExtractor::push(const Row& r) {
     t_ = r[C_T];
-    if (n_ == 0) t0_ = t_;
+    if (n_ == 0) {
+        t0_ = t_;
+        // 첫 샘플의 정상상태에서 시작 (T-22). 0에서 시작하면 중력 9.81이 계단 입력이 되어
+        // Wf 고역통과가 1분 가까이 울리고 rms_z_1m이 1 m/s^2 안팎까지 튄다.
+        wfx_.prime(r[C_AX]); wfy_.prime(r[C_AY]); wfz_.prime(r[C_AZ]);
+        lpx_.prime(r[C_AX]); lpy_.prime(r[C_AY]);
+    }
 
     // 가중 가속도, jerk
     const double wx = wfx_.step(r[C_AX]), wy = wfy_.step(r[C_AY]), wz = wfz_.step(r[C_AZ]);
@@ -97,12 +103,15 @@ bool FeatureExtractor::push(const Row& r) {
     const double lx = lpx_.step(r[C_AX]), ly = lpy_.step(r[C_AY]);
     oman_.step(std::hypot(lx, ly));
 
-    // 이벤트: 저역통과 가속도가 기준을 넘는 순간 (상승 에지)
-    const bool acc = lx > kHardAccelX, brk = lx < kHardBrakeX, trn = std::fabs(ly) > kHardTurnAbsY;
-    if (acc && !in_accel_) events_.push_back({t_, 0});
-    if (brk && !in_brake_) events_.push_back({t_, 1});
-    if (trn && !in_turn_) events_.push_back({t_, 2});
-    in_accel_ = acc; in_brake_ = brk; in_turn_ = trn;
+    // 이벤트: 저역통과 가속도가 기준을 넘는 순간. 기준에서 kEventRearmMargin만큼 되돌아와야 다시 센다
+    // (히스테리시스, feature_order v3). 기준 근처에서 오르내리는 제동 하나를 여러 번 세지 않게.
+    const double ay_abs = std::fabs(ly);
+    if (!in_accel_ && lx > kHardAccelX) { in_accel_ = true; events_.push_back({t_, 0}); }
+    else if (in_accel_ && lx < kHardAccelX - kEventRearmMargin) in_accel_ = false;
+    if (!in_brake_ && lx < kHardBrakeX) { in_brake_ = true; events_.push_back({t_, 1}); }
+    else if (in_brake_ && lx > kHardBrakeX + kEventRearmMargin) in_brake_ = false;
+    if (!in_turn_ && ay_abs > kHardTurnAbsY) { in_turn_ = true; events_.push_back({t_, 2}); }
+    else if (in_turn_ && ay_abs < kHardTurnAbsY - kEventRearmMargin) in_turn_ = false;
     while (!events_.empty() && events_.front().t <= t_ - 300.0) events_.pop_front();
 
     // 차량 신호 파생값

@@ -54,7 +54,7 @@ def test_row_timing(result):
 
 def test_oman_matches_python(result):
     rows, tf, X = result
-    c = oman.input_signal(rows[:, trip.COL["ax"]], rows[:, trip.COL["ay"]], DT)
+    c = oman.input_signal(rows[:, trip.COL["ax"]], rows[:, trip.COL["ay"]], DT, prime=True)
     score, S = oman.run(c, oman.OMAN["K0"], DT)
     at = np.arange(999, len(rows), 1000)
     assert close(X[:, IDX["oman_score"]], score[at])

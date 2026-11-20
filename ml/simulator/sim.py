@@ -81,6 +81,12 @@ def gen_route(rng):
             R, a, v = U(rng, c["radius_m"]), math.radians(U(rng, c["angle_deg"])), c["speed_kmh"] * KMH
             L = add(R * a, 1.0 / R, v)  # 반시계 회전 (y 왼쪽 +)
             turns.append((s0 + L / 2, a))
+        elif kind == "highway":  # 긴 고속 구간: 직선과 완만한 곡선을 번갈아
+            v = U(rng, c["speed_kmh"]) * KMH
+            total, L = U(rng, c["length_m"]), 0.0
+            while L < total:
+                k = rng.choice([-1.0, 0.0, 1.0]) / U(rng, c["radius_m"])
+                L += add(U(rng, c["bend_length_m"]), k, v)
         else:  # hill
             v = U(rng, c["speed_kmh"]) * KMH
             L = add(U(rng, c["length_m"]), 0.0, v, rng.choice([-1, 1]) * U(rng, c["grade"]))
@@ -88,6 +94,15 @@ def gen_route(rng):
         est_t += L / v
     kappa = gaussian_filter1d(np.concatenate(kappa), S["curvature_smooth_m"] / DS)
     grade = gaussian_filter1d(np.concatenate(grade), S["grade_smooth_m"] / DS)
+    # 노면 굴곡: 거리 위의 AR(1) 경사 잡음 (수직 저주파 운동, T-23)
+    rp = CFG["road_profile"]
+    rho = math.exp(-DS / rp["length_m"])
+    nz = rng.normal(0, rp["grade_sd"] * math.sqrt(1 - rho * rho), len(grade))
+    und = np.empty(len(grade))
+    und[0] = rng.normal(0, rp["grade_sd"])
+    for i in range(1, len(grade)):
+        und[i] = rho * und[i - 1] + nz[i]
+    grade = grade + und
     return {"kappa": kappa, "vt": np.concatenate(vt), "grade": grade, "stops": stops, "turns": turns,
             "length": len(kappa) * DS}
 
@@ -146,8 +161,15 @@ def drive(route, driver, regen_level, rng):
     st = np.cumsum(vt) * DT
     along = np.gradient(vt, DT)
     kap = np.interp(st, s, route["kappa"])
-    theta = np.arctan(np.interp(st, s, route["grade"]))
-    return {"t": T, "v": vt, "s": st, "a_long": along, "a_lat": vt ** 2 * kap, "kappa": kap, "theta": theta}
+    th_s = np.arctan(route["grade"])
+    theta = np.interp(st, s, th_s)
+    # 수직: 노면 종단 곡률 v^2 dθ/ds. 횡: 차로 유지 흔들림 (속도 비례, 저주파 대역, T-23)
+    a_vert = vt ** 2 * np.interp(st, s, np.gradient(th_s, DS))
+    sw = CFG["sway"]
+    x = sosfilt(butter(2, sw["band_hz"], btype="band", fs=FS, output="sos"), rng.normal(0, 1, len(T)))
+    a_sway = x / max(x.std(), 1e-12) * sw["lat_per_mps"] * vt
+    return {"t": T, "v": vt, "s": st, "a_long": along, "a_lat": vt ** 2 * kap + a_sway, "kappa": kap,
+            "yaw_rate": vt * kap + a_sway / np.maximum(vt, 1.0), "theta": theta, "a_vert": a_vert}
 
 
 # ---------------------------------------------------------------- 탑승 (trip.bin 행)
@@ -168,10 +190,10 @@ def ride_rows(route, motion, ride, rng):
     gn = lambda: rng.normal(0, I["gyro_noise"], n)
     rows[:, C["ax"]] = al + G * np.sin(th) + vib(I["vib_xy_ratio"]) + an()
     rows[:, C["ay"]] = ay + vib(I["vib_xy_ratio"]) + an()
-    rows[:, C["az"]] = G * np.cos(th) + vib(1.0) + an()
+    rows[:, C["az"]] = G * np.cos(th) + motion["a_vert"] + vib(1.0) + an()
     rows[:, C["gx"]] = gn()
     rows[:, C["gy"]] = np.gradient(th, DT) + gn()
-    rows[:, C["gz"]] = v * motion["kappa"] + gn()
+    rows[:, C["gz"]] = motion["yaw_rate"] + gn()
 
     # 차량 동역학
     rows[:, C["speed"]] = v
@@ -215,6 +237,14 @@ def ride_rows(route, motion, ride, rng):
     s_grid = np.arange(len(route["kappa"])) * DS
     rows[:, C["curvature_ahead"]] = np.interp(motion["s"] + 50, s_grid, route["kappa"])
 
+    mult = cabin_rows(rows, t, v, ride, rng)
+    return rows, float(mult)
+
+
+def cabin_rows(rows, t, v, ride, rng):
+    """공조·좌석·소음 칸을 rows에 채우고 Oman 이득 배수 m을 돌려준다 (실차 데이터 변환에도 쓴다)."""
+    C, CB = tripio.COL, CFG["cabin"]
+    n = len(t)
     # 공조, 좌석, 소음
     temp = ride["set_c"] + (ride["start_c"] - ride["set_c"]) * np.exp(-t / CB["tau_s"])
     rows[:, C["cabin_temp"]] = temp
@@ -238,7 +268,7 @@ def ride_rows(route, motion, ride, rng):
     if ride["fan_level"] >= EFF["fan"]["min_level"]:
         mult *= U(rng, EFF["fan"]["range"])
     mult *= EFF["noise"]["factor"]
-    return rows, float(mult)
+    return float(mult)
 
 
 def gen_ride(rng, vehicle_type):

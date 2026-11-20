@@ -2,21 +2,26 @@
 
     python3 ml/verify/export_csv.py
 
-출력 (ml/out/csv/, git에는 올라가지 않음):
+입력은 배포 중인 모델(ml/runs.py CURRENT)의 학습 데이터셋 버전. 출력은 그 버전 폴더의 csv/ (git 제외):
   rides.csv              탑승 1,920회의 설정 (승객, 좌석, 회생제동, 설문/실제 민감도, 최고 MISC)
   dataset_10s.csv        학습 데이터 전체: 10초마다 한 행, 정답(MISC, Oman 점수, 앞으로 5분 최고)과 피처 77개
   features.csv           피처 77개 설명과 비어 있는(NaN) 비율, 비어 있는 이유
-  trips_100hz/ride_XXXX.csv  탑승 8회의 100 Hz 센서 원본 (data/trips/*.bin)
+  trips_100hz/ride_XXXX.csv  탑승 8회의 100 Hz 센서 원본 (그 버전의 trips/*.bin)
 빈 칸은 값이 없음(NaN)이라는 뜻입니다.
 """
 import json
 import pathlib
+import sys
 
 import numpy as np
 import pandas as pd
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-OUT = REPO / "ml" / "out" / "csv"
+sys.path.insert(0, str(REPO / "ml"))
+import runs  # noqa: E402
+
+DATA = runs.dataset_for(runs.current_models()).parent
+OUT = DATA / "csv"
 FO = json.loads((REPO / "protocol" / "feature_order.json").read_text())
 TRIP = json.loads((REPO / "protocol" / "trip_format.json").read_text())
 
@@ -37,10 +42,10 @@ G3B = "EV 전용 CAN 신호. 내연기관 차량 탑승(약 40%)에는 없어서
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    d = dict(np.load(REPO / "ml" / "out" / "dataset.npz"))
+    d = dict(np.load(DATA / "dataset.npz", allow_pickle=False))
     names = [f["name"] for f in FO["features"]]
 
-    rides = pd.DataFrame(json.loads((REPO / "ml" / "out" / "rides.json").read_text()))
+    rides = pd.DataFrame(json.loads((DATA / "rides.json").read_text()))
     rides = rides.rename(columns={"vehicle_type": "vehicle_type_ev1", "seat_row": "seat_row_rear1", "m": "env_multiplier",
                                   "sens": "sens_from_mssq", "true_sens": "sens_true_hidden"})
     rides.to_csv(OUT / "rides.csv", index=False, float_format="%.4f")
@@ -66,7 +71,7 @@ def main():
 
     cols = [c["name"] for c in TRIP["columns"]]
     (OUT / "trips_100hz").mkdir(exist_ok=True)
-    for p in sorted((REPO / "data" / "trips").glob("ride_*.bin")):
+    for p in sorted((DATA / "trips").glob("ride_*.bin")):
         a = np.fromfile(p, dtype="<f8")
         assert int(a[1]) == len(cols)
         pd.DataFrame(a[3:].reshape(-1, len(cols)), columns=cols).to_csv(

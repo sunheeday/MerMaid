@@ -4,7 +4,7 @@
 namespace mm::proto {
 
 // ---- feature_order.json ----
-constexpr int kFeatureVersion = 1;
+constexpr int kFeatureVersion = 3;
 constexpr int kNumFeatures = 77;
 constexpr int kNumVehicle = 71;
 enum Feat : int {
@@ -227,6 +227,7 @@ constexpr double kWf_q6 = 0.8;
 constexpr double kHardAccelX = 1.5;
 constexpr double kHardBrakeX = -0.75;
 constexpr double kHardTurnAbsY = 2.0;
+constexpr double kEventRearmMargin = 0.25;
 constexpr double kRestStillTimeS = 180.0;
 constexpr double kRestStillAccel = 0.05;
 constexpr double kMssqMean = 12.9;
@@ -236,6 +237,7 @@ constexpr double kSensMin = 0.5;
 constexpr double kSensMax = 2.0;
 constexpr double kDefaultMssq = 12.9;
 constexpr double kDefaultSens = 1.0;
+constexpr int kMotPeriodMs = 100;  // P2 -> P6 MOTION 주기
 constexpr const char* kDeviceAirflow = "airflow-01";
 constexpr const char* kDeviceDisplay = "display-01";
 constexpr const char* kDeviceHud = "hud-01";

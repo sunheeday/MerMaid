@@ -303,6 +303,50 @@ static void hello_resend() {
     CHECK(count_hello(c.on_tick(3000)) == 0, "no resend after delivery");
 }
 
+static void ctx_resend() {
+    Comm c(nullptr, 0);
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 10);
+    c.on_uart_line("0|" + hello("app", kPhone), 20);
+    c.on_uart_line("1|CONNECT", 30);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 40);
+    c.on_uart_line("0|{\"t\":\"SCR\",\"on\":true,\"att\":true}", 50);
+    c.on_uart_line("0|{\"t\":\"PROF\",\"mssq\":30.0,\"sens\":1.6}", 60);
+    c.on_uart_line("1|{\"t\":\"SCR\",\"on\":true,\"att\":false}", 70);
+    c.on_uart_line("0|{\"t\":\"OVR\",\"dev\":\"" + kPhone + "\",\"on\":false}", 80);
+    auto resends = [](const Actions& a) {
+        std::vector<CtxResend> v;
+        for (const auto& x : a)
+            if (const auto* r = std::get_if<CtxResend>(&x)) v.push_back(*r);
+        return v;
+    };
+    c.p4_result(false);  // P4가 아직 없어서 SCR·PROF를 못 보냈다
+    CHECK(resends(c.on_tick(500)).empty(), "no resend between beats");
+    auto r = resends(c.on_tick(1000));
+    CHECK(r.size() == 2, "resend for phone and HUD with the next HB (%zu)", r.size());
+    if (r.size() == 2) {
+        CHECK(r[0].has_scr && r[0].has_prof && std::string(r[0].scr.sender) == kPhone && r[0].scr.on && r[0].scr.att,
+              "phone: last SCR");
+        CHECK(std::string(r[0].prof.phone) == kPhone && r[0].prof.mssq == 30.0 && std::fabs(r[0].prof.sens - 1.6) < 1e-9,
+              "phone: last PROF");
+        CHECK(r[1].has_scr && !r[1].has_prof && !r[1].scr.att, "HUD: SCR only");
+    }
+    CHECK(resends(c.on_tick(2000)).size() == 2, "again each second while P4 is down");
+    c.p4_result(true);
+    bool quiet = true;
+    for (int t = 3000; t < 12000; t += 1000) quiet = quiet && resends(c.on_tick(t)).empty();
+    CHECK(quiet, "no resend for 10 s after P4 answers");
+    CHECK(resends(c.on_tick(12000)).size() == 2, "refresh every 10 s (P4 may have restarted quietly)");
+    c.on_uart_line("0|DISCONNECT", 12100);
+    c.p4_result(false);
+    r = resends(c.on_tick(13000));
+    CHECK(r.size() == 1 && !r[0].has_prof && std::string(r[0].scr.sender) == "hud-01", "disconnect forgets the phone");
+    c.on_uart_line("0|CONNECT", 13100);
+    c.on_uart_line("0|" + hello("app", kPhone), 13200);
+    r = resends(c.on_tick(14000));
+    CHECK(r.size() == 1, "reconnected phone has nothing to resend until it sends SCR/PROF again");
+}
+
 // P6 시작: 브리지의 모든 연결을 끊고 P5 명부도 비운다
 static void start_drops_all() {
     Comm c(nullptr, 0);
@@ -389,6 +433,7 @@ int main() {
     motion_stream();
     link_timeout();
     hello_resend();
+    ctx_resend();
     start_drops_all();
     resync();
     if (failures) {

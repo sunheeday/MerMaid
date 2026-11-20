@@ -27,7 +27,8 @@
     "hard_accel_x_mps2": 1.5,
     "hard_brake_x_mps2": -0.75,
     "hard_turn_abs_y_mps2": 2.0,
-    "note": "hard_turn threshold is a guess in the PRD"
+    "rearm_margin_mps2": 0.25,
+    "note": "Thresholds are ride-discomfort onsets from bus passenger studies (1.5 and -0.75: He et al. 2013; 2.0: Nguyen et al. 2019), not motion sickness thresholds. An event is counted when the low-passed acceleration crosses the threshold and is counted again only after it has come back by rearm_margin (hysteresis, own choice, feature_order v3); without it one brake hovering at -0.75 was counted several times (comma2k19: 7.0 vs 5.3 per 5 min)."
   },
   "rest": {
     "still_time_s": 180,

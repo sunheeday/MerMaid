@@ -78,6 +78,7 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | HELLO 전의 SCR·OVR·PROF, 모르는 `t`, 깨진 JSON | 로그 후 버림 |
 | 시작할 때 한 번 | `0\|DROP` ~ `8\|DROP` (브리지는 빈 번호의 DROP을 무시) + P5에 DEV_BYE ALL. P6만 다시 시작했을 때 기기가 다시 붙어 HELLO 하게 하는 유일한 방법 |
 | 1초마다 | `ALL\|{"t":"HB","seq":N}`. P5에 아직 못 알린 등록이 있으면 DEV_HELLO를 다시 보냄 (P5가 늦게 떴을 때, OUT_RESYNC 뒤) |
+| SCR·PROF 재전송 | 연결마다 마지막 SCR·PROF를 기억한다 (기기는 SCR를 바뀔 때만, PROF를 연결 직후 한 번만 보내므로). P4에 보내기가 실패하면 성공할 때까지 1초마다, 아니면 10초마다 CTX_SCREEN·CTX_PROF를 다시 보냄 (P4가 늦게 떴거나 조용히 재시작했을 때). OVR는 동작이라 다시 보내지 않는다. P4는 같은 값이면 바뀌는 것이 없다 (`on_profile`은 MSSQ가 같으면 현재 민감도 유지, 저장도 안 함) |
 | HELLO 없이 5초 | `id\|DROP` 한 번 |
 | 등록된 기기가 5초 동안 아무것도 안 보냄 | `id\|DROP` + DEV_BYE (PROTOCOL.md §3. 브리지가 재시작되면 DISCONNECT가 안 오므로 이것으로 정리). `--no-link-timeout`으로 끔 (HB를 안 보내는 nRF Connect 시험용) |
 | OUT_INT / OUT_PROF / OUT_DROP | 해당 줄. OUT_INT는 연결마다 보낸 값을 기억해 DEV_HELLO의 int_known·int_on에 싣는다 (CONNECT·다른 기기 HELLO 때 지움) |
@@ -121,7 +122,8 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 ```
 p6_comm                         # UART3. 손으로 시험할 때는 --no-link-timeout, P4가 아직 CTX_*를 못 받으면 --no-p4
 p5_devmgr --state <P4와 같은 state 폴더>  # --safety-s는 시험에서만 줄임 (기본 30)
-rf_stub --cycle --motion        # 진짜 P4·P2 대신. 진짜 P4를 띄울 때는 rf_stub을 띄우지 않는다 (같은 이름)
+rf_stub --cycle --motion        # 진짜 P4·P2 대신 (P5·P6만 시험할 때). 진짜 P4를 띄울 때는 rf_stub을 띄우지 않는다 (같은 이름)
+# 진짜 P1~P4와 함께: RF=1 controller/qnx/run_pipeline.sh ... (controller/bringup/README.md)
 ```
 
 Pi 없이 시험 (Mac, Linux): `ctest`의 `rf_sim`이 위 세 프로세스를 실제로 함께 띄운다. QNX 메시지 전달은
@@ -147,10 +149,18 @@ cmake -S controller -B build && cmake --build build && ctest --test-dir build --
 - P5 시작 직후 1초 안에 기록 없는 새 기기가 먼저 HELLO 하면 Tier 1·2를 OFF로 정한다 (드묾).
 - P6을 다시 시작하면 기기가 몇 초 끊겼다 다시 붙는다 (앱·HUD의 자동 재연결에 기댐).
 
-## 7. 김승희 쪽에서 바꿀 곳 (통합 단계)
+알려진 문제 (2026-11-18 Pi 시험에서 발견, `controller/bringup/README.md` RF 절):
+- ~~P4가 없을 때 온 SCR·PROF를 P6이 버림~~ → 2026-11-18 고침: P6이 연결마다 기억했다가 다시 보낸다 (§3 표의 "SCR·PROF 재전송")
+- 맥 Chrome(Web Bluetooth) ↔ ESP32: 연결은 되지만 페어링이 끝나지 않아 HELLO가 안 나감 → 원인: 브리지 펌웨어 v6이 페어링을 시작하게 하지 않았음. v7에서 고침 (`fix/rf-esp32` 브랜치의 `bridge/README.md`). 맥 bleak로 확인, Chrome·Android 앱은 다시 확인 필요
 
-- P4: `--phone`/`--hud` 대신 DEV_SYNC 회신으로 등록 (`add_phone`, `remove_phone`, `set_hud_connected`)
-- P4: CTX_SCREEN·CTX_OVR·CTX_PROF를 받아 `on_screen`·`on_override`·`on_profile`에 넘기기
-- P4: `CMD` stdout과 함께 TIER_CMD를 P5로 보내기
-- P2: MOTION을 100 ms마다 P6로 보내기
-- P4: TIER_CMD를 보내다 실패하고 연결이 닫혔으면 (`!connected()`) 바로 한 번 더 보내기 (P5가 다시 시작한 직후, §2-2)
+## 7. P4·P2 연결 (2026-11-18 완료, 김승희)
+
+- P4 `--rf`: RISK마다(10초)와 RIDE_START에 DEV_SYNC를 보내고, 회신 명부로 `add_phone` / `remove_phone` / `set_hud_connected`.
+  새로 붙은 폰은 저장된 프로필과 허용도를 읽어 온다. PROF가 아직 없으면 P3에 기본 프로필(MSSQ 12.90, 민감도 1.0), EV는 NaN
+- P4: CTX_SCREEN·CTX_OVR·CTX_PROF를 받자마자 회신하고 `on_screen`·`on_override`·`on_profile`에 넘긴다. OVR는 마지막 RISK의 주행 시각으로 처리
+- P4: `CMD` stdout과 함께 TIER_CMD를 P5로 (제한 200 ms, 실패는 `tier_cmd_fail`로 센다)
+- P4: P5에 보내다 실패하고 연결이 닫혔으면 (`!connected()`) 바로 한 번 더 보낸다 (DEV_SYNC, TIER_CMD. P5가 다시 시작한 직후, §2-2)
+- P2 `--motion`: 10샘플(100 ms)마다 MOTION {t, Wf 가중 ax·ay, pred_ax_10s, pred_ay_10s}를 P6로 (제한 20 ms)
+- `--rf`/`--motion` 없이 띄우면 예전처럼 `--phone`/`--hud` 고정 등록 (AC-02 비교용)
+- 주행이 없으면 DEV_SYNC도 없으므로 30초 뒤 P5가 안전 OFF 한다. 다음 주행의 RIDE_START에서 풀린다
+- 시험: Mac `ctest`의 `pipeline_rf_sim` (P1·P2·P4·P5·P6 진짜 코드 + `tests/fake_p3.cpp`), Pi는 `controller/bringup/README.md`의 RF 절
