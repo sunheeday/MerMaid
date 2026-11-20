@@ -1,7 +1,8 @@
 # 실제 IMU · 주행 로그 · 로그 서버 설계 v0.2
 
 > 상태: **초안, 리뷰 필요** · 2026-11-20
-> 범위: P1 LIVE(MPU-6050), 차 안 로거 P7 + SQLite, 멀미 라벨(M08 SYM), 차 밖 로그 서버, 학습 데이터 내보내기.
+> 범위: P1 LIVE(MPU-6050), 차 안 로거 P7 + SQLite, 멀미 라벨(M08 SYM), 차 밖 로그 서버, 학습 데이터 내보내기,
+> 개인 보정(§12).
 > Claude 합성 루프는 §11에 연결 지점만 적고, 실제 로그가 쌓인 뒤 따로 설계한다.
 >
 > **기준:** `main` 398237d (PR #11: P4·P2 ↔ P5·P6 연결, P6 SCR/PROF 재전송, `ml/runs.py`, `ml/realdata/`,
@@ -112,7 +113,7 @@ p1_acq <trip.bin> [--speed S] ...      # 재생 모드는 그대로 (시험용).
 ```
 
 - 샘플 시각은 **센서 클럭** 기준이다. `t = seq / 100` (초, 주행 시작부터). Pi가 늦게 깨어나도 FIFO에 쌓여 있어서 간격은 센서가 정한다.
-- 센서 클럭과 Pi 클럭의 차이를 보려고 링 칸마다 Pi의 `mono_ns`(읽은 시각)를 같이 적는다. 보드 시험에서 실제 샘플률을 잰다 (§13 완료 기준: 100 ± 1 Hz).
+- 센서 클럭과 Pi 클럭의 차이를 보려고 링 칸마다 Pi의 `mono_ns`(읽은 시각)를 같이 적는다. 보드 시험에서 실제 샘플률을 잰다 (§14 완료 기준: 100 ± 1 Hz).
 - I2C 시간(400 kHz): 상태 3바이트 + 1샘플 12바이트 ≈ 0.5 ms. 100 kHz여도 약 2 ms라 10 ms 안에 충분하다. QNX I2C 드라이버가 400 kHz를 받지 않으면 100 kHz로 내리고 경고한다.
 
 ### 4-3. 변환 (온도는 읽지 않음)
@@ -228,7 +229,8 @@ struct LogInfer {
     uint32_t n;                             // 행 수 (폰 수, 없으면 "default" 1행)
     char id[kMaxPhones][kIdLen];
     double x[kMaxPhones][proto::kNumFeatures];   // P3에 들어간 77칸 그대로 (NaN 포함)
-    Risk p[kMaxPhones];                     // p2..p6
+    Risk p[kMaxPhones];                     // p2..p6, 개인 보정 전 (모델 출력 그대로)
+    double cal_a[kMaxPhones], cal_b[kMaxPhones];  // 적용한 개인 보정 (§12, 없으면 1, 0)
 };
 struct LogDecision {
     Hdr h{LOG_DECISION, 0, 0};
@@ -296,7 +298,8 @@ CREATE TABLE infer (
   seq INTEGER NOT NULL, t REAL NOT NULL, mono_ns INTEGER NOT NULL,
   phone TEXT NOT NULL,
   x  BLOB NOT NULL,               -- float64 LE × 77 (feature_order 순서, NaN 포함)
-  p2 REAL, p3 REAL, p4 REAL, p5 REAL, p6 REAL,
+  p2 REAL, p3 REAL, p4 REAL, p5 REAL, p6 REAL,   -- 개인 보정 전 (재학습은 이 값으로)
+  cal_a REAL NOT NULL DEFAULT 1, cal_b REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (seq, phone)
 );
 CREATE TABLE decision (
@@ -331,7 +334,7 @@ CREATE INDEX label_phone ON label(phone, t);
 
 모델의 정답은 "다음 300초 안에 MISC ≥ k"(`docs/SPEC.md`)이다. 실제 주행으로 학습하려면 MISC 점수를 받아야 한다.
 
-> ⚠️ S0에서 **음성 MISC 보고(M04)를 일부러 뺐다**(`protocol/PROTOCOL.md` §3). 이번 제안은 **데이터 수집용 터치 입력**이고 정책(P4)에는 쓰지 않는다. M04 번호는 재사용하지 않고 **M08**을 새로 쓴다. 팀 확인이 필요하다 (§14).
+> ⚠️ S0에서 **음성 MISC 보고(M04)를 일부러 뺐다**(`protocol/PROTOCOL.md` §3). 이번 제안은 **데이터 수집용 터치 입력**이고 정책(P4)에는 쓰지 않는다. M04 번호는 재사용하지 않고 **M08**을 새로 쓴다. 팀 확인이 필요하다 (§15).
 
 - **형식:** 앱 → C: `{"t":"SYM","misc":3}` (정수 0~10). `messages.schema.json`, `PROTOCOL.md` §3, 앱 `protocol/`에 추가.
 - **P6 규칙** (`comm.cpp`): 역할이 `app`인 연결만, HELLO 뒤, 0~10 정수가 아니면 로그 후 버림 → LOG_SYM(P7). P4로는 보내지 않는다.
@@ -432,7 +435,61 @@ python3 ml/realdata/build_real.py --source mermaid --root server/data/rides [--r
 - 루프: 서버가 만든 **요약 통계** → Claude가 `sim_config.json` / `sim_effects.json` 변경을 허용 범위 안의 JSON 패치로 제안 → `build_dataset.py`(작게) → `calibrate.py` → 점수가 좋아지고 실제 MISC(TU Delft 재생, MerMaid 떼어 둔 사람) 성능이 나빠지지 않을 때만 채택 → `train.py` → `runs.py use`.
 - Claude에게 보내지 않는 것: 원본 샘플, 주행별 행, MSSQ·MISC 개인 값, 기기 ID.
 
-## 12. 시험
+## 12. 개인 보정 (B): 사람마다 확률을 다시 맞추기
+
+승객이 자동 개입을 끄거나 직접 켜는 행동과 실제 MISC로, 사람마다 모델 확률을 다시 맞춘다. 덜 민감한 사람은 덜 켜지고, 더 민감한 사람은 더 일찍 켜지게 하는 것이 목표다.
+
+### 12-1. 지금 상태 (`policy.cpp` `on_override`)
+
+- 30초 안에 끄면 기기 허용도 카운터 `n += 1`(저장), 5분 쿨다운, 한 주행에 3번이면 그 주행 동안 끔. 직접 켜면 `n −= 1`.
+- `n`이 들어가는 모델 입력 G8(`tol_display`, `tol_phone`)은 v1에서 꺼져 있다(`enabled=false`). 그래서 **다음 판단에 영향이 없다.**
+- 자기 폰에서 직접 켜면 민감도(G10) × 1.15. 끌 때는 내려가지 않는다(한쪽 방향).
+- 문턱(`thresholds.json`)은 모든 사람이 같다.
+
+### 12-2. 모델
+
+```
+p_i,k = σ( a_i · logit(p_k) + b_i )      k = 2..6, 사람 i마다 a_i > 0, b_i 하나씩
+```
+
+- a_i, b_i를 k끼리 같이 쓰면 σ(a·logit(p) + b)가 p에 대해 증가함수라서 **p2 ≥ p3 ≥ … ≥ p6 순서가 그대로 유지된다.** 매개변수도 사람당 2개뿐이다.
+- 확률을 보정하는 것은 사람별로 문턱을 옮기는 것과 같다. 그래서 P4 정책과 문턱은 바꾸지 않고, 공용 기기(Tier 1·2)와 개인 폰(Tier 3)에 모두 일관되게 적용된다.
+- **계층 베이지안(MAP):** 사전분포 log a_i ~ N(0, σ_a²), b_i ~ N(0, σ_b²). σ_a, σ_b는 모든 사람의 데이터로 추정한다. 기록이 적은 사람은 a=1, b=0(전체 모델) 가까이 머문다.
+
+### 12-3. 학습 신호 (P7 주행 파일에서)
+
+| 신호 | 쓰는 방법 | 가중치 |
+|---|---|---|
+| **MISC (M08 SYM)** — 주 라벨 | §10과 같은 규칙: 주기 t의 y_k = (t, t+300] 안에 MISC ≥ k. 그 구간에 SYM이 없으면 쓰지 않음 | 1 |
+| 빠른 끄기 (자동 ON 뒤 30초 안 OVR off) | 그 뒤 300초 동안 SYM이 있고 모두 MISC < input_k면, 끈 시점 주기의 y_{input_k} = 0 | 0.5 |
+| 자기 폰에서 직접 켜기 | 켠 시점 주기의 y_{input_k} = 1 (MISC 기록이 그 구간에 없을 때만) | 0.5 |
+
+- **입력 p는 항상 보정 전 모델 출력**이다(`infer.p2..p6`). 그래서 LOG_INFER와 `infer` 표에 보정 전 확률과 적용한 a, b를 같이 남긴다(§6-2, §6-5).
+- 그 밖에 끈 이유(방해, 이미 멀미)는 MISC로만 구분한다. OVR 하나만으로는 판단하지 않는다.
+
+### 12-4. 안전 한계와 채택 기준
+
+- a_i ∈ [0.5, 2.0].
+- **낮추는 쪽 상한:** 각 Tier 문턱 근처(문턱 ± 0.05)의 p에서 `p − p_i ≤ 0.10`. 넘으면 b_i를 한계까지 올린다. 놓치는 것(멀미)이 귀찮은 것보다 나쁘기 때문이다.
+- **채택:** 그 사람의 주행을 하나씩 빼고 맞춰 본 log loss(leave-one-ride-out)가 a=1, b=0보다 좋을 때만 채택한다. 라벨이 있는 주행이 2개 미만이면 a=1, b=0.
+- 실제 데이터에서 사람마다 얼마나 움직이는지(평균에 머무는지)는 로그가 쌓인 뒤 검증한다. 시뮬레이터 검증은 이번 범위가 아니다.
+
+### 12-5. 만들고 내려보내는 길
+
+```
+로그 서버의 주행 파일 ─▶ ml/personal/fit_calib.py ─▶ ml/out/runs/vNNN/ (kind "calib")
+                                                       calib.json { "<phone>": {"a", "b", "n_rides", "n_labels", "loo_gain"} }
+                                    tools/collect_logs.py --push-calib vNNN ─ssh─▶ Pi state/calib/<phone>.json
+```
+
+- **`state/calib/`은 P4가 읽기만 한다.** P4가 쓰는 `state/profiles/`와 나눈 이유: 밖에서 넣은 값을 P4가 메모리의 옛 프로필로 덮어쓰지 않게 하려는 것이다.
+- P4는 폰이 등록될 때(허용도와 같은 시점) `state/calib/<phone>.json`을 읽는다. 다음 등록이나 주행부터 적용된다.
+- P4 → P3: `ProfileEntry`에 `cal_a`, `cal_b` 두 칸을 추가한다(PROFILES 회신). 기본 프로필(`default`)은 1, 0이다.
+- P3: 단조 보정을 거친 Risk에 위 식을 적용한 뒤 RISK로 보낸다. a=1, b=0이면 식을 건너뛰어 지금과 비트 단위로 같은 값이 나온다.
+- 보정이 있는 승객(a≠1 또는 b≠0)에게는 P4의 "직접 켜기 → 민감도 × 1.15" 규칙을 적용하지 않는다. 같은 증거를 두 번 반영하지 않기 위해서다 (팀 확인, §15).
+- Python 정책 재생(`ml/train/policy.py`)과 P3 동등성 시험(`model_parity.py`)도 같은 식을 쓰게 맞춘다.
+
+## 13. 시험
 
 | 대상 | Mac (qnxsim) | Pi |
 |---|---|---|
@@ -442,9 +499,10 @@ python3 ml/realdata/build_real.py --source mermaid --root server/data/rides [--r
 | SYM | `test_comm` 규칙 (역할, 범위, HELLO 전) | 앱 → label 표 |
 | 서버 | pytest: 업로드 201/200/409/422, 목록, cycles | – |
 | 내보내기 | 작은 가짜 주행 파일 → npz 키와 라벨 규칙 | – |
+| 개인 보정 | 가짜 주행 파일 → fit_calib → calib.json → P3 적용. a=1·b=0이면 기존과 비트 동일, 단조성, 안전 한계 | – |
 | 끝까지 | 재생 trip → P1~P7 → collect → 서버 → build_real → train 1 fold | LIVE 주행 1회 |
 
-## 13. 개발 순서와 완료 기준
+## 14. 개발 순서와 완료 기준
 
 0. **브랜치:** `main`(398237d)에서 만든 `feat/data-logging`. 단계마다 커밋하고, 3단계까지 끝나면 PR.
 
@@ -456,10 +514,11 @@ python3 ml/realdata/build_real.py --source mermaid --root server/data/rides [--r
 | 4 | M08 SYM (프로토콜 · P6 · 앱 · 문서) | 앱 입력이 1초 안에 label 표에 들어감, 범위 밖 값은 버려짐 |
 | 5 | 서버 + `collect_logs.py` | pytest 통과, 같은 파일 두 번 올려도 한 번, `.uploaded` 생김 |
 | 6 | `build_real.py --source mermaid` + `train.py` NaN 라벨 | 실주행으로 vNNN 생성, `train.py`가 읽음, `recompute`와 `board` 피처 차이 < 1e-6 |
+| 7 | 개인 보정 B (§12): `fit_calib.py`, `state/calib`, P4 → P3 `cal_a/cal_b`, P3 적용, `policy.py` 맞춤 | 가짜 로그로 추정 → 배포 → P3 적용 경로 통과, a=1·b=0이면 확률 비트 동일, 안전 한계 시험 통과. 실데이터 효과 검증은 로그가 쌓인 뒤 |
 
-1과 2·3은 서로 기다리지 않는다. 4는 앱 작업이 함께 필요하다. 5·6은 3의 주행 파일 형식이 정해지면 시작할 수 있다(재생 모드 파일로 개발).
+1과 2·3은 서로 기다리지 않는다. 4는 앱 작업이 함께 필요하다. 5·6은 3의 주행 파일 형식이 정해지면 시작할 수 있다(재생 모드 파일로 개발). 7은 3·4·5가 끝난 뒤.
 
-## 14. 확정 필요
+## 15. 확정 필요
 
 | 항목 | 제안 | 정할 사람 |
 |---|---|---|
@@ -471,3 +530,6 @@ python3 ml/realdata/build_real.py --source mermaid --root server/data/rides [--r
 | `cycles.csv` | P7이 안정되면 없애고 `decision` 표로 대신 | 팀 |
 | 중앙 DB | v1 SQLite → 차가 여러 대면 PostgreSQL | – |
 | 로그 수집 동의 문구 | 앱 첫 실행 때 | 팀 |
+| 개인 보정이 있으면 민감도 × 1.15 규칙 끄기 | 끔 (같은 증거 이중 반영 방지) | 팀 |
+| 개인 보정의 낮추는 쪽 상한 | 문턱 근처에서 0.10 | 팀 |
+| OVR 약한 신호 가중치 | 0.5 | – |
