@@ -202,11 +202,13 @@ There is **one model**, not one model per tier. It estimates how far the passeng
 
 The higher the cost of a wrong activation, the more certainty, the longer confirmation, and the narrower conditions a tier requires.
 
-| Tier | Intervention | Extra condition |
-|---|---|---|
-| 1 | **Airflow** (fan) | None |
-| 3 | **Ambient direction cue** (HUD) | Screen on |
-| 4 | **Visual motion dots** (display / phone) | Screen on and attention |
+| Tier | Intervention | Device | Confirmation | Extra condition |
+|---|---|---|---|---|
+| 1 | **Airflow** (fan) | Shared | 10 s | None |
+| 2 | **Ambient direction cue** (HUD) | Shared | 1 min | HUD screen on |
+| 3 | **Visual motion dots** | Each passenger's phone | 2 min | Screen on and attention |
+
+Confirmation is how long the risk must stay above the tier's threshold before the device turns on (`hold_cycles` in `controller/config/policy.json`, one cycle = 10 s).
 
 Passengers can **manually override** any automatic intervention. The system never controls steering, braking, or other safety-critical driving functions.
 
