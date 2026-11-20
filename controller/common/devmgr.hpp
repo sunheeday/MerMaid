@@ -70,6 +70,7 @@ private:
     std::map<std::string, bool> dots_;   // Tier 3, 폰 ID별. 끊겨도 기억 (재연결 때 다시 보냄). 없으면 모름
     int64_t last_sync_ = -1;             // -1: 아직 시계 시작 전
     bool safe_off_ = false;
+    std::map<std::string, msg::TierCmd> held_;  // 안전 OFF 중에 온 ON 명령 (기기별 마지막). 풀리면 적용
     ProfileFn load_profile_;
     LogFn log_;
     int64_t safety_ms_;
