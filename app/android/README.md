@@ -25,19 +25,20 @@
 | 실제 컨트롤러 없이 BLE까지 | ESP32 브리지를 PC에 USB로 연결 → 브리지 개발용 USB 입력(`bridge/README.md`)으로 PC가 Pi 역할: `0\|{"t":"INT","tier":3,"on":true}` |
 | 실제 Pi | 브리지 ↔ Pi UART3, Pi에서 `p6_comm`, `p5_devmgr`, `rf_stub --cycle --motion` (docs/RF_MESSAGES.md §6) |
 | 탑승 자동 연결 (APP-F-02) | 앱 종료(최근 앱에서 지움) → 브리지 전원 끔 → 1분 뒤 켬 → 앱을 열지 않아도 상주 알림 “차량과 연결됨” |
-| 로그 | `adb logcat` 대신 앱의 RF 진단 화면 (최근 300줄, 기기 안에만) |
+| 로그 | `adb logcat` 대신 앱의 RF 진단 화면 (최근 300줄, 기기 안에만). **로그 복사**로 전체를 클립보드에 |
+| 멀미 점수 (M08 SYM) | 설정 → 주행 기록 수집 동의 켬 → 홈 "지금 멀미 정도"에서 0~10 → RF 진단에 `→ {"t":"SYM","misc":N}`. 주행 중 2분마다 알림. 데모 모드에서도 됨 |
 
 ## 구조
 ```
 app/src/main/java/com/mermaid/passenger/
   MerMaidApp.kt              알림 채널(중요도 낮음), 설정 초기화
-  protocol/Protocol.kt       UUID·상수·M00~M07 생성/검사, MSSQ-Short 채점·민감도
-  data/Prefs.kt              기기 ID·등록 차량·프로필·큐 설정 (SharedPreferences)
+  protocol/Protocol.kt       UUID·상수·M00~M08 생성/검사, MSSQ-Short 채점·민감도
+  data/Prefs.kt              기기 ID·등록 차량·프로필·큐 설정·주행 기록 수집 동의 (SharedPreferences)
   data/Repo.kt               화면이 보는 상태(StateFlow), 화면→서비스 명령, RF 로그
   link/BleLink.kt            GATT 클라이언트: MTU 247 → 서비스 검색 → 알림 구독, Write Without Response 큐
   link/RfSession.kt          HELLO·PROF·SCR, HB 1초, 5초 감시(LOST→안전 OFF), 재연결 백오프, OVR 대기
   link/DemoLink.kt           개발용 가짜 컨트롤러
-  service/LinkService.kt     포그라운드 서비스(connectedDevice): 연결·오버레이·상주 알림·화면 상태
+  service/LinkService.kt     포그라운드 서비스(connectedDevice): 연결·오버레이·상주 알림·화면 상태·멀미 점수 2분 알림
   service/MerMaidCompanionService.kt  CDM 기기 존재 감지 → 탑승 시 서비스 시작
   service/CueTileService.kt  빠른 설정 타일 "모션 큐"
   service/BootReceiver.kt    재부팅 후 존재 감시 재등록
@@ -58,6 +59,7 @@ app/src/main/java/com/mermaid/passenger/
 | APP-F-21·22 알림·타일 조작 | `LinkService.buildNotification`, `CueTileService` |
 | APP-F-23 홈 수동 조작 | `Home.kt TierRow` → `Cmd.Override` → `RfSession.requestOverride` |
 | APP-F-30~32 프로필 | `Profile.kt`, `Mssq` |
+| 멀미 점수 기록 (M08 SYM) | `Home.kt SymptomCard` → `Cmd.Symptom` → `RfSession.sendSymptom`, 2분 알림 `LinkService.updateSymPrompt` |
 | NFR-01 fail-safe | `RfSession.watchdog/safeOff` → `CueOverlay.hideNow` |
 
 ## 아직 확인하지 못한 것
@@ -65,3 +67,4 @@ app/src/main/java/com/mermaid/passenger/
 - One UI에서 CDM 존재 감지로 앱이 깨어나는지 (요구사항정의서 8장 #3)
 - 브리지 광고 패킷에 이름과 128비트 UUID가 함께 들어가는지 → 등록 필터를 둘 다 걸어 둠
 - SCR `att` 정의 변경 (8장 #1), MOT 부호 (#2)
+- 멀미 점수(SYM) 입력·2분 알림·알림에서 바로 고르기, 로그 복사는 빌드만 확인했고 실기 확인 전 (2026-11-21, `docs/app/폰시험_체크리스트.md` A8~A11)

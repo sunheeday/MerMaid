@@ -14,10 +14,18 @@ class MerMaidApp : Application() {
             description = getString(R.string.channel_link_desc)
             setShowBadge(false)
         }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+        // 멀미 점수 묻기 채널: 주행 중 2분마다 눈에 띄어야 해서 헤드업. 영상 보는 데 방해되지 않게 소리는 없고 진동만
+        val sym = NotificationChannel(CHANNEL_SYM, getString(R.string.channel_sym), NotificationManager.IMPORTANCE_HIGH).apply {
+            description = getString(R.string.channel_sym_desc)
+            setSound(null, null)
+            enableVibration(true)
+            setShowBadge(false)
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannels(listOf(ch, sym))
     }
 
     companion object {
         const val CHANNEL_LINK = "link"
+        const val CHANNEL_SYM = "sym"
     }
 }

@@ -29,6 +29,9 @@ object Proto {
     const val LINK_TIMEOUT_MS = 5000L   // 5초 무수신 = 끊김 (NFR-01)
     const val MOT_STALE_MS = 500L       // MOT가 0.5초 안 오면 점을 가운데로
     const val OVR_TIMEOUT_MS = 3000L    // 수동 조작 회신 대기
+    const val SYM_MIN = 0               // 멀미 점수 MISC 0~10 (M08)
+    const val SYM_MAX = 10
+    const val SYM_PROMPT_MS = 2 * 60_000L // 주행 중 멀미 점수를 물어보는 알림 간격
 }
 
 /** 컨트롤러 → 앱 메시지 (모르는 t는 null: 명세상 무시) */
@@ -56,6 +59,10 @@ object Msg {
         JSONObject().put("t", "PROF")
             .put("mssq", (mssq * 100).roundToLong() / 100.0)
             .put("sens", (sens * 1000).roundToLong() / 1000.0).toString()
+
+    /** M08 SYM: 승객이 직접 고른 멀미 점수(MISC 0~10 정수). 기록 전용이라 회신이 없다 */
+    fun sym(misc: Int): String =
+        JSONObject().put("t", "SYM").put("misc", misc.coerceIn(Proto.SYM_MIN, Proto.SYM_MAX)).toString()
 
     fun hb(seq: Long): String = JSONObject().put("t", "HB").put("seq", seq).toString()
 

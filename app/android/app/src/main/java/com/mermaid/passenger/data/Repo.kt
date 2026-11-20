@@ -22,6 +22,9 @@ data class Live(
     val ctrlSens: Double? = null,
     val retryAt: Long? = null,             // 다음 재연결 시각 (elapsedRealtime)
     val reason: String = "",
+    val intSeen: Boolean = false,          // 이번 연결에서 INT를 받은 적 있음 (= 주행 중으로 봄, 멀미 점수 알림 조건)
+    val symLast: Int? = null,              // 마지막으로 보낸 멀미 점수 (M08)
+    val symAt: Long? = null,               // 보낸 시각 (System.currentTimeMillis)
 )
 
 data class Stats(
@@ -43,6 +46,7 @@ sealed interface Cmd {
     data object RefreshScreen : Cmd
     data object Reconnect : Cmd
     data object DemoDrop : Cmd
+    data class Symptom(val misc: Int) : Cmd
 }
 
 object Repo {

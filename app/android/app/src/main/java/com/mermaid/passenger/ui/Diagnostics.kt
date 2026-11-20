@@ -1,6 +1,10 @@
 package com.mermaid.passenger.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.SystemClock
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.mermaid.passenger.BuildConfig
 import com.mermaid.passenger.data.Cmd
 import com.mermaid.passenger.data.LinkState
+import com.mermaid.passenger.data.Prefs
 import com.mermaid.passenger.data.Repo
 import com.mermaid.passenger.service.LinkService
 import androidx.compose.ui.platform.LocalContext
@@ -99,8 +104,9 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SmallButton("다시 연결", Modifier.weight(1f)) { Repo.send(Cmd.Reconnect) }
-            SmallButton("로그 지우기", Modifier.weight(1f)) { Repo.log.value = emptyList() }
+            SmallButton("다시 연결", Modifier.weight(1f), tight = true) { Repo.send(Cmd.Reconnect) }
+            SmallButton("로그 복사", Modifier.weight(1f), tight = true) { copyLog(ctx) }
+            SmallButton("로그 지우기", Modifier.weight(1f), tight = true) { Repo.log.value = emptyList() }
         }
         if (BuildConfig.DEBUG) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SmallButton("데모 모드", Modifier.weight(1f)) { LinkService.start(ctx, LinkService.ACTION_DEMO) }
@@ -116,9 +122,23 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     color = when (l.dir) { '→' -> Color(0xFF1660B0); '←' -> Color(0xFF1F7A52); '!' -> MM.Bad; else -> MaterialTheme.colorScheme.onSurfaceVariant })
             }
         }
-        Muted("로그는 이 폰에만 저장되고 밖으로 보내지 않아요. 최근 300줄 · MOT·HB는 개수만.")
+        Muted("로그는 이 폰에만 저장돼요 (복사는 직접 누를 때만). 최근 300줄 · MOT·HB는 개수만.")
         Spacer(Modifier.height(4.dp))
     }
+}
+
+/** 로그 전체를 화면에 보이는 형식 그대로 클립보드에. 첫 줄은 기기 ID 앞 8자리 · 앱 버전 · 연결 상태 */
+private fun copyLog(ctx: Context) {
+    val lines = Repo.log.value
+    if (lines.isEmpty()) { Toast.makeText(ctx, "복사할 로그가 없어요", Toast.LENGTH_SHORT).show(); return }
+    val live = Repo.live.value
+    val state = when (live.link) { LinkState.CONNECTED -> "연결됨"; LinkState.LOST -> "신호 없음"; LinkState.CONNECTING -> "연결 중"; else -> "대기" }
+    val via = listOf(live.kind, Repo.stats.value.name).filter { it.isNotEmpty() }.distinct().joinToString(" ")
+    val header = "MerMaid RF 로그 · 기기 ${Prefs.settings.value.devId.take(8)} · 앱 ${BuildConfig.VERSION_NAME} · $state" +
+        if (via.isEmpty()) "" else " ($via)"
+    val body = lines.joinToString("\n") { "${it.time} ${it.dir} ${it.text}" }
+    ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("MerMaid RF 로그", "$header\n$body\n"))
+    Toast.makeText(ctx, "로그 ${lines.size}줄 복사됨", Toast.LENGTH_SHORT).show()
 }
 
 @Composable

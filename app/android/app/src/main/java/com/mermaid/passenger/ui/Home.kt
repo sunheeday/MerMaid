@@ -8,6 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,15 +21,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -45,10 +53,13 @@ import com.mermaid.passenger.data.Prefs
 import com.mermaid.passenger.data.Repo
 import com.mermaid.passenger.protocol.Proto
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** APP-05 홈: 연결 상태 · 개입 상태 · 수동 조작 */
 @Composable
-fun HomeScreen(act: MainActivity, tick: Int, go: (Screen) -> Unit) {
+fun HomeScreen(act: MainActivity, tick: Int, symFocus: Int = 0, go: (Screen) -> Unit) {
     val ctx = LocalContext.current
     val live by Repo.live.collectAsState()
     val s by Prefs.settings.collectAsState()
@@ -60,7 +71,12 @@ fun HomeScreen(act: MainActivity, tick: Int, go: (Screen) -> Unit) {
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) { while (true) { delay(500); now = SystemClock.elapsedRealtime() } }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState()),
+    // 멀미 점수 알림을 누르고 들어오면 "지금 멀미 정도" 카드가 보이게 내려감
+    val scroll = rememberScrollState()
+    var symCardY by remember { mutableIntStateOf(0) }
+    LaunchedEffect(symFocus) { if (symFocus > 0) { delay(150); scroll.animateScrollTo(symCardY) } }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(scroll),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row2(Modifier.height(56.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -123,6 +139,12 @@ fun HomeScreen(act: MainActivity, tick: Int, go: (Screen) -> Unit) {
         }
         Muted("켜진 지 30초 안에 끄면 다음부터 덜 켜져요. 꺼진 큐를 직접 켜면 민감도를 올려요.")
 
+        // 지금 멀미 정도 (M08 SYM, 기록 전용)
+        Column(Modifier.onGloballyPositioned { symCardY = it.positionInParent().y.toInt() }, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SectionLabel("지금 멀미 정도")
+            SymptomCard(connected, s.logConsent, s.consentAsked, live.symLast, live.symAt)
+        }
+
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp)).clickable { go(Screen.PROFILE) }
             .padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -163,6 +185,79 @@ private fun TierRow(
         )
     }
 }
+
+/**
+ * 멀미 점수 0~10 입력. 누르면 바로 보내고 "N 기록됨 · HH:MM"을 보여 준다.
+ * 연결이 없거나 주행 기록 수집 동의가 꺼져 있으면 누를 수 없고 이유를 한 줄로 알린다.
+ * 동의 안내는 처음 누를 때 한 번만 저절로 뜨고, 그 뒤에는 "동의하기"나 설정에서 켠다.
+ */
+@Composable
+private fun SymptomCard(connected: Boolean, consent: Boolean, consentAsked: Boolean, last: Int?, lastAt: Long?) {
+    val enabled = connected && consent
+    var ask by remember { mutableStateOf(false) }
+    var wanted by remember { mutableStateOf<Int?>(null) }   // 동의 안내를 띄운 그 누름의 점수
+
+    MMCard {
+        BoxWithConstraints(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.55f)) {
+            // 넓으면 한 줄(11칸), 폰 세로 폭에서는 두 줄(0~5, 6~10 + 빈 칸)
+            val rows = if (maxWidth >= 480.dp) listOf((0..10).toList()) else listOf((0..5).toList(), (6..10).toList() + listOf(-1))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                rows.forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { n ->
+                            if (n < 0) Spacer(Modifier.weight(1f)) else {
+                                val sel = enabled && n == last
+                                Box(
+                                    Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp))
+                                        .background(if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
+                                        .border(1.dp, if (sel) Color.Transparent else MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+                                        .clickable(enabled = enabled || (!consent && !consentAsked)) {
+                                            if (enabled) Repo.send(Cmd.Symptom(n)) else { wanted = n; ask = true }
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(n.toString(), fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                        color = if (sel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Muted("0 증상 없음 · 1 약간 불편 · 2~5 어지러움·더움·두통(약~강) · 6~9 메스꺼움(약~강) · 10 구토")
+        Spacer(Modifier.height(6.dp))
+        when {
+            !consent -> Row2 {
+                Muted("주행 기록 수집 동의가 꺼져 있어요", Modifier.weight(1f))
+                Text("동의하기", Modifier.clickable { wanted = null; ask = true }.padding(6.dp), color = MM.Brand, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+            !connected -> Muted("차와 연결되면 기록할 수 있어요")
+            last != null && lastAt != null -> Text("$last 기록됨 · ${hhmm(lastAt)}", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = MM.Ok)
+            else -> Muted("숫자를 누르면 바로 기록돼요. 주행 중에는 2분마다 알림으로 물어봐요.")
+        }
+    }
+
+    if (ask) AlertDialog(
+        onDismissRequest = { ask = false; Prefs.edit { putBoolean(Prefs.K_CONSENT_ASKED, true) } },
+        title = { Text("주행 기록 수집에 동의할까요?") },
+        text = {
+            Text("고른 멀미 점수(0~10)를 차량 컨트롤러에 보내 주행 기록과 함께 저장해요. 멀미 예측을 더 잘하게 만드는 데만 쓰고, " +
+                "지금 송풍·모션 큐가 켜지고 꺼지는 데에는 영향을 주지 않아요.\n\n동의하면 주행 중 2분마다 알림으로 멀미 정도를 물어봐요. 설정에서 언제든 끌 수 있어요.")
+        },
+        confirmButton = {
+            TextButton({
+                Prefs.setLogConsent(true)
+                wanted?.let { if (connected) Repo.send(Cmd.Symptom(it)) }
+                ask = false
+            }) { Text("동의", color = MM.Brand) }
+        },
+        dismissButton = { TextButton({ ask = false; Prefs.edit { putBoolean(Prefs.K_CONSENT_ASKED, true) } }) { Text("나중에") } },
+    )
+}
+
+private fun hhmm(at: Long): String = SimpleDateFormat("HH:mm", Locale.KOREA).format(Date(at))
 
 @Composable
 private fun Banner(text: String, action: String, onClick: () -> Unit) {

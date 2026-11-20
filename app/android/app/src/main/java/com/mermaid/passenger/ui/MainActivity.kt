@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -56,13 +57,25 @@ enum class Screen { WELCOME, PERMS, REGISTER, PROFILE_ONB, HOME, REGISTER_AGAIN,
 class MainActivity : ComponentActivity() {
     /** 화면이 다시 보일 때마다 증가 → 권한 상태 다시 읽기 */
     private val resumeTick = mutableIntStateOf(0)
+    /** 멀미 점수 알림을 눌러 들어올 때마다 증가 → 홈의 "지금 멀미 정도" 카드로 이동 */
+    val symFocus = mutableIntStateOf(0)
     private var assocDone: ((String?, String?) -> Unit)? = null
     private val assocLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { onAssocResult(it) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null && intent?.getBooleanExtra(EXTRA_SYM, false) == true) symFocus.intValue++
         setContent { MerMaidTheme { AppRoot(this, resumeTick.intValue) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_SYM, false)) symFocus.intValue++
+    }
+
+    companion object {
+        const val EXTRA_SYM = "sym"
     }
 
     override fun onResume() {
@@ -174,6 +187,8 @@ fun AppRoot(act: MainActivity, tick: Int) {
     var screen by rememberSaveable { mutableStateOf(if (settings.onboarded) Screen.HOME else Screen.WELCOME) }
     val sub = screen in setOf(Screen.PROFILE, Screen.SETTINGS, Screen.DIAG, Screen.REGISTER_AGAIN)
     BackHandler(enabled = sub) { screen = Screen.HOME }
+    val symFocus = act.symFocus.intValue
+    LaunchedEffect(symFocus) { if (symFocus > 0 && settings.onboarded) screen = Screen.HOME }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -184,7 +199,7 @@ fun AppRoot(act: MainActivity, tick: Int) {
                 Screen.REGISTER_AGAIN -> RegisterScreen(act, onboarding = false, onDone = { act.connectIfReady(); screen = Screen.HOME })
                 Screen.PROFILE_ONB -> ProfileScreen(onboarding = true, onBack = null) { act.finishOnboarding(); screen = Screen.HOME }
                 Screen.PROFILE -> ProfileScreen(onboarding = false, onBack = { screen = Screen.HOME }) { screen = Screen.HOME }
-                Screen.HOME -> HomeScreen(act, tick) { screen = it }
+                Screen.HOME -> HomeScreen(act, tick, symFocus) { screen = it }
                 Screen.SETTINGS -> SettingsScreen(act, tick, onBack = { screen = Screen.HOME }) { screen = it }
                 Screen.DIAG -> DiagnosticsScreen(onBack = { screen = Screen.HOME })
             }

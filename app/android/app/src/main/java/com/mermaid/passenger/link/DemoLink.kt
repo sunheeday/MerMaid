@@ -60,6 +60,7 @@ class DemoLink(private val h: Handler, private val cb: Transport.Callback) : Tra
                 if (!on) cooldownUntil[key] = now + 30
                 set(key, on)
             }
+            "SYM" -> Unit // M08 멀미 점수: 진짜 컨트롤러도 기록만 하고 회신하지 않음
             "PROF" -> h.postDelayed({ out(JSONObject().put("t", "PROF").put("mssq", m.optDouble("mssq")).put("sens", m.optDouble("sens"))) }, 200)
         }
     }

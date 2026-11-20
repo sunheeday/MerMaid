@@ -15,6 +15,8 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.RemoteViews
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -30,6 +32,7 @@ import com.mermaid.passenger.data.Repo
 import com.mermaid.passenger.link.RfSession
 import com.mermaid.passenger.link.Target
 import com.mermaid.passenger.overlay.CueOverlay
+import com.mermaid.passenger.protocol.Proto
 import com.mermaid.passenger.ui.MainActivity
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -49,7 +52,14 @@ class LinkService : LifecycleService() {
         const val ACTION_DEVICE_GONE = "com.mermaid.passenger.DEVICE_GONE"
         const val ACTION_DEVICE_BACK = "com.mermaid.passenger.DEVICE_BACK"
         const val ACTION_STOP = "com.mermaid.passenger.STOP"
+        const val ACTION_SYM = "com.mermaid.passenger.SYM"   // 알림에서 고른 멀미 점수 (EXTRA_MISC)
+        const val EXTRA_MISC = "misc"
         private const val NOTI_ID = 1
+        private const val NOTI_SYM = 2
+        private val SYM_CELLS = intArrayOf(
+            R.id.sym_0, R.id.sym_1, R.id.sym_2, R.id.sym_3, R.id.sym_4, R.id.sym_5,
+            R.id.sym_6, R.id.sym_7, R.id.sym_8, R.id.sym_9, R.id.sym_10,
+        )
 
         /** 연결 시작 (포그라운드 서비스로) */
         fun start(ctx: Context, action: String = ACTION_START) {
@@ -95,6 +105,7 @@ class LinkService : LifecycleService() {
                     Cmd.RefreshScreen -> readScreen()
                     Cmd.Reconnect -> session.reconnect()
                     Cmd.DemoDrop -> session.demoDrop()
+                    is Cmd.Symptom -> session.sendSymptom(cmd.misc)
                 }
             }
         }
@@ -103,6 +114,7 @@ class LinkService : LifecycleService() {
             combine(Repo.live, Prefs.settings) { l, s -> l to s }.distinctUntilChanged().collect { (l, s) ->
                 updateOverlay(l, s)
                 postNotification(l)
+                updateSymPrompt(l, s)
             }
         }
     }
@@ -124,6 +136,17 @@ class LinkService : LifecycleService() {
             }
             ACTION_DEMO -> session.connect(Target.Demo)
             ACTION_TOGGLE_CUE -> session.toggleCue()
+            ACTION_SYM -> {
+                NotificationManagerCompat.from(this).cancel(NOTI_SYM)
+                val misc = intent?.getIntExtra(EXTRA_MISC, -1) ?: -1
+                val ok = Repo.live.value.link == LinkState.CONNECTED && Prefs.settings.value.logConsent
+                when {
+                    Repo.live.value.link == LinkState.IDLE -> stopEverything() // 연결이 없는데 남은 알림을 눌러 깨어난 경우
+                    misc !in Proto.SYM_MIN..Proto.SYM_MAX -> Unit
+                    ok -> { session.sendSymptom(misc); Toast.makeText(this, "멀미 $misc 기록됨", Toast.LENGTH_SHORT).show() }
+                    else -> Toast.makeText(this, "차와 연결되지 않아 기록하지 못했어요", Toast.LENGTH_SHORT).show()
+                }
+            }
             ACTION_DEVICE_GONE -> {
                 Repo.log('·', "차량이 범위를 벗어남 — 30초 뒤 종료")
                 main.removeCallbacks(goneTimeout); main.postDelayed(goneTimeout, 30_000)
@@ -147,6 +170,7 @@ class LinkService : LifecycleService() {
     }
 
     private fun stopEverything() {
+        stopSymPrompt()
         session.stop()
         overlay.hideNow()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -157,6 +181,7 @@ class LinkService : LifecycleService() {
         Repo.serviceRunning = false
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         main.removeCallbacksAndMessages(null)
+        NotificationManagerCompat.from(this).cancel(NOTI_SYM)
         session.stop()
         overlay.hideNow()
         rfThread.quitSafely()
@@ -185,6 +210,73 @@ class LinkService : LifecycleService() {
             l.link != LinkState.CONNECTED || !screenOn || !unlocked -> overlay.hideNow()
             else -> overlay.hide()
         }
+    }
+
+    // ───────── 멀미 점수 묻기 (M08 SYM): 주행 중 ∧ 동의 켜짐일 때 SYM_PROMPT_MS마다 알림
+    private var symPromptOn = false
+    private var symSeenAt: Long? = null
+
+    private val symPrompt = object : Runnable {
+        override fun run() {
+            postSymPrompt()
+            main.postDelayed(this, Proto.SYM_PROMPT_MS)
+        }
+    }
+
+    /**
+     * 조건: 연결됨(HELLO 뒤, 끊김·안전 OFF 아님) ∧ 이번 연결에서 INT를 받음 ∧ 주행 기록 수집 동의.
+     * 조건이 깨지면 알림을 지우고 멈춘다. 점수를 보내면 그때부터 다시 잰다.
+     * 응답이 없으면 아무것도 보내지 않는다 (이전 값 다시 보내기 없음).
+     */
+    private fun updateSymPrompt(l: Live, s: com.mermaid.passenger.data.Settings) {
+        val want = l.link == LinkState.CONNECTED && l.intSeen && s.logConsent
+        val answered = l.symAt != symSeenAt
+        symSeenAt = l.symAt
+        if (want == symPromptOn && !answered) return
+        stopSymPrompt()
+        symPromptOn = want
+        if (want) main.postDelayed(symPrompt, Proto.SYM_PROMPT_MS)
+    }
+
+    private fun stopSymPrompt() {
+        symPromptOn = false
+        main.removeCallbacks(symPrompt)
+        NotificationManagerCompat.from(this).cancel(NOTI_SYM)
+    }
+
+    /** 누르면 홈의 "지금 멀미 정도" 카드가 열리고, 펼치면 알림에서 바로 0~10을 고를 수 있다 */
+    private fun postSymPrompt() {
+        val nm = NotificationManagerCompat.from(this)
+        if (!nm.areNotificationsEnabled()) return
+        val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val open = PendingIntent.getActivity(
+            this, 3, Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_SYM, true), flags,
+        )
+        val title = "지금 멀미 정도를 알려 주세요"
+        val big = RemoteViews(packageName, R.layout.notif_sym).apply {
+            setTextViewText(R.id.sym_title, title)
+            setTextViewText(R.id.sym_guide, "0 없음 · 1 약간 불편 · 2~5 어지러움·더움·두통 · 6~9 메스꺼움 · 10 구토")
+            SYM_CELLS.forEachIndexed { n, id ->
+                setTextViewText(id, n.toString())
+                setOnClickPendingIntent(id, PendingIntent.getService(
+                    this@LinkService, 100 + n,
+                    Intent(this@LinkService, LinkService::class.java).setAction(ACTION_SYM).putExtra(EXTRA_MISC, n), flags,
+                ))
+            }
+        }
+        val n = NotificationCompat.Builder(this, MerMaidApp.CHANNEL_SYM)
+            .setSmallIcon(R.drawable.ic_cue)
+            .setColor(0xFFA50034.toInt())
+            .setContentTitle(title)
+            .setContentText("눌러서 0(없음)~10(구토) 중에 골라 주세요")
+            .setContentIntent(open)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomBigContentView(big)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setTimeoutAfter(Proto.SYM_PROMPT_MS)
+            .build()
+        try { nm.notify(NOTI_SYM, n) } catch (_: SecurityException) {}
     }
 
     // ───────── 상주 알림 (화면정의서 9쪽 상태별 문구, APP-F-21·24)

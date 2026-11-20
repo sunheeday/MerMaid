@@ -99,6 +99,17 @@ fun SettingsScreen(act: MainActivity, tick: Int, onBack: () -> Unit, go: (Screen
             }
         }
 
+        SectionLabel("주행 기록")
+        MMCard {
+            Row2 {
+                Column(Modifier.weight(1f)) {
+                    Text("주행 기록 수집 동의", style = MaterialTheme.typography.titleMedium)
+                    Muted("멀미 점수를 차량 컨트롤러에 저장해요. 끄면 보내지 않고 알림도 없어요")
+                }
+                Switch(s.logConsent, { v -> Prefs.setLogConsent(v) })
+            }
+        }
+
         SectionLabel("기타")
         MMCard {
             Row2(Modifier.clickable { go(Screen.PROFILE) }.padding(vertical = 6.dp)) { Text("멀미 프로필 다시 하기"); Muted("›") }

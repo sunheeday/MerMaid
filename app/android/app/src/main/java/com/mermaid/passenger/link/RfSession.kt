@@ -56,6 +56,7 @@ class RfSession(private val ctx: Context, private val h: Handler, private val li
         h.removeCallbacksAndMessages(null)
         transport?.close(); transport = null
         safeOff()
+        Repo.live.update { it.copy(intSeen = false) }
         setLink(LinkState.IDLE)
     }
 
@@ -84,6 +85,7 @@ class RfSession(private val ctx: Context, private val h: Handler, private val li
         override fun onReady(mtu: Int) {
             backoff = 1000L; downSince = null
             lastRx = now()
+            Repo.live.update { it.copy(intSeen = false) }
             Repo.stats.update { it.copy(mtu = mtu, lastRxAt = lastRx) }
             if (mtu < Proto.MTU) Repo.log('!', "MTU $mtu (247 요청) — 긴 메시지가 잘릴 수 있음")
             send(Msg.hello(me))
@@ -101,6 +103,7 @@ class RfSession(private val ctx: Context, private val h: Handler, private val li
         override fun onClosed(reason: String) {
             stopTimers()
             safeOff()
+            Repo.live.update { it.copy(intSeen = false) }
             transport?.close(); transport = null
             Repo.log('!', reason)
             if (target == null) { setLink(LinkState.IDLE); return }
@@ -128,7 +131,7 @@ class RfSession(private val ctx: Context, private val h: Handler, private val li
                         1 -> it.copy(t1 = m.on)
                         2 -> it.copy(t2 = m.on)
                         else -> it.copy(t3 = m.on)
-                    }.copy(pending = it.pending - dev)
+                    }.copy(pending = it.pending - dev, intSeen = true)
                 }
             }
             is Incoming.Mot -> listener.onMotion(m.ax, m.ay, m.pax, m.pay)
@@ -164,6 +167,17 @@ class RfSession(private val ctx: Context, private val h: Handler, private val li
     fun sendProfile() = h.post {
         val s = Prefs.settings.value
         if (Repo.live.value.link == LinkState.CONNECTED) send(Msg.prof(s.mssq, s.sens))
+    }
+
+    /**
+     * 멀미 점수 (M08 SYM, 0~10). 기록 전용: 회신이 없고 Pi 정책에 쓰이지 않는다.
+     * HELLO 뒤(CONNECTED)이고 주행 기록 수집에 동의했을 때만 보낸다. 다시 보내기·이전 값 반복 없음
+     */
+    fun sendSymptom(misc: Int) = h.post {
+        if (misc !in Proto.SYM_MIN..Proto.SYM_MAX) return@post
+        if (Repo.live.value.link != LinkState.CONNECTED || !Prefs.settings.value.logConsent) return@post
+        send(Msg.sym(misc))
+        Repo.live.update { it.copy(symLast = misc, symAt = System.currentTimeMillis()) }
     }
 
     /** 화면 상태 (M03). on = 화면 켜짐, att = 켜짐 ∧ 잠금 해제 ∧ 오버레이 권한 (APP-F-20) */
