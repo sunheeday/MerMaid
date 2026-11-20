@@ -192,12 +192,20 @@ class LinkService : LifecycleService() {
 
     // ───────── 화면 상태 (APP-F-15, 20)
     private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context, i: Intent) = readScreen()
+        override fun onReceive(c: Context, i: Intent) {
+            readScreen(userPresent = i.action == Intent.ACTION_USER_PRESENT)
+            // 잠금 해제 직후에는 isKeyguardLocked가 아직 true일 수 있다. 한 번만 읽으면 att=false로 굳어
+            // 컨트롤러의 Tier 3 게이트가 닫힌 채로 남는다 (실기에서 확인) → 조금 뒤 두 번 더 읽는다
+            if (i.action != Intent.ACTION_SCREEN_OFF) {
+                main.postDelayed({ readScreen() }, 500)
+                main.postDelayed({ readScreen() }, 2000)
+            }
+        }
     }
 
-    private fun readScreen() {
+    private fun readScreen(userPresent: Boolean = false) {
         screenOn = getSystemService(PowerManager::class.java).isInteractive
-        unlocked = !getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        unlocked = userPresent || !getSystemService(KeyguardManager::class.java).isKeyguardLocked
         session.updateScreen(screenOn, unlocked && Settings.canDrawOverlays(this))
         main.post { updateOverlay(Repo.live.value, Prefs.settings.value) }
     }
