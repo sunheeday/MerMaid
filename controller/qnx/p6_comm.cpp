@@ -71,7 +71,9 @@ int open_uart(const char* dev) {
     t.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
     t.c_cflag &= ~(CSIZE | PARENB | CSTOPB);
     t.c_cflag |= CS8 | CLOCAL | CREAD;
-    t.c_cc[VMIN] = 0;
+    // VMIN 0이면 QNX 직렬 드라이버가 '읽어도 안 막힘'을 '읽을 것 있음'으로 알려 poll이 바로 돌아오고, UART 스레드가
+    // 쉬지 않고 돈다 (Pi에서 CPU 한 코어의 약 40% + 드라이버). 1바이트 이상 있을 때만 깨어나게 한다
+    t.c_cc[VMIN] = 1;
     t.c_cc[VTIME] = 0;
     cfsetispeed(&t, B115200);
     cfsetospeed(&t, B115200);
