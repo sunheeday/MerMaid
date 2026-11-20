@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "log_messages.hpp"
 #include "policy.hpp"
 #include "rf_messages.hpp"
 
@@ -22,14 +23,25 @@ constexpr int64_t kSafetyTimeoutMs = 30000;  // policy.json safety_timeout_s
 using Out = std::variant<msg::OutInt, msg::OutStream, msg::OutProf, msg::OutDrop, msg::OutResync>;
 using Outs = std::vector<Out>;
 
+// 주행 로그(P7)에 남길 사건: 안전 OFF 진입(SAFE_OFF)·해제(SAFE_CLEAR), 잡아 둔 ON 적용(HELD_ON).
+// 보내는 일은 프로세스가 한다 (docs/DATA_LOGGING.md §6-2). ctx 표의 sender는 "p5"
+struct LogEvent {
+    msg::CtxKind kind;
+    std::string value;  // JSON
+};
+
 class DevMgr {
 public:
     using LogFn = std::function<void(const std::string&)>;
+    using EventFn = std::function<void(const LogEvent&)>;
     // 저장된 프로필 읽기 (P4가 쓴 state/profiles/<ID>.json). 없으면 false. P5는 읽기만 한다
     using ProfileFn = std::function<bool(const std::string& phone, Profile& out)>;
 
     DevMgr(ProfileFn load_profile, LogFn log = nullptr, int64_t safety_ms = kSafetyTimeoutMs)
         : load_profile_(std::move(load_profile)), log_(std::move(log)), safety_ms_(safety_ms) {}
+
+    // 로그 사건을 받을 곳. on_*() 안에서 불린다 (멈추지 않는 일만: 목록에 넣기)
+    void set_event_sink(EventFn f) { event_ = std::move(f); }
 
     Outs on_hello(const msg::DevHello& m);    // P6: 기기 등록
     Outs on_bye(const msg::DevBye& m);        // P6: 기기 해제
@@ -55,6 +67,9 @@ private:
     void log(const std::string& s) const {
         if (log_) log_(s);
     }
+    void event(msg::CtxKind kind, const std::string& value) const {
+        if (event_) event_(LogEvent{kind, value});
+    }
     void send_state(uint8_t conn, Outs& out) const;  // 그 연결에 지금 상태 전부
     static void push_int(Outs& out, uint8_t conn, int tier, bool on);
     static void push_stream(Outs& out, uint8_t conn, bool on);
@@ -73,6 +88,7 @@ private:
     std::map<std::string, msg::TierCmd> held_;  // 안전 OFF 중에 온 ON 명령 (기기별 마지막). 풀리면 적용
     ProfileFn load_profile_;
     LogFn log_;
+    EventFn event_;
     int64_t safety_ms_;
 };
 

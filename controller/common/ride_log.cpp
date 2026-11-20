@@ -424,6 +424,17 @@ void Logger::open_ride(const ring::Item& it, uint32_t col_mask, uint64_t now) {
             }))
             st_.ctx_rows++;
     }
+    // 주행 전에 있었던 기기 사건 (폰은 보통 주행이 시작되기 전에 붙는다: HELLO, CONNECT, 첫 INT …). t는 NULL
+    for (const Ctx& c : pre_) {
+        if (fl.run("INSERT INTO ctx (mono_ns, t, sender, kind, value) VALUES (?, NULL, ?, ?, ?)", [&](sqlite3_stmt* s) {
+                sqlite3_bind_int64(s, 1, static_cast<sqlite3_int64>(c.mono_ns));
+                sqlite3_bind_text(s, 2, c.sender.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(s, 3, c.kind.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(s, 4, c.value.c_str(), -1, SQLITE_TRANSIENT);
+            }))
+            st_.ctx_rows++;
+    }
+    pre_.clear();
     st_.rides_opened++;
     commit();  // meta는 바로 디스크에
 }
@@ -589,7 +600,17 @@ void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_t
             Ctx c{m.mono_ns, id_of(m.sender, msg::kIdLen), msg::ctx_kind_name(m.kind), id_of(m.value, sizeof m.value)};
             if (m.kind == msg::CtxKind::SCR || m.kind == msg::CtxKind::PROF) snapshot_[{c.sender, c.kind}] = c;
             if (!writable()) {
-                if (m.kind != msg::CtxKind::SCR && m.kind != msg::CtxKind::PROF) st_.outside_ride++;
+                if (m.kind == msg::CtxKind::SCR || m.kind == msg::CtxKind::PROF) return;  // 마지막 값은 위에서 기억
+                if (refused_) {  // 공간이 없어 기록하지 않는 주행
+                    st_.outside_ride++;
+                    return;
+                }
+                // 주행 밖: 다음 주행 파일을 열 때 적는다. 넘치면 가장 오래된 것을 버리고 센다
+                if (pre_.size() >= kPreRideCtx) {
+                    pre_.pop_front();
+                    st_.outside_ride++;
+                }
+                pre_.push_back(c);
                 return;
             }
             ensure_txn();

@@ -8,8 +8,14 @@
 // 스레드 두 개 (교착 방지, docs/RF_MESSAGES.md §2-2):
 //   UART 스레드(main): UART 읽기 → 규칙 → UART 쓰기 / P5·P4에 MsgSend. 100 ms마다 시계(HB, HELLO 5초, 무응답 5초)
 //   받기 스레드: mermaid_p6로 P5(OUT_*)와 P2(MOTION)를 받아 바로 회신 → 규칙 → UART 쓰기. MsgSend 하지 않는다
-// 기기 사건(HELLO 전달됨, BYE, SCR, OVR, PROF)은 UART 스레드가 P7에 LOG_CTX로도 보낸다 (2 ms, 실패는 세기만).
+// 주행 로그 (docs/DATA_LOGGING.md §6-2): 폰·HUD와 오간 사건을 모두 P7에 LOG_CTX로 보낸다 (HB·MOT는 빼고).
+//   기기가 보낸 것: HELLO(P5에 전달됨), BYE, SCR, OVR, PROF / 링크: CONNECT, DISCONNECT, DROP + 이유 /
+//   Pi가 내보낸 것: INT, PROF 회신 / 버린 것: REJECT + 이유와 원문 앞부분. 멀미 점수 SYM은 LOG_SYM으로.
 //   10초마다 다시 보내는 SCR·PROF(CtxResend)는 사건이 아니라서 보내지 않는다.
+//   사건은 생긴 자리(어느 스레드든)에서 시각을 찍어 작은 큐(256개)에 넣고, UART 스레드만 P7에 보낸다:
+//   받기 스레드는 MsgSend를 하지 않는다는 규칙을 지키려는 것. P7에는 2 ms 제한. 한 번 실패하면(log_fail) 거기서 멈추고
+//   남은 것은 큐에 둔 채 다음 바퀴에 다시 보낸다 → P7이 없거나 멈춰도 UART 스레드는 한 바퀴에 2 ms 넘게 잡히지 않고,
+//   P7이 잠깐 늦은 것으로는 사건을 잃지 않는다. 큐가 차면 가장 오래된 것부터 버리고 센다 (log_drop).
 // 시작 순서: P6이 가장 먼저 (P5, P2가 P6에 보낸다). P5가 늦게 떠도 등록은 1초마다 다시 보낸다.
 // 다시 시작 (docs/RF_MESSAGES.md §6):
 //   P6이 다시 시작 → 시작할 때 0~8|DROP으로 브리지의 모든 연결을 끊고 P5에 DEV_BYE ALL. 기기가 다시 붙어 HELLO
@@ -19,9 +25,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <variant>
 
 #include "comm.hpp"
 #include "ipc.hpp"
@@ -71,6 +79,58 @@ int open_uart(const char* dev) {
     tcflush(fd, TCIOFLUSH);
     return fd;
 }
+
+// P7에 보낼 사건 큐. 두 스레드가 넣고 UART 스레드만 꺼낸다. 차면 가장 오래된 것을 버린다 (메모리가 늘지 않게)
+class LogQueue {
+public:
+    using Item = std::variant<msg::LogCtx, msg::LogSym>;
+    static constexpr size_t kMax = 256;
+
+    void ctx(const std::string& sender, msg::CtxKind kind, const std::string& value) {
+        msg::LogCtx m;
+        m.mono_ns = ipc::now_ns();  // 사건이 생긴 시각 (보내는 시각이 아니라)
+        msg::copy_id(m.sender, sender);
+        m.kind = kind;
+        msg::copy_text(m.value, value);
+        push(m);
+    }
+    void sym(const std::string& phone, int misc) {
+        msg::LogSym m;
+        m.mono_ns = ipc::now_ns();
+        msg::copy_id(m.phone, phone);
+        m.misc = misc;
+        push(m);
+    }
+    std::deque<Item> take() {
+        std::deque<Item> out;
+        std::lock_guard<std::mutex> lk(mu_);
+        out.swap(q_);
+        return out;
+    }
+    // 못 보낸 것을 앞에 되돌린다 (그 사이 들어온 새 사건보다 먼저). 넘치면 가장 오래된 것부터 버린다
+    void put_back(std::deque<Item>& rest) {
+        std::lock_guard<std::mutex> lk(mu_);
+        q_.insert(q_.begin(), rest.begin(), rest.end());
+        while (q_.size() > kMax) {
+            q_.pop_front();
+            dropped_++;
+        }
+    }
+    uint64_t dropped() const { return dropped_.load(); }
+
+private:
+    void push(const Item& it) {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (q_.size() >= kMax) {
+            q_.pop_front();
+            dropped_++;
+        }
+        q_.push_back(it);
+    }
+    std::mutex mu_;
+    std::deque<Item> q_;
+    std::atomic<uint64_t> dropped_{0};
+};
 
 struct Shared {
     int fd = -1;
@@ -194,6 +254,9 @@ int main(int argc, char** argv) {
         }
         comm::Comm core([](const std::string& s) { log_line("..", s); }, no_link_timeout ? 0 : comm::kLinkTimeoutMs);
         sh.core = &core;
+        LogQueue logq;
+        // core_mu를 잡은 채 불린다 (두 스레드 모두). 큐에 넣기만 하므로 멈추지 않는다
+        core.set_event_sink([&logq](const comm::LogEvent& e) { logq.ctx(e.sender, e.kind, e.value); });
 
         ipc::Server srv(msg::kNameP6);
         log_line("..", "p6_comm up: " + dev + ", name " + msg::kNameP6 + (no_p4 ? ", P4 off" : "") +
@@ -217,14 +280,23 @@ int main(int argc, char** argv) {
             return c.send(m, n) || (!c.connected() && c.send(m, n));
         };
         ipc::Client p7(msg::kNameP7, msg::kLogTimeoutNs);
-        uint64_t log_fail = 0;
+        uint64_t log_fail = 0, log_sent = 0;
         auto log_ctx = [&](const std::string& sender, msg::CtxKind kind, const std::string& value) {
-            msg::LogCtx m;
-            m.mono_ns = ipc::now_ns();
-            msg::copy_id(m.sender, sender);
-            m.kind = kind;
-            msg::copy_text(m.value, value);
-            if (!p7.send(&m, sizeof m)) log_fail++;
+            logq.ctx(sender, kind, value);
+        };
+        // 큐를 비워 P7에 보낸다 (UART 스레드만). 한 번 실패하면 멈추고 남은 것은 큐에 되돌린다:
+        // P7이 멈춰 있을 때 사건 수 × 2 ms를 기다리지 않게. 다음 바퀴(100 ms 안)에 다시 한 번 보내 본다
+        auto flush_log = [&] {
+            std::deque<LogQueue::Item> batch = logq.take();
+            while (!batch.empty()) {
+                if (!std::visit([&](const auto& m) { return p7.send(&m, sizeof m); }, batch.front())) {
+                    log_fail++;
+                    logq.put_back(batch);
+                    return;
+                }
+                log_sent++;
+                batch.pop_front();
+            }
         };
         auto jstr = [](const char* s) {  // ID는 safe_name 규칙이라 따옴표만 막으면 된다
             std::string out = "\"";
@@ -310,8 +382,12 @@ int main(int argc, char** argv) {
                                       r->prof.sens);
                         send_p4(&r->prof, sizeof r->prof, buf, true);
                     }
+                } else if (const auto* y = std::get_if<comm::Sym>(&a)) {
+                    log_line("P7", "SYM " + y->phone + " misc=" + std::to_string(y->misc));
+                    logq.sym(y->phone, y->misc);  // P4에는 보내지 않는다 (기록 전용)
                 }
             }
+            flush_log();  // 받기 스레드가 넣은 사건도 여기서 나간다 (적어도 100 ms마다)
         };
 
         // 시작: 브리지의 모든 연결을 끊는다 (P6만 다시 시작했을 때 기기가 다시 HELLO 하게)
@@ -355,7 +431,8 @@ int main(int argc, char** argv) {
                 next_stat += 10000;
                 log_line("..", "stat: rx " + std::to_string(sh.rx_lines.load()) + " lines, tx " +
                                    std::to_string(sh.tx_lines.load()) + " (MOT " + std::to_string(sh.mot_lines.load()) +
-                                   "), log_fail " + std::to_string(log_fail));
+                                   "), log_sent " + std::to_string(log_sent) + ", log_fail " + std::to_string(log_fail) +
+                                   ", log_drop " + std::to_string(logq.dropped()));
             }
         }
     } catch (const std::exception& e) {

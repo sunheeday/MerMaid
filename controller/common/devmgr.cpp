@@ -185,6 +185,7 @@ msg::DevSyncReply DevMgr::on_sync(const msg::DevSync&, int64_t now_ms) {
     if (safe_off_) {
         log("DEV_SYNC back: safe off cleared");
         safe_off_ = false;
+        event(msg::CtxKind::SAFE_CLEAR, "{\"held\":" + std::to_string(held_.size()) + "}");
     }
     msg::DevSyncReply r;
     for (const Entry& e : e_) {
@@ -209,6 +210,8 @@ Outs DevMgr::on_tick(int64_t now_ms) {
         held_.clear();
         for (const auto& h : held) {
             log("safe off cleared: apply held TIER_CMD " + h.first + " ON");
+            event(msg::CtxKind::HELD_ON,
+                  "{\"device\":\"" + h.first + "\",\"tier\":" + std::to_string(h.second.tier) + "}");
             Outs o = on_tier_cmd(h.second);
             out.insert(out.end(), o.begin(), o.end());
         }
@@ -220,8 +223,14 @@ Outs DevMgr::on_tick(int64_t now_ms) {
     airflow_ = display_ = false;
     airflow_known_ = display_known_ = true;
     for (auto& d : dots_) d.second = false;
+    int conns = 0;
     for (int i = 0; i < msg::kMaxConn; i++)
-        if (e_[i].used) send_state(static_cast<uint8_t>(i), out);  // 꺼진 상태를 모두에게
+        if (e_[i].used) {
+            send_state(static_cast<uint8_t>(i), out);  // 꺼진 상태를 모두에게
+            conns++;
+        }
+    event(msg::CtxKind::SAFE_OFF,
+          "{\"no_sync_s\":" + std::to_string(safety_ms_ / 1000) + ",\"conns\":" + std::to_string(conns) + "}");
     log("safe off: no DEV_SYNC for " + std::to_string(safety_ms_ / 1000) + " s, all interventions OFF");
     return out;
 }

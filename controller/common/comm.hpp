@@ -19,6 +19,7 @@
 #include <variant>
 #include <vector>
 
+#include "log_messages.hpp"
 #include "rf_messages.hpp"
 
 namespace mm::comm {
@@ -56,15 +57,34 @@ struct CtxResend {
     msg::CtxScreen scr;
     msg::CtxProf prof;
 };
-using Action = std::variant<UartLine, msg::DevHello, msg::DevBye, msg::CtxScreen, msg::CtxOvr, msg::CtxProf, CtxResend>;
+// M08 SYM: 앱이 보낸 멀미 점수 (0~10 정수, 규칙 통과). P7에 LOG_SYM으로만 보낸다 (P4에는 안 보냄: 기록 전용)
+struct Sym {
+    std::string phone;
+    int misc = 0;
+};
+using Action = std::variant<UartLine, msg::DevHello, msg::DevBye, msg::CtxScreen, msg::CtxOvr, msg::CtxProf, CtxResend, Sym>;
 using Actions = std::vector<Action>;
+
+// 주행 로그(P7)에 남길 사건. 규칙을 아는 코어가 만들고, 보내는 일은 프로세스가 한다 (docs/DATA_LOGGING.md §6-2).
+// Actions와 따로 둔 이유: 받기 스레드에서도 생기는데 그 스레드는 MsgSend를 하지 않는다 → 프로세스가 큐에 넣고
+// UART 스레드가 비운다. 기기가 보낸 HELLO·BYE·SCR·OVR·PROF는 Actions를 실행하는 쪽이 따로 남긴다
+struct LogEvent {
+    std::string sender;  // 기기 ID, 모르면 "conn<N>", 전체는 "all", 줄이 깨졌으면 "uart"
+    msg::CtxKind kind;
+    std::string value;   // JSON, 191자 이하 (LogCtx.value에 잘리지 않고 들어감)
+};
+constexpr int kMaxRejectsPerSec = 10;  // REJECT 사건은 1초(HB 박자)에 이만큼만. 쓰레기 줄이 쏟아져도 로그 길이 막히지 않게
 
 class Comm {
 public:
     using LogFn = std::function<void(const std::string&)>;
+    using EventFn = std::function<void(const LogEvent&)>;
     // link_timeout_ms = 0: 기기 쪽 무응답 감시를 끔 (nRF Connect로 손으로 시험할 때. 앱은 HB를 1초마다 보냄)
     explicit Comm(LogFn log = nullptr, int64_t link_timeout_ms = kLinkTimeoutMs)
         : log_(std::move(log)), link_timeout_ms_(link_timeout_ms) {}
+
+    // 로그 사건을 받을 곳. on_*() 안에서 (프로세스의 잠금을 잡은 채) 불리므로 멈추지 않는 일만 해야 한다 (큐에 넣기)
+    void set_event_sink(EventFn f) { event_ = std::move(f); }
 
     // ---- UART 스레드 ----
     // 시작할 때 한 번: 브리지의 모든 연결을 끊고(0~8|DROP) P5 명부도 비운다(DEV_BYE ALL).
@@ -112,6 +132,11 @@ private:
         if (log_) log_(s);
     }
     void forget(uint8_t conn, Actions& out);
+    void event(const std::string& sender, msg::CtxKind kind, const std::string& value) const {
+        if (event_) event_(LogEvent{sender, kind, value});
+    }
+    std::string who(int conn) const;  // 등록된 연결은 기기 ID, 아니면 "conn<N>"
+    void reject(int conn, const std::string& reason, const std::string& raw);
     msg::DevHello make_hello(uint8_t conn) const;
     void on_device_json(uint8_t conn, const std::string& text, Actions& out);
 
@@ -120,7 +145,9 @@ private:
     int64_t next_refresh_ms_ = -1;
     bool p4_down_ = false;
     uint64_t hb_seq_ = 0;
+    int rejects_ = 0;  // 이번 HB 박자에 남긴 REJECT 수
     LogFn log_;
+    EventFn event_;
     int64_t link_timeout_ms_;
 };
 

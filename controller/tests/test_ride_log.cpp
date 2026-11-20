@@ -180,7 +180,7 @@ static void test_normal_ride() {
     lg.on_msg(&scr, sizeof scr, now);
     msg::LogCtx hello = ctx_msg("phone-a", msg::CtxKind::HELLO, "{\"conn\":1}", now - 4 * S);
     lg.on_msg(&hello, sizeof hello, now);
-    CHECK(lg.stats().outside_ride == 1, "HELLO outside a ride is counted, SCR kept as state");
+    CHECK(lg.stats().outside_ride == 0, "HELLO before a ride is kept for the next ride file, SCR kept as state");
 
     lg.on_item(start_item(now), 0x7F, now);
     CHECK(lg.ride_open(), "ride open after RIDE_START");
@@ -201,6 +201,13 @@ static void test_normal_ride() {
     lg.on_msg(&dec, sizeof dec, now);
     msg::LogCtx ovr = ctx_msg("phone-a", msg::CtxKind::OVR, "{\"device\":\"airflow-01\",\"on\":0}", m0 + 150 * 10000000ULL);
     lg.on_msg(&ovr, sizeof ovr, now);
+    // Pi → 폰으로 나간 것, 거부된 것, P5의 안전 OFF도 같은 표에 (kind 이름 그대로)
+    msg::LogCtx tx = ctx_msg("phone-a", msg::CtxKind::INT, "{\"conn\":1,\"tier\":3,\"on\":1}", m0 + 160 * 10000000ULL);
+    lg.on_msg(&tx, sizeof tx, now);
+    msg::LogCtx rej = ctx_msg("phone-a", msg::CtxKind::REJECT, "{\"conn\":1,\"reason\":\"x\",\"raw\":\"y\"}", m0 + 170 * 10000000ULL);
+    lg.on_msg(&rej, sizeof rej, now);
+    msg::LogCtx so = ctx_msg("p5", msg::CtxKind::SAFE_OFF, "{\"no_sync_s\":30,\"conns\":1}", m0 + 180 * 10000000ULL);
+    lg.on_msg(&so, sizeof so, now);
     msg::LogSym sym;
     sym.mono_ns = m0 + 200 * 10000000ULL;
     msg::copy_id(sym.phone, "phone-a");
@@ -224,7 +231,7 @@ static void test_normal_ride() {
     lg.tick(now + 5 * S + 1);
     CHECK(!lg.ride_open(), "closed after grace");
     lg.on_msg(&late, sizeof late, now + 6 * S);
-    CHECK(lg.stats().outside_ride == 2, "infer after close is outside");
+    CHECK(lg.stats().outside_ride == 1, "infer after close is outside");
 
     const std::string f = dir + "/rides/pi01-00001-001.sqlite";
     CHECK(closed.size() == 1 && closed[0] == f + "|ride_end", "on_closed: %s", closed.empty() ? "-" : closed[0].c_str());
@@ -272,7 +279,12 @@ static void test_normal_ride() {
     CHECK(q1(f, "SELECT count(*) FROM decision") == "2", "decision rows");
     CHECK(q1(f, "SELECT on_ || tier || changed FROM decision WHERE device='airflow-01'") == "111", "decision values");
     CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='SCR' AND t IS NULL") == "1", "state before ride kept");
-    CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='HELLO'") == "0", "event outside ride not in file");
+    CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='HELLO' AND t IS NULL AND sender='phone-a'") == "1",
+          "event before the ride is in the file with t NULL");
+    CHECK(q1(f, "SELECT group_concat(kind) FROM (SELECT kind FROM ctx WHERE t IS NOT NULL ORDER BY mono_ns)") ==
+              "OVR,INT,REJECT,SAFE_OFF",
+          "new kinds by name: %s", q1(f, "SELECT group_concat(kind) FROM (SELECT kind FROM ctx ORDER BY mono_ns)").c_str());
+    CHECK(q1(f, "SELECT sender FROM ctx WHERE kind='SAFE_OFF'") == "p5", "P5 event sender");
     CHECK(q1(f, "SELECT printf('%.2f', t) FROM ctx WHERE kind='OVR'") == "1.50", "ctx t from mono_ns: %s",
           q1(f, "SELECT t FROM ctx WHERE kind='OVR'").c_str());
     CHECK(q1(f, "SELECT printf('%.2f', t) || ' ' || misc FROM label") == "2.00 4", "label");
@@ -338,6 +350,34 @@ static void test_recovery() {
           "new session numbering and shutdown reason");
 }
 
+// 주행 밖에서 받은 기기 사건: 최근 kPreRideCtx개를 기억했다가 다음 주행 파일에 한 번만 적는다
+static void test_pre_ride_events() {
+    const std::string dir = fresh_dir("pre");
+    Logger lg(cfg_for(dir));
+    lg.start();
+    uint64_t now = 50 * S;
+    const int n = static_cast<int>(kPreRideCtx) + 6;
+    for (int i = 0; i < n; i++) {
+        const std::string v = "{\"conn\":" + std::to_string(i) + "}";
+        msg::LogCtx m = ctx_msg("conn0", msg::CtxKind::CONNECT, v.c_str(), now - static_cast<uint64_t>(n - i) * 1000000ULL);
+        lg.on_msg(&m, sizeof m, now);
+    }
+    CHECK(lg.stats().outside_ride == 6, "oldest pre-ride events dropped and counted: %llu",
+          (unsigned long long)lg.stats().outside_ride);
+    for (int ride = 1; ride <= 2; ride++) {
+        lg.on_item(start_item(now), 0x7F, now);
+        for (uint64_t i = 0; i < 10; i++) lg.on_item(sample(i, now + i * 10000000ULL, 0), 0x7F, now);
+        lg.on_item(end_item(10, now + 10 * 10000000ULL), 0x7F, now);
+        lg.tick(now + 3 * S);
+        now += 10 * S;
+    }
+    const std::string f1 = dir + "/rides/pi01-00001-001.sqlite", f2 = dir + "/rides/pi01-00001-002.sqlite";
+    CHECK(q1(f1, "SELECT count(*) FROM ctx WHERE kind='CONNECT' AND t IS NULL") == std::to_string(kPreRideCtx),
+          "first ride has the kept pre-ride events: %s", q1(f1, "SELECT count(*) FROM ctx").c_str());
+    CHECK(q1(f1, "SELECT value FROM ctx ORDER BY mono_ns LIMIT 1") == "{\"conn\":6}", "the newest ones were kept");
+    CHECK(q1(f2, "SELECT count(*) FROM ctx") == "0", "written once, not again in the next ride");
+}
+
 static void test_storage() {
     const std::string dir = fresh_dir("disk");
     double free_mb = 5000;
@@ -384,6 +424,7 @@ int main() {
     test_normal_ride();
     test_gap_restart_join();
     test_recovery();
+    test_pre_ride_events();
     test_storage();
     if (failures) {
         std::printf("%d failure(s)\n", failures);

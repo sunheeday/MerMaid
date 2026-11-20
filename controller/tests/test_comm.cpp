@@ -1,5 +1,5 @@
 // P6 통신 코어 테스트: 줄 조립, 프레임, HELLO 5초, HB 1초, 기기 메시지 → P4/P5 메시지, P5/P2 메시지 → UART 줄,
-// 시작 DROP, P5 재시작(OUT_RESYNC → HELLO 재전송, INT 기록)
+// 시작 DROP, P5 재시작(OUT_RESYNC → HELLO 재전송, INT 기록), M08 SYM 규칙, 주행 로그 사건(LogEvent)
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -421,6 +421,151 @@ static void resync() {
     CHECK(h.size() == 1 && h[0].int_known == 0, "record cleared on CONNECT");
 }
 
+// M08 SYM: 앱만, HELLO 뒤, 0~10 정수만 → Sym (P7로). 아니면 버리고 REJECT 사건
+static void sym_rules() {
+    Comm c(nullptr, 0);
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    auto rejected = [&](const std::string& line, const char* why) {
+        const size_t n0 = ev.size();
+        const Actions a = c.on_uart_line(line, 100);
+        return a.empty() && ev.size() == n0 + 1 && ev.back().kind == msg::CtxKind::REJECT &&
+               ev.back().value.find(why) != std::string::npos;
+    };
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 0);
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":3}", "SYM before HELLO") && ev.back().sender == "conn0", "SYM before HELLO dropped");
+    c.on_uart_line("0|" + hello("app", kPhone), 1);
+    c.on_uart_line("1|CONNECT", 2);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 3);
+
+    for (int n : {0, 3, 10}) {
+        const Actions a = c.on_uart_line("0|{\"t\":\"SYM\",\"misc\":" + std::to_string(n) + "}", 10);
+        const auto* y = only<Sym>(a);
+        CHECK(y && y->phone == kPhone && y->misc == n, "SYM %d accepted, nothing for P4 or P5", n);
+    }
+    CHECK(only<Sym>(c.on_uart_line("0|{\"t\":\"SYM\",\"misc\":4.0}", 11)) != nullptr, "4.0 is the integer 4 (same as the JSON schema)");
+    const size_t before = ev.size();
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":11}", "0..10"), "11 out of range");
+    CHECK(ev.back().sender == kPhone && ev.back().value.find("\\\"misc\\\":11") != std::string::npos,
+          "reject names the phone and keeps the raw text: %s", ev.back().value.c_str());
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":-1}", "0..10"), "-1 out of range");
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":3.5}", "0..10"), "3.5 is not an integer");
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":1e30}", "0..10"), "huge number");
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":\"3\"}", "not a number"), "string refused");
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":true}", "not a number"), "bool refused");
+    CHECK(rejected("0|{\"t\":\"SYM\"}", "reason"), "missing misc");
+    CHECK(rejected("1|{\"t\":\"SYM\",\"misc\":3}", "SYM from HUD") && ev.back().sender == "hud-01", "HUD cannot send SYM");
+    CHECK(ev.size() == before + 8, "one REJECT per bad SYM");
+}
+
+// 주행 로그 사건: 링크(CONNECT·DISCONNECT·DROP + 이유), Pi → 기기(INT·PROF 회신), 버린 것(REJECT). HB·MOT는 없음
+static void log_events() {
+    Comm c(nullptr);  // 무응답 감시 켬
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    auto last = [&](msg::CtxKind k, const std::string& sender, const std::string& value) {
+        return !ev.empty() && ev.back().kind == k && ev.back().sender == sender && ev.back().value == value;
+    };
+    c.on_start();
+    CHECK(ev.size() == 1 && last(msg::CtxKind::DROP, "all", "{\"conn\":\"all\",\"reason\":\"p6_start\"}"), "start DROP logged once");
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 0);
+    CHECK(last(msg::CtxKind::CONNECT, "conn0", "{\"conn\":0}"), "CONNECT before HELLO");
+    c.on_tick(5000);
+    CHECK(last(msg::CtxKind::DROP, "conn0", "{\"conn\":0,\"reason\":\"no_hello_5s\"}"), "DROP reason: no HELLO");
+    c.on_uart_line("0|DISCONNECT", 5100);
+    CHECK(last(msg::CtxKind::DISCONNECT, "conn0", "{\"conn\":0,\"registered\":0}"), "DISCONNECT of an unregistered conn");
+
+    c.on_uart_line("2|CONNECT", 6000);
+    size_t n = ev.size();
+    c.on_uart_line("2|" + hello("app", kPhone), 6001);
+    c.on_uart_line("2|{\"t\":\"HB\",\"seq\":1}", 6002);
+    c.on_uart_line("2|{\"t\":\"SCR\",\"on\":true,\"att\":true}", 6003);
+    CHECK(ev.size() == n, "HELLO, HB, SCR make no core events (the process logs what it forwards)");
+
+    msg::OutInt i;
+    i.conn = 2;
+    i.tier = 3;
+    i.on = 1;
+    c.on_out_int(i);
+    CHECK(last(msg::CtxKind::INT, kPhone, "{\"conn\":2,\"tier\":3,\"on\":1}"), "INT to one phone: %s", ev.back().value.c_str());
+    c.on_uart_line("3|CONNECT", 6010);
+    c.on_uart_line("3|" + hello("hud", "x"), 6011);
+    n = ev.size();
+    i.conn = msg::kConnAll;
+    i.tier = 1;
+    i.on = 0;
+    c.on_out_int(i);
+    CHECK(ev.size() == n + 2 && ev[n].sender == kPhone && ev[n].value == "{\"conn\":2,\"tier\":1,\"on\":0,\"all\":1}" &&
+              ev[n + 1].sender == "hud-01" && ev[n + 1].value == "{\"conn\":3,\"tier\":1,\"on\":0,\"all\":1}",
+          "INT ALL: one row per registered device");
+    i.conn = 7;
+    c.on_out_int(i);
+    CHECK(last(msg::CtxKind::INT, "conn7", "{\"conn\":7,\"tier\":1,\"on\":0}"), "INT to a conn nobody is registered on");
+
+    msg::OutProf p;
+    p.conn = 2;
+    p.mssq = 12.5;
+    p.sens = 1.2;
+    c.on_out_prof(p);
+    CHECK(last(msg::CtxKind::PROF_OUT, kPhone, "{\"conn\":2,\"mssq\":12.5,\"sens\":1.2}"), "PROF reply: %s", ev.back().value.c_str());
+    msg::OutDrop d;
+    d.conn = 3;
+    c.on_out_drop(d);
+    CHECK(last(msg::CtxKind::DROP, "hud-01", "{\"conn\":3,\"reason\":\"p5\"}"), "DROP asked by P5");
+
+    n = ev.size();
+    msg::Motion mo;
+    mo.ax = 0.1;
+    mo.ay = 0.2;
+    msg::OutStream st;
+    st.conn = 2;
+    st.on = 1;
+    c.on_out_stream(st);
+    c.on_motion(mo);
+    CHECK(ev.size() == n, "MOT and stream changes are not logged");
+
+    // 거부: 이유와 원문 앞부분. 따옴표는 이스케이프, 길면 자른다 (value는 191자 이하의 올바른 JSON)
+    c.on_uart_line("2|{\"t\":\"OVR\",\"dev\":\"someone-else\",\"on\":true}", 6100);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().sender == kPhone &&
+              ev.back().value.find("\"reason\":\"OVR target someone-else not allowed\"") != std::string::npos &&
+              ev.back().value.find("\"raw\":\"{\\\"t\\\":\\\"OVR\\\"") != std::string::npos,
+          "OVR on another phone rejected with reason and raw: %s", ev.back().value.c_str());
+    c.on_uart_line("2|{\"t\":\"PROF\",\"mssq\":99,\"sens\":1}", 6101);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().value.find("PROF out of range") != std::string::npos, "PROF range");
+    c.on_uart_line("2|{\"t\":\"XYZ\"}", 6102);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().value.find("unknown t XYZ") != std::string::npos, "unknown t");
+    c.on_uart_line("2|not json", 6103);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().value.find("\"raw\":\"not json\"") != std::string::npos, "broken JSON");
+    c.on_uart_line("garbage \x01\xEA\xB0\x80 line", 6104);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().sender == "uart" &&
+              ev.back().value == "{\"conn\":null,\"reason\":\"bad line\",\"raw\":\"garbage ???? line\"}",
+          "bad frame: control and non-ASCII bytes replaced: %s", ev.back().value.c_str());
+    c.on_uart_line("2|{\"t\":\"XYZ\",\"pad\":\"" + std::string(300, '"') + "\"}", 6105);
+    CHECK(ev.back().value.size() <= 191 && ev.back().value.back() == '}' &&
+              ev.back().value[ev.back().value.size() - 3] != '\\',
+          "long raw text cut without breaking an escape (%zu chars)", ev.back().value.size());
+
+    // 쓰레기 줄이 쏟아져도 1초에 kMaxRejectsPerSec개만
+    n = ev.size();  // 이번 박자(5000 ms의 HB 뒤)에 이미 6개
+    for (int k = 0; k < 50; k++) c.on_uart_line("zzz", 6200);
+    CHECK(ev.size() == n + static_cast<size_t>(kMaxRejectsPerSec) - 6, "REJECT events are rate limited: %zu", ev.size() - n);
+    c.on_uart_line("2|{\"t\":\"HB\",\"seq\":2}", 6900);
+    c.on_uart_line("3|{\"t\":\"HB\",\"seq\":2}", 6900);
+    c.on_tick(7000);  // 다음 HB 박자
+    n = ev.size();
+    c.on_uart_line("zzz", 7001);
+    CHECK(ev.size() == n + 1, "limit resets on the next HB beat");
+
+    // 등록된 기기가 5초 조용함 → DROP + 이유 (BYE는 Actions로 나가 프로세스가 남긴다)
+    c.on_uart_line("3|DISCONNECT", 7002);
+    CHECK(last(msg::CtxKind::DISCONNECT, "hud-01", "{\"conn\":3,\"registered\":1}"), "DISCONNECT names the device");
+    c.on_tick(11900);
+    CHECK(last(msg::CtxKind::DROP, kPhone, "{\"conn\":2,\"reason\":\"silent_5s\"}"), "DROP reason: silent 5 s: %s",
+          ev.back().value.c_str());
+}
+
 int main() {
     line_assembler();
     frames();
@@ -436,6 +581,8 @@ int main() {
     ctx_resend();
     start_drops_all();
     resync();
+    sym_rules();
+    log_events();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;

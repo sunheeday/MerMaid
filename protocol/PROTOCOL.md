@@ -4,7 +4,7 @@ QNX 컨트롤러, ESP32-S3 브리지, Android 앱, HUD 시뮬레이터가 공유
 
 | 파일 | 내용 |
 |---|---|
-| `messages.schema.json` | 메시지 M00~M07의 JSON Schema |
+| `messages.schema.json` | 메시지 M00~M08의 JSON Schema |
 | `uuids.json` | BLE 광고 이름, 서비스와 characteristic UUID |
 | `constants.json` | 공용 상수: Oman, 이벤트, 휴식, MSSQ 규준, 고정 기기 ID |
 | `feature_order.json` | 피처 77개의 순서, 그룹, 단위, 창, 단조 방향, enabled |
@@ -49,6 +49,7 @@ QNX 컨트롤러, ESP32-S3 브리지, Android 앱, HUD 시뮬레이터가 공유
 | M05 | `OVR` | 기기 → C | 대상 기기 ID, 수동 ON/OFF. 보낸 쪽은 연결로 판별 |
 | M06 | `PROF` | 앱 ↔ C | MSSQ 원점수, 설문 민감도 (허용도는 컨트롤러에만) |
 | M07 | `HB` | 기기 ↔ C | 일련번호, 1초마다 |
+| M08 | `SYM` | 앱 → C | 멀미 점수 `misc` (MISC 0~10 **정수**, 터치 입력). 기록 전용: 컨트롤러는 주행 로그에만 남기고 정책에는 쓰지 않음 |
 
 ```
 {"t":"HELLO","role":"app","dev":"5f3a9c1e","v":1}
@@ -58,10 +59,12 @@ QNX 컨트롤러, ESP32-S3 브리지, Android 앱, HUD 시뮬레이터가 공유
 {"t":"OVR","dev":"display-01","on":false}
 {"t":"PROF","mssq":12.5,"sens":1.2}
 {"t":"HB","seq":231}
+{"t":"SYM","misc":3}
 ```
 
 - 프로토콜 버전은 HELLO에서 한 번만 보냅니다.
 - 양쪽 모두 M07을 1초마다 보내고, 5초 동안 아무 메시지도 못 받으면 연결이 끊긴 것으로 봅니다.
+- M08 `SYM`은 앱만, HELLO 뒤에 보냅니다. `misc`가 0~10 정수가 아니면(소수, 문자열, 범위 밖) 컨트롤러가 버리고 거부 사건으로 기록합니다. 회신은 없습니다. M04(음성 MISC)와 다른 메시지이고 M04 번호는 계속 비워 둡니다 (2026-11 팀 합의, `docs/DATA_LOGGING.md` §7).
 
 ## 4. 기기 ID
 

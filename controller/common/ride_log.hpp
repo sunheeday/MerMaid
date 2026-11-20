@@ -8,6 +8,7 @@
 // Logger는 쓰기 스레드 하나만 만진다 (잠금 없음). 받기 스레드와는 MsgQueue로만 만난다.
 #pragma once
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -26,6 +27,7 @@ constexpr uint64_t kCommitNs = 1000000000ULL;            // 트랜잭션 1초에
 constexpr uint64_t kCloseGraceNs = 2000000000ULL;        // RIDE_END 뒤 2초는 늦게 온 LOG_*를 같은 주행에
 constexpr uint64_t kStorageCheckNs = 60000000000ULL;     // 남은 공간 확인 60초마다
 constexpr uint64_t kRateHealthNs = 60000000000ULL;       // sample_rate_hz 1분마다
+constexpr size_t kPreRideCtx = 64;                       // 주행 밖에서 받은 기기 사건을 이만큼 기억했다가 다음 주행 파일에
 
 // 받기 스레드 → 쓰기 스레드. 칸 수와 칸 크기가 고정이라 메모리가 늘지 않는다. 차면 가장 오래된 것을 버린다
 class MsgQueue {
@@ -113,6 +115,7 @@ private:
     std::vector<std::pair<uint64_t, uint64_t>> anchors_;
     uint64_t rate_mono_ = 0, rate_seq_ = 0, last_mono_ = 0, last_seq_ = 0;
     std::map<std::pair<std::string, std::string>, Ctx> snapshot_;  // 주행 밖에서 받은 마지막 SCR·PROF
+    std::deque<Ctx> pre_;  // 주행 밖에서 받은 그 밖의 사건 (HELLO, CONNECT, INT …), 최근 kPreRideCtx개
 
     void warn(const std::string& s);
     double free_mb();

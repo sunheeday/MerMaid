@@ -10,7 +10,8 @@
     { "$ref": "#/$defs/SCR" },
     { "$ref": "#/$defs/OVR" },
     { "$ref": "#/$defs/PROF" },
-    { "$ref": "#/$defs/HB" }
+    { "$ref": "#/$defs/HB" },
+    { "$ref": "#/$defs/SYM" }
   ],
   "$defs": {
     "HELLO": {
@@ -91,6 +92,16 @@
         "seq": { "type": "integer", "minimum": 0 }
       },
       "required": ["t", "seq"],
+      "additionalProperties": false
+    },
+    "SYM": {
+      "description": "M08, app -> controller. Self-reported sickness score (MISC 0-10, integer) by touch. Data collection only: logged by the controller, never used by the policy",
+      "type": "object",
+      "properties": {
+        "t": { "const": "SYM" },
+        "misc": { "type": "integer", "minimum": 0, "maximum": 10 }
+      },
+      "required": ["t", "misc"],
       "additionalProperties": false
     }
   }

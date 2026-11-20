@@ -137,6 +137,9 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "QNX")
       # P7 로거: 주행 파일 내용과 격리 (P7 kill -9, SIGSTOP에도 P1~P4는 그대로). 약 1분 30초
       add_test(NAME log_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/log_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
       set_tests_properties(log_sim PROPERTIES TIMEOUT 240)
+      # 폰과 오간 사건(P6·P5 → P7)이 주행 파일 ctx·label 표에 남는지, P7이 멈추거나 죽어도 폰이 보는 것은 같은지. 약 1분 40초
+      add_test(NAME log_rf_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/log_rf_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
+      set_tests_properties(log_rf_sim PROPERTIES TIMEOUT 300)
     endif()
   endif()
 endif()

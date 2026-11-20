@@ -157,6 +157,8 @@ static void sync_reply() {
 
 static void safety_off() {
     DevMgr m(nullptr);
+    std::vector<std::string> ev;  // 주행 로그 사건: "KIND value"
+    m.set_event_sink([&](const LogEvent& e) { ev.push_back(std::string(msg::ctx_kind_name(e.kind)) + " " + e.value); });
     m.resync_delivered();  // OUT_RESYNC는 resync()에서 따로
     CHECK(m.on_tick(0).empty(), "clock starts");
     m.on_hello(hello(0, kA));
@@ -169,6 +171,7 @@ static void safety_off() {
     CHECK(m.on_tick(30999).empty() && !m.safe_off(), "29.999 s without DEV_SYNC is fine");
     EXPECT(m.on_tick(31000), "INT 0 1 0", "INT 0 2 0", "INT 0 3 0", "STR 0 0", "INT 1 1 0", "INT 1 2 0", "STR 1 0");
     CHECK(m.safe_off() && !m.is_on("airflow-01") && !m.is_on(kA), "everything off");
+    CHECK(ev.size() == 1 && ev[0] == "SAFE_OFF {\"no_sync_s\":30,\"conns\":2}", "safe off logged: %s", ev.empty() ? "-" : ev[0].c_str());
     CHECK(m.on_tick(40000).empty(), "safe off only once");
     CHECK(m.on_tier_cmd(cmd(kA, 3, true)).empty() && !m.is_on(kA), "ON held while safe off");
     CHECK(!m.on_tier_cmd(cmd(kA, 3, false)).empty(), "OFF still passes");
@@ -181,6 +184,8 @@ static void safety_off() {
     CHECK(!m.safe_off(), "DEV_SYNC clears safe off");
     EXPECT(m.on_tick(41100), "INT 0 1 1", "INT 1 1 1");
     CHECK(m.is_on("airflow-01") && m.on_tick(42000).empty(), "held ON applied once");
+    CHECK(ev.size() == 3 && ev[1] == "SAFE_CLEAR {\"held\":1}" && ev[2] == "HELD_ON {\"device\":\"airflow-01\",\"tier\":1}",
+          "clear and held ON logged, nothing else: %zu events", ev.size());
     EXPECT(m.on_tier_cmd(cmd(kA, 3, true)), "INT 0 3 1", "STR 0 1");
 }
 
