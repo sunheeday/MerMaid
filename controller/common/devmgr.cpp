@@ -84,6 +84,23 @@ Outs DevMgr::on_hello(const msg::DevHello& m) {
             e_[i] = Entry{};
         }
     }
+    // P5가 다시 시작해서 모르는 Tier는 P6이 그 기기에 마지막으로 보낸 INT로 되찾는다 (OUT_RESYNC → DEV_HELLO).
+    // 아는 Tier는 P5가 기준이다. 새 연결은 P6 기록이 비어 있으므로 아무것도 바뀌지 않는다
+    auto adopt = [&](int tier, bool& known, bool& value, const char* name) {
+        const auto bit = static_cast<uint8_t>(1u << (tier - 1));
+        if (!known && (m.int_known & bit)) {
+            value = (m.int_on & bit) && !safe_off_;  // 안전 OFF 중에는 ON을 되살리지 않는다
+            log(std::string("resync: ") + name + (value ? " ON" : " OFF") + " from conn " + std::to_string(m.conn));
+        }
+        known = true;  // 이제 이 연결에 보낼 것이므로 (모르면 OFF)
+    };
+    adopt(1, airflow_known_, airflow_, "Tier 1");
+    adopt(2, display_known_, display_, "Tier 2");
+    if (m.role == msg::Role::App && !dots_.count(dev) && (m.int_known & 4)) {
+        dots_[dev] = (m.int_on & 4) && !safe_off_;
+        log("resync: Tier 3 " + dev + (dots_[dev] ? " ON" : " OFF"));
+    }
+
     Entry& e = e_[m.conn];
     if (e.used && e.dev != dev) log("conn " + std::to_string(m.conn) + " reused: " + e.dev + " -> " + dev);
     e.used = true;
@@ -106,6 +123,11 @@ Outs DevMgr::on_hello(const msg::DevHello& m) {
 }
 
 Outs DevMgr::on_bye(const msg::DevBye& m) {
+    if (m.conn == msg::kConnAll) {  // P6이 다시 시작해서 모든 연결을 끊었다. 기기는 다시 붙으면 HELLO
+        log("bye all (P6 restarted)");
+        for (auto& e : e_) e = Entry{};
+        return {};
+    }
     if (m.conn < msg::kMaxConn && e_[m.conn].used) {
         log("bye conn " + std::to_string(m.conn) + " " + e_[m.conn].dev);
         e_[m.conn] = Entry{};
@@ -131,6 +153,7 @@ Outs DevMgr::on_tier_cmd(const msg::TierCmd& m) {
     }
     if (tier == 1 || tier == 2) {
         (tier == 1 ? airflow_ : display_) = on;
+        (tier == 1 ? airflow_known_ : display_known_) = true;
         // 공용 기기: HUD가 실제로 켜고, 폰은 앱 화면에 표시만 한다 → 등록된 모두에게
         for (int i = 0; i < msg::kMaxConn; i++) {
             if (!e_[i].used) continue;
@@ -172,11 +195,14 @@ msg::DevSyncReply DevMgr::on_sync(const msg::DevSync&, int64_t now_ms) {
 // ============================================================
 Outs DevMgr::on_tick(int64_t now_ms) {
     Outs out;
+    // 시작: P6에게 등록된 기기를 다시 알려 달라고 한다 (P5만 다시 시작했을 때 명부를 되찾음). 전달될 때까지 매번
+    if (!resync_done_) out.emplace_back(msg::OutResync{});
     if (last_sync_ < 0) last_sync_ = now_ms;  // 시작부터 30초 유예
     if (safe_off_ || now_ms - last_sync_ < safety_ms_) return out;
 
     safe_off_ = true;
     airflow_ = display_ = false;
+    airflow_known_ = display_known_ = true;
     for (auto& d : dots_) d.second = false;
     for (int i = 0; i < msg::kMaxConn; i++)
         if (e_[i].used) send_state(static_cast<uint8_t>(i), out);  // 꺼진 상태를 모두에게

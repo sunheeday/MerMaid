@@ -117,6 +117,11 @@ int main(int argc, char** argv) {
         std::set<std::string> rf_phones;  // P5 명부의 폰 (명령행 폰 제외)
         bool rf_hud = false;
         uint64_t sync_seq = 0, sync_fail = 0, cmd_fail = 0;
+        // P5가 다시 시작했으면 옛 연결로 보낸 첫 번은 실패하고 연결이 닫힌다 → 바로 한 번 더 (새로 연결).
+        // 시간 초과(P5가 바쁨)는 연결이 남으므로 다시 보내지 않는다 (docs/RF_MESSAGES.md §2-2)
+        auto send_p5 = [&](const void* m, size_t n, void* r = nullptr, size_t rn = 0) {
+            return p5->send(m, n, r, rn) || (!p5->connected() && p5->send(m, n, r, rn));
+        };
         auto restore_device = [&](const std::string& d) {
             int n;
             if (st.load_tolerance(d, n)) pol.restore_tolerance(d, n);
@@ -129,7 +134,7 @@ int main(int argc, char** argv) {
             msg::DevSync s;
             s.seq = sync_seq++;
             msg::DevSyncReply rep;
-            if (!p5->send(&s, sizeof s, &rep, sizeof rep)) {
+            if (!send_p5(&s, sizeof s, &rep, sizeof rep)) {
                 if (sync_fail++ == 0) std::fprintf(stderr, "p4: cannot reach %s (DEV_SYNC)\n", msg::kNameP5);
                 return;
             }
@@ -180,7 +185,7 @@ int main(int argc, char** argv) {
                     msg::copy_id(m.device, c.device);
                     m.tier = static_cast<uint8_t>(c.tier);
                     m.on = c.on ? 1 : 0;
-                    if (!p5->send(&m, sizeof m)) cmd_fail++;
+                    if (!send_p5(&m, sizeof m)) cmd_fail++;
                 }
             }
             std::fflush(stdout);
