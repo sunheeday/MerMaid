@@ -98,7 +98,7 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | DEV_HELLO에서 '모름'인 Tier | HELLO에 실린 int_known·int_on으로 되찾음 (P5만 다시 시작했을 때. P4는 바뀐 것이 없으면 명령을 다시 보내지 않으므로). 안전 OFF 중에는 ON을 되살리지 않음. 실린 값이 없으면 OFF. 이미 아는 Tier는 P5가 기준 |
 | TIER_CMD | 상태 기억. Tier 1·2(공용): HUD에 INT, 모든 폰에도 INT (표시용), HUD 스트림 = Tier 2. Tier 3: 그 폰에 INT + 스트림 |
 | DEV_SYNC | 마지막 시각 갱신, 명부 회신 |
-| 30초 동안 DEV_SYNC 없음 (시작부터 30초 유예) | 모든 연결에 Tier 1·2·3 OFF, 스트림 모두 OFF, 로그 "safe off" (`policy.json` safety_timeout_s). DEV_SYNC가 다시 올 때까지 ON 명령은 무시 (OFF는 통과) |
+| 30초 동안 DEV_SYNC 없음 (시작부터 30초 유예) | 모든 연결에 Tier 1·2·3 OFF, 스트림 모두 OFF, 로그 "safe off" (`policy.json` safety_timeout_s). DEV_SYNC가 다시 올 때까지 ON 명령은 적용하지 않고 **기기별로 마지막 것을 잡아 둔다** (OFF는 통과, 잡아 둔 ON을 지움). DEV_SYNC로 풀리면 다음 1초 박자에 잡아 둔 ON을 적용 (P4는 TIER_CMD를 DEV_SYNC보다 먼저 보내므로, 버리면 P4가 다시 뜬 첫 ON이 사라진다. [`RF_AI_LINK.md`](RF_AI_LINK.md) §5-7) |
 | Tier 3 명령인데 그 폰이 연결돼 있지 않음 | 상태만 기억. 다시 붙으면 HELLO 때 보냄 |
 | 잘못된 TIER_CMD (기기와 tier가 안 맞음, `hud-01`) | 로그 후 버림 |
 
@@ -160,7 +160,8 @@ cmake -S controller -B build && cmake --build build && ctest --test-dir build --
 - P4: CTX_SCREEN·CTX_OVR·CTX_PROF를 받자마자 회신하고 `on_screen`·`on_override`·`on_profile`에 넘긴다. OVR는 마지막 RISK의 주행 시각으로 처리
 - P4: `CMD` stdout과 함께 TIER_CMD를 P5로 (제한 200 ms, 실패는 `tier_cmd_fail`로 센다)
 - P4: P5에 보내다 실패하고 연결이 닫혔으면 (`!connected()`) 바로 한 번 더 보낸다 (DEV_SYNC, TIER_CMD. P5가 다시 시작한 직후, §2-2)
-- P2 `--motion`: 10샘플(100 ms)마다 MOTION {t, Wf 가중 ax·ay, pred_ax_10s, pred_ay_10s}를 P6로 (제한 20 ms)
+- P2 `--motion`: 10샘플(100 ms)마다 MOTION {t, Wf 가중 ax·ay, pred_ax_10s, pred_ay_10s}를 P6로 (제한 20 ms). 빠른 재생에서 실제 시계 50 ms 미만 간격은 건너뛰고 `mot_skip`으로 센다
 - `--rf`/`--motion` 없이 띄우면 예전처럼 `--phone`/`--hud` 고정 등록 (AC-02 비교용)
 - 주행이 없으면 DEV_SYNC도 없으므로 30초 뒤 P5가 안전 OFF 한다. 다음 주행의 RIDE_START에서 풀린다
 - 시험: Mac `ctest`의 `pipeline_rf_sim` (P1·P2·P4·P5·P6 진짜 코드 + `tests/fake_p3.cpp`), Pi는 `controller/bringup/README.md`의 RF 절
+- 동작·실행·결정 사항·Pi 검증 결과(V1~V8)는 [`RF_AI_LINK.md`](RF_AI_LINK.md)
