@@ -32,7 +32,7 @@
   (FIFO 1KB)              │                            │MOTION──────────────────────────────▶ P6     ▲          │
                           │ 공유 메모리 링                                     ▲ CTX_*(SCR/OVR/PROF)──┘          │ M08 SYM
                           ▼ /mermaid_samples          LOG_INFER  LOG_DECISION   LOG_CTX · LOG_SYM ◀───────────────┘
-                         P7 로거 ◀────────────────────── P3 ─────── P4 ────────── P6      (MsgSend, 2 ms 시간 초과)
+                         P7 로거 ◀────────────────────── P3 ─────── P4 ────────── P6 · P5 (MsgSend, 2 ms 시간 초과)
                           │ 쓰기 스레드 (우선순위 9)
                           ▼
               ~/mermaid/logs/rides/<ride_id>.sqlite
@@ -50,8 +50,8 @@
 | P2 피처 | C++17 | 30 | 변경 없음 |
 | P3 추론 | C++17 | 20 | LOG_INFER 보내기 |
 | P4 정책 | C++17 | 15 | LOG_DECISION 보내기 |
-| P5 기기 관리 | C++17 | 14 | 변경 없음 |
-| P6 통신 | C++17 | 12 | M08 SYM 규칙, LOG_CTX·LOG_SYM 보내기 |
+| P5 기기 관리 | C++17 | 14 | 안전 OFF 진입·해제, 잡아 둔 ON 적용을 LOG_CTX로 |
+| P6 통신 | C++17 | 12 | M08 SYM 규칙, 폰·HUD와 오간 사건 전부를 LOG_CTX로, SYM은 LOG_SYM으로 |
 | **P7 로거 (새로)** | C++17 | 받기 11 / 쓰기 9 | 새로 |
 
 P7도 다른 프로세스와 같은 `controller/` CMake 빌드, `ipc.hpp`, 보드의 gcc를 쓴다.
@@ -215,10 +215,14 @@ p7_logger [--dir ~/mermaid/logs] [--device-id pi01] [--min-free-mb 1024] [--prio
 - RIDE_END를 읽은 뒤 **2초 더** 파일을 열어 둔다. 마지막 주기의 LOG_INFER·LOG_DECISION이 RIDE_END보다 늦게 올 수 있어서다.
 - RIDE_START 없이 샘플을 만나면(주행 중에 P7이 다시 시작) 그 샘플부터 새 파일을 연다 (`meta.joined_at_seq`).
 - 주행 밖에서 받은 SCR·PROF는 마지막 값만 기억했다가 다음 주행 파일을 열 때 `ctx`에 적는다(`t` NULL, `mono_ns < mono_start_ns`).
-  다른 주행 밖 메시지는 세기만 한다(`outside_ride`).
+- 주행 밖에서 받은 그 밖의 기기 사건(CONNECT, HELLO, INT, DROP …)은 **최근 64개**(`kPreRideCtx`)를 기억했다가 다음 주행 파일에
+  한 번 적는다(`t` NULL). 폰은 보통 주행이 시작되기 전에 붙기 때문에, 이것이 없으면 그 주행의 HELLO가 로그에 없다.
+  64개를 넘겨 버린 것, 공간 부족으로 기록하지 않는 주행 중의 사건, 주행 밖의 LOG_INFER·LOG_DECISION·LOG_SYM은 세기만 한다(`outside_ride`).
 - 큐: 고정 크기 512개. 차면 가장 오래된 것을 버리고 `queue_drop`을 센다(메모리가 늘지 않게).
 - P7은 **아무에게도 MsgSend 하지 않는다.** 그래서 교착 고리가 생기지 않는다.
-- 보내는 쪽 규칙: `ipc::Client(kNameP7, 2 ms)`. 실패하면 자기 통계 `log_fail`만 올리고 계속한다(P3·P4는 RIDE_END 통계 줄, P6은 10초 stat 줄).
+- 보내는 쪽 규칙: `ipc::Client(kNameP7, 2 ms)`. 실패하면 자기 통계 `log_fail`만 올리고 계속한다(P3·P4는 RIDE_END 통계 줄, P6은 10초 stat 줄, P5는 1분마다의 sync 줄).
+  P6·P5는 사건이 드물고 하나하나가 뜻이 있어서, 실패한 사건을 작은 큐(P6 256개, P5 64개)에 둔 채 다음 바퀴에 한 번씩 다시 보낸다.
+  한 바퀴에 실패는 한 번까지만 기다리므로(2 ms) P7이 멈춰 있어도 제어는 그대로다. 큐가 차면 버리고 센다(P6 `log_drop`).
   P7이 없으면 `Client`가 1초에 한 번만 다시 연결을 시도한다(지금 `ipc.hpp` 동작).
 - Mac 시험 `log_sim` (구현됨): (a) 보통 주행, (b) 주행 중 `kill -9` 뒤 다시 띄워 복구, (c) 10초 SIGSTOP. 세 경우 모두 P1 전송 실패 0,
   P4 주기 빠짐 0, (c)는 링 덕분에 멈춘 동안의 샘플도 모두 기록. 주기 시간 변화는 Pi에서 잰다.
@@ -230,8 +234,8 @@ p7_logger [--dir ~/mermaid/logs] [--device-id pi01] [--min-free-mb 1024] [--prio
 |---|---|---|---|---|
 | LOG_INFER | 0x8060 | P3 | 10초마다, RISK를 P4에 보낸 **뒤** | 약 6.5 KB |
 | LOG_DECISION | 0x8061 | P4 | 10초마다, 명령을 다 보낸 **뒤** | 약 1 KB |
-| LOG_CTX | 0x8062 | P6 (UART 스레드) | 사건마다 | 약 300 B |
-| LOG_SYM | 0x8063 | P6 (UART 스레드) | 앱이 SYM을 보낼 때 | 약 100 B |
+| LOG_CTX | 0x8062 | P6 (UART 스레드), P5 | 사건마다 | 약 300 B |
+| LOG_SYM | 0x8063 | P6 (UART 스레드) | 앱이 SYM을 보낼 때 (규칙 통과한 것만) | 약 100 B |
 
 ```cpp
 constexpr int kMaxDevices = kMaxPhones + 3;   // 폰 9 + airflow-01 + display-01 + HUD
@@ -255,7 +259,7 @@ struct LogCtx {
     Hdr h{LOG_CTX, 0, 0};
     uint64_t mono_ns;
     char sender[kIdLen];
-    uint8_t kind;          // HELLO=0 BYE=1 SCR=2 OVR=3 PROF=4
+    uint8_t kind;          // CtxKind: 아래 표 (0~13). ctx 표에는 이름으로 들어간다
     char value[192];       // 원래 JSON 그대로 (잘리면 끝에 "…")
 };
 struct LogSym {
@@ -269,10 +273,34 @@ struct LogSym {
 - **시간 기준:** P3·P4는 주행 시각 `t`를 알지만 P6는 모른다. 모든 메시지에 `mono_ns`를 넣고, P7이 링의 `(seq, mono_ns)` 짝으로 `mono_ns → t`를 바꾼다(가장 가까운 샘플).
 - `policy.hpp`의 `Command`에는 이유가 없으므로 LOG_DECISION은 기기별 최종 상태(on, tier)와 이번 주기에 바뀌었는지(`changed`)만 남긴다. 지금 `cycles.csv`의 기기 칸과 같은 정보다.
   기기 목록: airflow-01, display-01, 등록된 폰 (`tier`는 등록되지 않은 기기면 0).
-- LOG_CTX `value`는 P6이 구조체에서 만든 JSON이다: HELLO `{"conn","role","ver"}` (P5에 전달된 뒤 한 번), BYE `{"conn"}`
-  (sender는 `conn<N>` 또는 `all`. P6은 끊긴 연결 번호만 안다), SCR `{"on","att"}`, OVR `{"device","on"}`, PROF `{"mssq","sens"}`.
-  10초마다 다시 보내는 SCR·PROF(`CtxResend`)는 사건이 아니라서 보내지 않는다.
-- LOG_SYM 구조체와 `label` 표는 이번에 만들었고, P6이 보내는 부분은 4단계.
+- **LOG_CTX는 폰·HUD와 오간 사건 전부다** (2026-11-21, RF). HB(1초마다)와 MOT(10 Hz)만 뺀다. `value`는 보내는 쪽이 만든 JSON이고
+  191자를 넘지 않는다(잘리지 않음). `sender`는 기기 ID, Pi → 기기 방향은 **받는 기기**의 ID, HELLO 전이라 모르면 `conn<N>`,
+  전체는 `all`, P5 사건은 `p5`, 연결 번호도 못 읽은 줄은 `uart`.
+
+| kind (번호) | 누가 | 언제 | value |
+|---|---|---|---|
+| `HELLO` (0) | P6 | 기기 등록이 P5에 전달된 뒤 한 번 | `{"conn","role","ver"}` (role 0 = app, 1 = hud) |
+| `BYE` (1) | P6 | 등록을 지움 (DISCONNECT, 무응답, 같은 번호에 새 CONNECT, P6 시작) | `{"conn"}` (sender `conn<N>` 또는 `all`) |
+| `SCR` (2) | P6 | 기기가 보냄 | `{"on","att"}` |
+| `OVR` (3) | P6 | 기기가 보냄 (권한 검사 통과) | `{"device","on"}` |
+| `PROF` (4) | P6 | 앱이 보냄 (범위 검사 통과) | `{"mssq","sens"}` |
+| `CONNECT` (5) | P6 | 브리지가 BLE 연결을 알림 (HELLO 전) | `{"conn"}` |
+| `DISCONNECT` (6) | P6 | 브리지가 끊김을 알림 | `{"conn","registered"}` |
+| `INT` (7) | P6 | Pi → 기기로 INT가 실제로 나감. 받은 기기마다 한 줄 | `{"conn","tier","on"}`, ALL로 나간 것은 `"all":1` |
+| `PROF_OUT` (8) | P6 | Pi → 앱으로 PROF 회신이 나감 | `{"conn","mssq","sens"}` |
+| `DROP` (9) | P6 | 브리지에 끊으라고 함 | `{"conn","reason"}`: `no_hello_5s`(HELLO 5초 없음), `silent_5s`(5초 무응답), `p5`(P5 요청), `p6_start`(P6 시작, conn `"all"`) |
+| `REJECT` (10) | P6 | 기기가 보냈지만 버림 | `{"conn","reason","raw"}`: 이유(60자까지)와 원문 앞 90자. 예: `SYM misc not an integer 0..10`, `OVR target <ID> not allowed`, `SCR before HELLO`, `unknown t X`, `bad line`(conn null) |
+| `SAFE_OFF` (11) | P5 | DEV_SYNC가 끊겨 전부 OFF | `{"no_sync_s","conns"}` |
+| `SAFE_CLEAR` (12) | P5 | DEV_SYNC가 돌아와 해제 | `{"held"}`: 잡아 둔 ON 개수 |
+| `HELD_ON` (13) | P5 | 안전 OFF 중 잡아 둔 ON을 해제 뒤 적용 | `{"device","tier"}` |
+
+  - 번호는 바꾸지 않고 뒤에만 붙인다. 표 구조는 그대로라 `schema_version`은 1을 유지한다(읽는 쪽은 모르는 kind를 건너뛰면 된다).
+  - **시각:** 모든 줄에 사건이 **생긴 순간**의 `mono_ns`가 있다(보낸 순간이 아니다. P6의 받기 스레드에서 생긴 INT도 그 자리에서 찍는다).
+    P7이 주행 시각 `t`로 바꿔 함께 적는다. 벽시계가 필요하면 `meta.wall_start + (mono_ns − mono_start_ns)`.
+  - P6의 받기 스레드는 MsgSend를 하지 않는다(`RF_MESSAGES.md` §2-2). 그래서 사건은 큐에 넣고 UART 스레드가 P7에 보낸다(100 ms 안).
+  - REJECT는 1초에 10개까지만 남긴다(쓰레기 줄이 쏟아질 때 로그 길이 막히지 않게). 원문의 제어 문자와 ASCII 밖 바이트는 `?`로 바꾼다.
+  - 10초마다 다시 보내는 SCR·PROF(`CtxResend`)는 사건이 아니라서 보내지 않는다. 스트림 ON/OFF(OUT_STREAM)도 남기지 않는다(INT tier 3·2와 같은 정보).
+- LOG_SYM: P6이 M08 SYM 규칙(§7)을 통과한 점수만 보낸다 → `label` 표. 통과하지 못한 것은 `ctx`에 REJECT로 남는다.
 
 ### 6-3. 파일 배치
 
@@ -331,6 +359,7 @@ CREATE TABLE decision (
   PRIMARY KEY (seq, device)
 );
 CREATE TABLE ctx   (mono_ns INTEGER NOT NULL, t REAL, sender TEXT NOT NULL, kind TEXT NOT NULL, value TEXT);
+-- kind: HELLO BYE SCR OVR PROF CONNECT DISCONNECT INT PROF_OUT DROP REJECT SAFE_OFF SAFE_CLEAR HELD_ON (§6-2 표). t NULL = 주행 시작 전
 CREATE TABLE label (mono_ns INTEGER NOT NULL, t REAL, phone TEXT NOT NULL, misc INTEGER NOT NULL CHECK (misc BETWEEN 0 AND 10));
 CREATE TABLE health(mono_ns INTEGER NOT NULL, t REAL, key TEXT NOT NULL, value REAL NOT NULL);
 -- health key: ring_overrun, queue_drop, hold_samples (주행을 닫을 때), sample_rate_hz (1분마다), samples_paused
@@ -358,10 +387,16 @@ CREATE INDEX label_phone ON label(phone, t);
 
 모델의 정답은 "다음 300초 안에 MISC ≥ k"(`docs/SPEC.md`)이다. 실제 주행으로 학습하려면 MISC 점수를 받아야 한다.
 
-> ⚠️ S0에서 **음성 MISC 보고(M04)를 일부러 뺐다**(`protocol/PROTOCOL.md` §3). 이번 제안은 **데이터 수집용 터치 입력**이고 정책(P4)에는 쓰지 않는다. M04 번호는 재사용하지 않고 **M08**을 새로 쓴다. 팀 확인이 필요하다 (§15).
+> **팀 합의됨 (2026-11).** S0에서 음성 MISC 보고(M04)는 일부러 뺐다(`protocol/PROTOCOL.md` §3). M08 SYM은 그것과 다른
+> **데이터 수집용 터치 입력**이고 정책(P4)에는 쓰지 않는다. M04 번호는 재사용하지 않고 **M08**을 새로 쓴다.
 
-- **형식:** 앱 → C: `{"t":"SYM","misc":3}` (정수 0~10). `messages.schema.json`, `PROTOCOL.md` §3, 앱 `protocol/`에 추가.
-- **P6 규칙** (`comm.cpp`): 역할이 `app`인 연결만, HELLO 뒤, 0~10 정수가 아니면 로그 후 버림 → LOG_SYM(P7). P4로는 보내지 않는다.
+- **형식 (확정):** 앱 → C: `{"t":"SYM","misc":3}`. `misc`는 0~10 **정수**. `messages.schema.json`, `PROTOCOL.md` §3에 들어갔다
+  (`python3 protocol/check.py` 통과). 앱은 같은 형식으로 `fix/app-first-build`에서 구현 중.
+- **P6 규칙** (`comm.cpp`, 구현됨): 역할이 `app`인 연결만, HELLO 뒤, 0~10 정수만 통과 → LOG_SYM(P7) → `label` 표. P4로는 보내지 않는다.
+  통과하지 못한 것(범위 밖, 소수, 문자열, HUD가 보냄, HELLO 전)은 P6 로그에 남기고 버리며 `ctx`에 `REJECT`로 남는다. 회신은 없다.
+  `4.0`은 정수 4로 받는다(JSON Schema의 integer와 같은 기준).
+- **Pi에서 확인하는 법:** `bridge/tools/ble_check.py full --sym 4` (또는 `ai --sym 4`) → P6 창에 `P7 SYM <ID> misc=4`, 주행이 닫힌 뒤
+  `sqlite3 <ride>.sqlite "SELECT t, phone, misc FROM label"`. `--sym 11`은 `ctx`의 REJECT 한 줄.
 - **앱:**
   - 주행 중(INT를 한 번이라도 받은 뒤) 2분마다 알림.
   - 0~10 버튼 한 줄에 MISC 기준 문구: 0 증상 없음 · 1 약간 불편 · 2~5 어지러움·더움·두통(약~강) · 6~9 메스꺼움(약~강) · 10 구토.
@@ -529,7 +564,8 @@ p_i,k = σ( a_i · logit(p_k) + b_i )      k = 2..6, 사람 i마다 a_i > 0, b_i
 | `sample_ring.hpp` | 단위: 넘침, 덮어쓰기 감지, epoch 변경 | – |
 | P7 | 재생 P1 + qnxsim P3/P4/P6 대역 → 주행 파일 검사 | 30분 LIVE |
 | MPU 변환 | 단위: raw → m/s²·rad/s, R 적용, hold 규칙 | 정지 시 z ≈ 9.81 |
-| SYM | `test_comm` 규칙 (역할, 범위, HELLO 전) | 앱 → label 표 |
+| SYM | `test_comm` 규칙 (역할, 범위, 정수, HELLO 전), `log_rf_sim`에서 label 표까지 | 앱 → label 표 (`ble_check.py --sym`) |
+| 폰과 오간 사건 | `test_comm`·`test_devmgr`(사건 내용), `test_ride_log`(주행 전 사건), `log_rf_sim`: 가짜 폰이 HELLO·SCR·OVR on/off·SYM·거부·무응답 DROP·재연결 → 닫힌 주행 파일의 `ctx`·`label` 검사, P7을 멈추고 죽여도 폰이 받는 줄이 같음 | 실제 폰으로 한 주행 뒤 `ctx` 표 |
 | 서버 | pytest: 업로드 201/200/409/422, 목록, cycles | – |
 | 내보내기 | 작은 가짜 주행 파일 → npz 키와 라벨 규칙 | – |
 | 개인 보정 | 가짜 주행 파일 → fit_calib → calib.json → P3 적용. a=1·b=0이면 기존과 비트 동일, 단조성, 안전 한계 | – |
@@ -544,7 +580,7 @@ p_i,k = σ( a_i · logit(p_k) + b_i )      k = 2..6, 사람 i마다 a_i > 0, b_i
 | 1 | IMU만 있을 때 성능 (G2~G7 NaN으로 재생, 오프라인) | 현재 모델과 AUC · Tier 지표 비교표. 많이 나쁘면 IMU 전용 모델을 따로 학습할지 결정 |
 | 2 | P1 `--live` (4장) + `imu_mount.json` + `sample_ring.hpp` | 보드 30분: 샘플률 100 ± 1 Hz, FIFO 넘침 0, hold 0, 정지 시 \|a\| = 9.81 ± 0.2 |
 | 3 | P7 + LOG_* + SQLite + 보관 규칙 | 30분 주행: samples 수 = P1 보낸 수, infer 180주기, 격리 시험 3종 통과 (§6-1) |
-| 4 | M08 SYM (프로토콜 · P6 · 앱 · 문서) | 앱 입력이 1초 안에 label 표에 들어감, 범위 밖 값은 버려짐 |
+| 4 | M08 SYM (프로토콜 · P6 · 앱 · 문서) + 폰과 오간 사건 전부를 `ctx`에 | 앱 입력이 1초 안에 label 표에 들어감, 범위 밖 값은 버려짐. **프로토콜·P6·P5·P7·문서는 구현됨 (맥 시험 통과, Pi는 아직)**, 앱은 진행 중 |
 | 5 | 서버 + `collect_logs.py` | pytest 통과, 같은 파일 두 번 올려도 한 번, `.uploaded` 생김 |
 | 6 | `build_real.py --source mermaid` + `train.py` NaN 라벨 | 실주행으로 vNNN 생성, `train.py`가 읽음, `recompute`와 `board` 피처 차이 < 1e-6 |
 | 7 | 개인 보정 B (§12): `fit_calib.py`, `state/calib`, P4 → P3 `cal_a/cal_b`, P3 적용, `policy.py` 맞춤 | 가짜 로그로 추정 → 배포 → P3 적용 경로 통과, a=1·b=0이면 확률 비트 동일, 안전 한계 시험 통과. 실데이터 효과 검증은 로그가 쌓인 뒤 |
@@ -555,7 +591,7 @@ p_i,k = σ( a_i · logit(p_k) + b_i )      k = 2..6, 사람 i마다 a_i > 0, b_i
 
 | 항목 | 제안 | 정할 사람 |
 |---|---|---|
-| M08 SYM 추가 (S0에서 음성 MISC를 뺀 이유와 충돌하지 않는지) | 터치 입력, 수집 전용, 정책에는 안 씀 | 팀 |
+| ~~M08 SYM 추가~~ | **합의됨 (2026-11):** `{"t":"SYM","misc":0~10 정수}`, 터치 입력, 수집 전용, 정책에는 안 씀 | 팀 |
 | MISC 알림 간격 | 2분 | 팀 |
 | 가속도 범위 | ±4 g | 하드웨어 담당 |
 | 보드 장착 방향 | 보드 x = 차 앞 (R = 단위 행렬) | 하드웨어 담당 |

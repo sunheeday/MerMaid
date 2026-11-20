@@ -74,8 +74,9 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | `id\|{SCR}` | on·att 둘 다 필수. HUD는 att = 0, 화면 OFF면 att = 0 → CTX_SCREEN |
 | `id\|{OVR}` | 대상이 `airflow-01`/`display-01`이면 누구나, 폰 ID면 **그 폰 자신만** → CTX_OVR |
 | `id\|{PROF}` | 앱만, mssq 0~54, sens 0.5~2.0 → CTX_PROF |
+| `id\|{SYM}` | M08 멀미 점수. 앱만, `misc` 0~10 **정수** → LOG_SYM(P7, 주행 로그 `label` 표). P4·P5에는 보내지 않는다 (기록 전용) |
 | `id\|{HB}` | P6에서 끝 |
-| HELLO 전의 SCR·OVR·PROF, 모르는 `t`, 깨진 JSON | 로그 후 버림 |
+| HELLO 전의 SCR·OVR·PROF·SYM, 모르는 `t`, 깨진 JSON, 규칙에 안 맞는 값 | 로그 후 버림. 주행 로그에 REJECT 사건(이유 + 원문 앞부분)으로 남김 |
 | 시작할 때 한 번 | `0\|DROP` ~ `8\|DROP` (브리지는 빈 번호의 DROP을 무시) + P5에 DEV_BYE ALL. P6만 다시 시작했을 때 기기가 다시 붙어 HELLO 하게 하는 유일한 방법 |
 | 1초마다 | `ALL\|{"t":"HB","seq":N}`. P5에 아직 못 알린 등록이 있으면 DEV_HELLO를 다시 보냄 (P5가 늦게 떴을 때, OUT_RESYNC 뒤) |
 | SCR·PROF 재전송 | 연결마다 마지막 SCR·PROF를 기억한다 (기기는 SCR를 바뀔 때만, PROF를 연결 직후 한 번만 보내므로). P4에 보내기가 실패하면 성공할 때까지 1초마다, 아니면 10초마다 CTX_SCREEN·CTX_PROF를 다시 보냄 (P4가 늦게 떴거나 조용히 재시작했을 때). OVR는 동작이라 다시 보내지 않는다. P4는 같은 값이면 바뀌는 것이 없다 (`on_profile`은 MSSQ가 같으면 현재 민감도 유지, 저장도 안 함) |
@@ -103,6 +104,21 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | 잘못된 TIER_CMD (기기와 tier가 안 맞음, `hud-01`) | 로그 후 버림 |
 
 프로필은 P4가 `state/profiles/<ID>.json`에 저장한다. P5는 OUT_PROF를 위해 읽기만 한다.
+
+### 4-1. 주행 로그로 보내는 것 (P6·P5 → P7)
+
+폰·HUD와 오간 사건은 모두 P7(`mermaid_p7`)에 `LOG_CTX`(0x8062)로, 멀미 점수는 `LOG_SYM`(0x8063)으로 보낸다. 종류와 내용은
+[`DATA_LOGGING.md`](DATA_LOGGING.md) §6-2 표. HB와 MOT는 보내지 않는다.
+
+| 누가 | 무엇 |
+|---|---|
+| P6 | 기기가 보낸 HELLO·BYE·SCR·OVR·PROF, 링크 사건 CONNECT·DISCONNECT·DROP(+이유), Pi가 내보낸 INT·PROF 회신, 버린 메시지 REJECT(+이유·원문), SYM |
+| P5 | 안전 OFF 진입(SAFE_OFF)·해제(SAFE_CLEAR), 잡아 둔 ON 적용(HELD_ON) |
+
+- **로그는 제어를 막지 않는다.** P7에는 2 ms 제한으로 보내고, 실패하면 세기만 한다. P7은 아무에게도 MsgSend 하지 않아 교착 고리가 없다.
+- P6의 받기 스레드는 여전히 MsgSend 하지 않는다(§2-2). 받기 스레드에서 생긴 사건(INT, PROF 회신, P5가 시킨 DROP)은 그 자리에서
+  시각을 찍어 큐(256개)에 넣고, UART 스레드가 100 ms 안에 P7에 보낸다. 한 바퀴에 실패는 한 번만 기다린다(2 ms).
+- P5는 P6에 보낼 것을 다 보내고 잠금을 푼 뒤에 P7에 보낸다.
 
 ## 5. 확정 필요
 
