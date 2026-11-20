@@ -296,7 +296,8 @@ struct LogSym {
 
   - 번호는 바꾸지 않고 뒤에만 붙인다. 표 구조는 그대로라 `schema_version`은 1을 유지한다(읽는 쪽은 모르는 kind를 건너뛰면 된다).
   - **시각:** 모든 줄에 사건이 **생긴 순간**의 `mono_ns`가 있다(보낸 순간이 아니다. P6의 받기 스레드에서 생긴 INT도 그 자리에서 찍는다).
-    P7이 주행 시각 `t`로 바꿔 함께 적는다. 벽시계가 필요하면 `meta.wall_start + (mono_ns − mono_start_ns)`.
+    P7이 주행 시각 `t`로 바꿔 함께 적는다. **주행 안/밖은 이 `mono_ns`로만 정한다**: `mono_start_ns`보다 앞이면 `t` NULL(주행 전),
+    아니면 `t`가 있다. P7에 늦게 닿았는지(보내는 쪽 큐에서 최대 100 ms), 그때 첫 샘플이 와 있었는지와는 상관없다. 벽시계가 필요하면 `meta.wall_start + (mono_ns − mono_start_ns)`.
   - P6의 받기 스레드는 MsgSend를 하지 않는다(`RF_MESSAGES.md` §2-2). 그래서 사건은 큐에 넣고 UART 스레드가 P7에 보낸다(100 ms 안).
   - REJECT는 1초에 10개까지만 남긴다(쓰레기 줄이 쏟아질 때 로그 길이 막히지 않게). 원문의 제어 문자와 ASCII 밖 바이트는 `?`로 바꾼다.
   - 10초마다 다시 보내는 SCR·PROF(`CtxResend`)는 사건이 아니라서 보내지 않는다. 스트림 ON/OFF(OUT_STREAM)도 남기지 않는다(INT tier 3·2와 같은 정보).

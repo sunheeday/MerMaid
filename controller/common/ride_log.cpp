@@ -313,8 +313,11 @@ void Logger::commit() {
     }
 }
 
+// 주행 안/밖은 **사건이 생긴 시각**으로만 정한다 (P7에 닿은 때나 그때 샘플이 있었는지와 무관):
+// mono_ns가 주행 시작(mono_start_ns)보다 앞이면 주행 전 사건 → ok = false (t NULL).
+// 보내는 쪽은 사건을 큐에 두었다가 최대 100 ms 뒤에 보내므로, 주행 전 사건이 주행이 열린 뒤에 닿을 수 있다
 double Logger::t_of(uint64_t mono_ns, bool& ok) const {
-    ok = !anchors_.empty();
+    ok = !anchors_.empty() && mono_ns >= ride_mono0_;
     if (!ok) return 0;
     auto it = std::upper_bound(anchors_.begin(), anchors_.end(), std::make_pair(mono_ns, UINT64_MAX));
     if (it != anchors_.begin()) --it;
@@ -378,6 +381,8 @@ void Logger::open_ride(const ring::Item& it, uint32_t col_mask, uint64_t now) {
     const bool joined = it.kind != ring::RIDE_START;  // P7이 주행 중간에 시작: 링에 남은 샘플부터
     ride_mono0_ = it.mono_ns;
     anchors_.clear();
+    // 첫 기준점은 주행 시작 자체: 첫 샘플(약 10 ms 뒤)이 오기 전에 닿은 사건도 주행 시각을 받는다
+    anchors_.emplace_back(it.mono_ns, joined ? it.seq : 0);
     chunk_n_ = 0;
     next_seq_ = 0;
     ring_lost_ride_ = hold_ride_ = 0;

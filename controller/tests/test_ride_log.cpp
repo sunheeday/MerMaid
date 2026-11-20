@@ -184,6 +184,11 @@ static void test_normal_ride() {
 
     lg.on_item(start_item(now), 0x7F, now);
     CHECK(lg.ride_open(), "ride open after RIDE_START");
+    // 주행 안/밖은 사건 시각으로: 주행 전에 생긴 사건이 늦게 닿아도 t NULL, 첫 샘플 전에 닿은 주행 중 사건은 t가 있다
+    msg::LogCtx late_pre = ctx_msg("phone-a", msg::CtxKind::CONNECT, "{\"conn\":1}", now - 50 * 1000000ULL);
+    lg.on_msg(&late_pre, sizeof late_pre, now);
+    msg::LogCtx early = ctx_msg("p5", msg::CtxKind::SAFE_CLEAR, "{\"held\":0}", now + 2 * 1000000ULL);
+    lg.on_msg(&early, sizeof early, now);
     const uint64_t m0 = now + 10 * 1000000ULL;
     for (uint64_t i = 0; i < 250; i++) lg.on_item(sample(i, m0 + i * 10000000ULL, (i == 120 || i == 121) ? 1u : 0u), 0x7F, now);
     lg.tick(now + 1 * S);
@@ -282,9 +287,12 @@ static void test_normal_ride() {
     CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='HELLO' AND t IS NULL AND sender='phone-a'") == "1",
           "event before the ride is in the file with t NULL");
     CHECK(q1(f, "SELECT group_concat(kind) FROM (SELECT kind FROM ctx WHERE t IS NOT NULL ORDER BY mono_ns)") ==
-              "OVR,INT,REJECT,SAFE_OFF",
+              "SAFE_CLEAR,OVR,INT,REJECT,SAFE_OFF",
           "new kinds by name: %s", q1(f, "SELECT group_concat(kind) FROM (SELECT kind FROM ctx ORDER BY mono_ns)").c_str());
     CHECK(q1(f, "SELECT sender FROM ctx WHERE kind='SAFE_OFF'") == "p5", "P5 event sender");
+    CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='CONNECT' AND t IS NULL") == "1", "pre-ride event that arrived late has t NULL");
+    CHECK(q1(f, "SELECT printf('%.3f', t) FROM ctx WHERE kind='SAFE_CLEAR'") == "0.002", "event before the first sample has a ride time: %s",
+          q1(f, "SELECT t FROM ctx WHERE kind='SAFE_CLEAR'").c_str());
     CHECK(q1(f, "SELECT printf('%.2f', t) FROM ctx WHERE kind='OVR'") == "1.50", "ctx t from mono_ns: %s",
           q1(f, "SELECT t FROM ctx WHERE kind='OVR'").c_str());
     CHECK(q1(f, "SELECT printf('%.2f', t) || ' ' || misc FROM label") == "2.00 4", "label");
