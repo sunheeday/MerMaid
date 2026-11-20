@@ -113,27 +113,78 @@ We use two data sources:
 
 The system is implemented on a **Raspberry Pi running QNX**, acting as a prototype vehicle-side controller. It is split into modular components so that sensors, models, and comfort functions can later be replaced or extended without redesigning the whole system:
 
-```
- IMU / prerecorded signal
-          │
-          ▼
- ┌──────────────────┐   ┌───────────────────┐   ┌──────────────────────┐
- │ Data acquisition │──▶│ Feature extraction│──▶│ Model inference      │
- └──────────────────┘   │ 77 features incl. │   │ Ordinal LightGBM     │
-                        │ Oman, MSDV, time  │   └──────────┬───────────┘
-                        └───────────────────┘              ▼
-  Mobile app ◀──── RF (Wi-Fi/BT) ────┐        ┌──────────────────────┐
-  (cues, override,                   ├────────│ Intervention decision│
-   screen state)                     │        │ Policy layer         │
-                                     │        └──────────┬───────────┘
-                                     │                   ▼
-                                     │        ┌──────────────────────┐
-                                     └────────│ Device control       │
-                                              │ Fan · HUD · Display  │
-                                              └──────────────────────┘
+```mermaid
+flowchart LR
+  classDef done fill:#d1fae5,stroke:#059669,color:#064e3b
+  classDef part fill:#fef3c7,stroke:#d97706,color:#78350f
+  classDef plan fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:5 3,color:#374151
+
+  subgraph PI["In the car · Raspberry Pi 4 · QNX 8.0 · C++17"]
+    direction LR
+    IMU["MPU-6050 IMU<br/>(not wired yet)"]:::plan
+    P1["P1 Acquisition<br/>10 ms · prio 40<br/>replay + LIVE (fake IMU)"]:::part
+    P2["P2 Features<br/>71 per 10 s · prio 30"]:::done
+    P3["P3 Inference<br/>LightGBM ×5 · prio 20"]:::done
+    P4["P4 Policy<br/>Tiers 1–3 · prio 15"]:::done
+    P5["P5 Device manager<br/>prio 14"]:::done
+    P6["P6 Communication<br/>UART ↔ QNX · prio 12"]:::done
+    P7["P7 Logger<br/>prio 11 / 9"]:::plan
+    CSV[("cycles.csv<br/>state/*.json")]:::done
+    SD[("SD card<br/>rides/*.sqlite")]:::plan
+
+    IMU -->|"I2C 100 Hz"| P1
+    P1 -->|"Sample"| P2
+    P2 -->|"VEH"| P3
+    P3 -->|"RISK"| P4
+    P4 -->|"TIER_CMD · DEV_SYNC"| P5
+    P5 -->|"OUT_*"| P6
+    P6 -->|"CTX_SCR/OVR/PROF"| P4
+    P2 -->|"MOTION 100 ms"| P6
+    P4 --> CSV
+    P1 -.->|"shared-memory ring"| P7
+    P3 -.->|"LOG_INFER"| P7
+    P4 -.->|"LOG_DECISION"| P7
+    P6 -.->|"LOG_CTX · LOG_SYM"| P7
+    P7 -.-> SD
+  end
+
+  subgraph DEV["Devices"]
+    ESP["ESP32-S3 bridge v8"]:::done
+    APP["Passenger app (Android)<br/>SYM input planned"]:::part
+    HUD["HUD · vehicle display<br/>(web)"]:::done
+  end
+
+  P6 <-->|"UART3"| ESP
+  ESP <-->|"BLE"| APP
+  ESP <-->|"BLE"| HUD
+
+  subgraph OFF["Off the car · Mac · Python 3.12"]
+    COL["collect_logs.py<br/>ssh"]:::plan
+    SRV["Log server<br/>FastAPI + SQLite"]:::plan
+    EXP["build_real<br/>--source mermaid"]:::plan
+    SIM["Simulator"]:::done
+    REAL["Real-drive converters<br/>comma2k19 · BATON · TU Delft"]:::done
+    CAL["calibrate.py<br/>KS score"]:::done
+    TRAIN["featurize → train.py"]:::done
+    RUNS[("runs/vNNN<br/>deployed v007")]:::done
+    LLM["Claude loop"]:::plan
+  end
+
+  SD -.-> COL
+  COL -.-> SRV
+  SRV -.-> EXP
+  EXP -.-> TRAIN
+  SIM --> TRAIN
+  SIM --> CAL
+  REAL --> CAL
+  CAL -->|"parameter fit"| SIM
+  TRAIN --> RUNS
+  RUNS -->|"runs.py use → models · thresholds"| P3
+  SRV -.->|"summary stats"| LLM
+  LLM -.->|"sim parameter proposals"| SIM
 ```
 
-<!-- TODO: replace with a proper diagram image in docs/figures/ -->
+Green: working · amber: partly built · gray dashed: planned (see [docs/DATA_LOGGING.md](docs/DATA_LOGGING.md) for the logging and log-server design).
 
 ### B. Feature Extraction
 
