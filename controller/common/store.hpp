@@ -1,6 +1,6 @@
 // P4 영구 상태 파일: 기기별 허용도 카운터와 승객 프로필 (PRD §11 Q7: 바뀔 때마다 기록, 전원이 꺼져도 깨지지 않게).
 //   <dir>/tolerance/<device>.json   {"n": 2}
-//   <dir>/profiles/<phone>.json     {"mssq": 12.0, "sens_mssq": 1.0, "sens": 1.15}
+//   <dir>/profiles/<phone>.json     {"mssq": 12.0, "sens": 1.0}  (앱 설문 그대로. 옛 형식 {mssq, sens_mssq, sens}도 읽음)
 // 쓰기는 임시 파일 → fsync → rename → 디렉터리 fsync. 중간에 꺼지면 이전 파일이 그대로 남는다.
 // POSIX만 사용 (Mac 테스트와 QNX P4가 같이 쓴다).
 #pragma once

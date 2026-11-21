@@ -76,8 +76,8 @@ P1은 **재생 모드만** 있습니다 (`data/trips/*.bin`을 100 Hz로 흘림)
 | C12 | 빠른 끄기 3번 | "3번 끄면 비활성화" (AC-09) | 한 주행에서 같은 기기를 **켜진 뒤 30초 안에** 끈 횟수가 3이면 그 주행 동안 꺼 둠 | 그냥 끈 횟수인지 빠른 끄기 횟수인지 PRD가 모호. **[TODO] 팀 확인** | `controller/common/policy.cpp`, `POLICY.md` |
 | C13 | 정책 시각 | 명시 없음 | 벽시계가 아닌 **주행 시각**(샘플 번호 / 100) | 재생 속도를 바꿔도 결과가 같게 | `controller/qnx/p4_policy.cpp` |
 | C14 | 주행 시작·끝 전달 | 명시 없음 | P1 → P2 → P3 → P4로 RIDE_START / RIDE_END 메시지를 차례로 넘김 | P2 창 초기화와 P4 주행별 상태 초기화를 같은 시점에 | `controller/qnx/messages.hpp` |
-| C15 | 프로필 전달 | P3가 프로필을 앎 (§P3) | P3가 매 주기 P4에 PROFILES를 요청 (P4가 프로필과 허용도의 주인) | 민감도와 허용도가 P4에서 바뀌므로 | `controller/qnx/p3_infer.cpp` |
-| C16 | 프로필 파일 | `profiles/<ID>.json`에 설문 MSSQ, 설문 민감도, 현재 민감도, EV 경험, 차량 유형 (Q7) | mssq, sens_mssq, sens만 저장. **EV 경험, 차량 유형 없음** | P6(폰 연결) 전이라 받을 곳이 없음. **[TODO]** | `controller/common/store.cpp` |
+| C15 | 프로필 전달 | P3가 프로필을 앎 (§P3) | P3가 매 주기 P4에 PROFILES를 요청 (P4가 프로필과 허용도의 주인) | 프로필(PROF)과 허용도를 P4가 받고 저장하므로 | `controller/qnx/p3_infer.cpp` |
+| C16 | 프로필 파일 | `profiles/<ID>.json`에 설문 MSSQ, 설문 민감도, 현재 민감도, EV 경험, 차량 유형 (Q7) | 앱 설문 그대로 mssq, sens만 저장 (2026-11-21부터 현재 민감도 없음, 옛 파일의 sens_mssq는 설문값으로 읽음). **EV 경험, 차량 유형 없음** | 앱이 아직 보내지 않음. **[TODO]** | `controller/common/store.cpp` |
 | C17 | 폰이 없을 때 | 기본 프로필 MSSQ 12.90, 민감도 1.0 (§P3, Q5). EV 경험은 정하지 않음 | PRD대로 MSSQ 12.90, 민감도 1.0 (`constants.json` default_profile). **EV 경험은 NaN**(모름), 차량 유형은 그대로 | EV 경험을 0으로 두면 "EV를 안 타 봤다"고 단정하는 셈이라 모름으로 둠. 자체 결정 (2026-11-11 수정, 그 전에는 G10 전체가 NaN이었음) | `controller/qnx/p3_infer.cpp` |
 | C18 | G1 svc_conflict, G8 허용도 | 피처로 사용 | v1에서 `enabled=false` (항상 NaN) | SVC 식이 정의되지 않음. 허용도는 실제 사용 기록이 있어야 의미가 있어 합성 데이터로 학습 불가 | `protocol/feature_order.json` |
 | C19 | 설정 JSON 숫자 읽기 | – | `json_min.hpp`가 직접 파싱 | QNX `strtod`가 일부 소수를 1~2 ULP 다르게 읽어 Mac과 Pi 결과가 달라짐 | `controller/common/json_min.hpp` |
@@ -204,6 +204,10 @@ sens = clip( e^(0.3·z), 0.5, 2.0 )                       # z = 1이면 1.35배
 TU Delft에서 한 사람씩 빼고 예측(LOPO)한 MISC MAE: K0만 1.32, K0 × sens 1.26. 17명이라 개선 폭은 참고 수준입니다. MSA/MSB 채점 코드는 아직 없습니다 (앱 S9에서 구현 예정, [미구현]). 저장소에는 MSSQ → sens 변환만 있습니다 (`ml/oman.py`의 `sensitivity`, C++ 쪽은 `constants.json`의 같은 상수 사용).
 
 **[TODO]** 0.3의 출처를 paper_v2에서 확인, 실차 참가자로 재적합 (T-09).
+
+**모델 입력은 설문값뿐 ([PRD와 다름], 2026-11-21).** PRD는 P4가 수동 조작으로 sensitivity(74)를 키운다(§P4 개인화). 그런데 학습 데이터에서 sensitivity는 늘 MSSQ로 정해지는 값이라, 컨트롤러가 바꾼 값(× 1.15 등)은 모델이 학습 때 본 적 없는 조합이었습니다. 그래서 P4가 민감도를 바꾸지 않게 했습니다. 이제 추론 때 sensitivity는 늘 앱이 설문으로 계산한 값이라 학습 때와 같은 규칙이고, 모델은 그대로(v007) 씁니다. 타면서 사람마다 맞추는 일은 모델 뒤의 개인 보정(`docs/DATA_LOGGING.md` §12)이 맡습니다.
+
+함께 시험한 것 (채택 안 함): sensitivity를 모델 입력에서 끄고 +1 제약을 mssq로 옮긴 feature_order v4 (`ml/out/runs/v010` 데이터셋, `v011` 모델, `v012`·`v013` 실차). 시뮬레이터 PR-AUC k4 0.496 → 0.524, k5 0.210 → 0.252로 올랐고 TU Delft는 같았지만, BATON PR-AUC k5 0.37 → 0.30, k6 0.36 → 0.17, comma2k19 k4 0.38 → 0.31로 실차에서 나빠지고 기본 프로필 AC-04 여유도 줄어(P(≥4) 0.483 → 0.472, 기준 0.468) T-24와 같은 이유로 채택하지 않았습니다.
 
 ### 3.6 시뮬레이터 (S3) [구현]
 
@@ -334,13 +338,11 @@ tol_d      = 0.4 · tanh(n_d / 6),  n_d ≥ −4
 | n_d | 켜진 뒤 30초 안에 승객이 끄면 +1, 꺼진 것을 직접 켜면 −1, 최소 −4 | n = −4면 tol −0.23, n = 6이면 +0.30, 최대 +0.4 |
 | 쿨다운 | 승객이 끈 기기는 300초 동안 다시 켜지지 않음 | |
 | 비활성화 | 한 주행에서 빠른 끄기 3번이면 그 주행 동안 꺼 둠 | C12 [TODO] |
-| 민감도 갱신 | 승객이 꺼진 큐나 앰비언트를 켜면 sens × 1.15 (최대 2.0). 송풍 켜기, HUD 버튼, 끄기는 안 바꿈 | |
-| 주행 끝 | sens ← sens + 0.1 × (sens_mssq − sens) | 설문값 쪽으로 10% 복귀 |
 | 안전 타임아웃 | 30 s (`safety_timeout_s`) | P5가 DEV_SYNC 없이 30초면 모두 OFF (`p5_devmgr`) |
 
-민감도는 모델 입력 G10(sensitivity)으로만 들어가고 Oman 피처의 K는 바꾸지 않습니다.
+P4는 민감도를 바꾸지 않습니다 (3.5). 예전에 있던 "직접 켜면 sens × 1.15, 주행 끝에 설문값 쪽으로 10% 복귀"는 없앴고, 사람별 반영은 개인 보정(`docs/DATA_LOGGING.md` §12)으로 옮깁니다. Oman 피처의 K도 바꾸지 않습니다.
 
-**저장** (`controller/common/store.cpp`): 바뀔 때마다 `tolerance/<기기>.json` {"n"}, `profiles/<ID>.json` {mssq, sens_mssq, sens}을 임시 파일 → fsync → rename → 디렉터리 fsync 순서로 씀. 읽기 실패 시 기본값.
+**저장** (`controller/common/store.cpp`): 바뀔 때마다 `tolerance/<기기>.json` {"n"}, `profiles/<ID>.json` {mssq, sens}(앱 설문 그대로)을 임시 파일 → fsync → rename → 디렉터리 fsync 순서로 씀. 읽기 실패 시 기본값.
 
 ### 3.11 QNX 프로세스 (S6) [구현]
 

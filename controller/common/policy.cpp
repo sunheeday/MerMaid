@@ -43,9 +43,6 @@ PolicyConfig parse_policy_config(const std::string& policy_json, const std::stri
     c.tol_scale = pol.at("tolerance").at("scale").number();
     c.tol_divisor = pol.at("tolerance").at("divisor").number();
     c.n_min = pol.at("tolerance").at("n_min").integer();
-    c.sens_on_step = pol.at("sensitivity").at("on_step").number();
-    c.sens_max = pol.at("sensitivity").at("max").number();
-    c.ride_end_return = pol.at("sensitivity").at("ride_end_return").number();
     return c;
 }
 
@@ -77,7 +74,6 @@ void Policy::set_hud_connected(bool connected) {
 
 void Policy::add_phone(const std::string& phone) {
     if (!is_phone(phone)) phones_.push_back(phone);
-    riders_.insert(phone);
 }
 
 void Policy::remove_phone(const std::string& phone) {
@@ -85,33 +81,14 @@ void Policy::remove_phone(const std::string& phone) {
     state_[phone].on = false;
 }
 
-void Policy::on_ride_start() {
-    state_.clear();
-    riders_.clear();
-    riders_.insert(phones_.begin(), phones_.end());
-}
-
-void Policy::on_ride_end() {
-    for (const auto& id : riders_) {
-        auto it = prof_.find(id);
-        if (it == prof_.end()) continue;
-        Profile& p = it->second;
-        p.sens += cfg_.ride_end_return * (p.sens_mssq - p.sens);
-        dirty_prof_.insert(id);
-    }
-}
+void Policy::on_ride_start() { state_.clear(); }
 
 void Policy::on_screen(const std::string& sender, bool screen, bool att) { ctx_[sender] = {screen, att}; }
 
-void Policy::on_profile(const std::string& phone, double mssq, double sens0) {
+void Policy::on_profile(const std::string& phone, double mssq, double sens) {
     auto it = prof_.find(phone);
-    if (it == prof_.end()) {
-        prof_[phone] = {mssq, sens0, sens0};  // 처음 본 사람
-    } else if (mssq != it->second.mssq) {
-        it->second = {mssq, sens0, sens0};    // 설문을 다시 한 경우만. 같은 설문값이면 현재 민감도 유지
-    } else {
-        return;
-    }
+    if (it != prof_.end() && it->second.mssq == mssq && it->second.sens == sens) return;  // P6의 10초 재전송
+    prof_[phone] = {mssq, sens};
     dirty_prof_.insert(phone);
 }
 
@@ -207,7 +184,8 @@ std::vector<Command> Policy::on_risk(double now, const std::map<std::string, Ris
     return out;
 }
 
-std::vector<Command> Policy::on_override(double now, const std::string& sender, const std::string& device, bool on) {
+// 누가 눌렀는지(sender)는 기록용이다. 사람별 반영은 개인 보정(§12)이 로그로 한다.
+std::vector<Command> Policy::on_override(double now, const std::string& /*sender*/, const std::string& device, bool on) {
     std::vector<Command> out;
     if (tier_of(device) == 0) return out;  // 등록되지 않은 기기
     DevState& s = state_[device];
@@ -222,15 +200,6 @@ std::vector<Command> Policy::on_override(double now, const std::string& sender, 
     } else if (on && !s.on) {
         n_[device] = std::max(tolerance_count(device) - 1, cfg_.n_min);
         dirty_tol_.insert(device);
-        // 자기 폰에서 화면 큐(자기 폰)나 앰비언트(display)를 켤 때만 민감도를 올린다.
-        // 송풍 켜기(더워서일 수 있음)와 HUD 버튼(누가 눌렀는지 모름)은 바꾸지 않는다.
-        if (is_phone(sender) && (device == proto::kDeviceDisplay || device == sender)) {
-            auto it = prof_.find(sender);
-            if (it != prof_.end()) {
-                it->second.sens = std::min(it->second.sens * cfg_.sens_on_step, cfg_.sens_max);
-                dirty_prof_.insert(sender);
-            }
-        }
         set(device, true, now, out);
     }
     return out;

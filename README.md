@@ -214,7 +214,7 @@ Passengers can **manually override** any automatic intervention. The system neve
 
 ### E. Personalized Sensitivity
 
-People differ in both how easily they get sick and how much intervention they will accept. A sensitivity value in the passenger's profile is a model input. If a passenger quickly turns off an intervention, that tier's threshold rises for future activations, without changing the model.
+People differ in both how easily they get sick and how much intervention they will accept. The passenger's motion sickness survey (the MSSQ score and the sensitivity computed from it) is a model input, so a new passenger is personalized from the survey alone. Adjustments learned while riding stay outside the model: if a passenger quickly turns off an intervention, that tier's threshold rises for future activations, and a per-person calibration fitted from ride logs (planned) shifts that passenger's predicted risk.
 
 ### F. Deployment on QNX
 

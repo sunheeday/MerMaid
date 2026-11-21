@@ -1,4 +1,4 @@
-// P4 정책: 10초마다 받은 확률로 기기별 ON/OFF를 정하고, 수동 조작으로 허용도와 민감도를 갱신한다.
+// P4 정책: 10초마다 받은 확률로 기기별 ON/OFF를 정하고, 수동 조작으로 허용도를 갱신한다.
 // 표준 C++17만 사용 (QNX API 없음). PRD §P4 Policy의 의사코드를 그대로 따른다.
 // 설정: controller/config/policy.json + thresholds.json (재학습 없이 바꿀 수 있어야 함, PRD §10.3)
 //
@@ -32,19 +32,17 @@ struct PolicyConfig {
     double tol_scale = 0.4;   // tol = tol_scale * tanh(n / tol_divisor)
     double tol_divisor = 6;
     int n_min = -4;
-    double sens_on_step = 1.15;
-    double sens_max = 2.0;
-    double ride_end_return = 0.10;
 };
 
 // JSON 문자열에서 / 파일에서. 형식 오류, 자리표시 문턱(placeholder: true), feature_order 버전 불일치는 예외.
 PolicyConfig parse_policy_config(const std::string& policy_json, const std::string& thresholds_json);
 PolicyConfig load_policy_config(const std::string& policy_path, const std::string& thresholds_path);
 
+// 앱 설문 결과 (M06 PROF): mssq와 그 설문으로 계산한 sens. 둘 다 모델 입력(G10)이고, 학습 때와 같은 규칙의 값이 되도록
+// 컨트롤러는 바꾸지 않는다. 타면서 사람마다 맞추는 일은 개인 보정(docs/DATA_LOGGING.md §12)이 맡는다.
 struct Profile {
     double mssq = 0;
-    double sens_mssq = 1.0;  // 설문으로 정한 기준 민감도
-    double sens = 1.0;       // 현재 민감도 (모델 입력 G10)
+    double sens = 1.0;
 };
 
 // P5로 보낼 명령 (기기 하나의 ON/OFF)
@@ -72,11 +70,10 @@ public:
 
     // ---- 주행 경계 ----
     void on_ride_start();  // 주행별 카운터 초기화. 허용도와 프로필은 유지
-    void on_ride_end();    // 현재 민감도를 설문값 쪽으로 ride_end_return만큼 복귀
 
     // ---- 메시지 ----
     void on_screen(const std::string& sender, bool screen, bool att);           // M03 SCR
-    void on_profile(const std::string& phone, double mssq, double sens0);       // M06 PROF
+    void on_profile(const std::string& phone, double mssq, double sens);        // M06 PROF
     std::vector<Command> on_risk(double now, const std::map<std::string, Risk>& p);  // P3 RISK, 10초마다
     std::vector<Command> on_override(double now, const std::string& sender,
                                      const std::string& device, bool on);       // M05 OVR
@@ -106,7 +103,6 @@ private:
     PolicyConfig cfg_;
     bool hud_ = false;
     std::vector<std::string> phones_;          // 등록 순서 유지
-    std::set<std::string> riders_;             // 이번 주행에 등록된 적 있는 폰 (주행 끝 복귀 대상)
     std::map<std::string, DevState> state_;    // 주행별
     std::map<std::string, Ctx> ctx_;
     std::map<std::string, int> n_;             // 영구

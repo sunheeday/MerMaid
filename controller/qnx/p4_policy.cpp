@@ -294,7 +294,6 @@ int main(int argc, char** argv) {
                     cycles = gaps = expect = cmds = log_fail = 0;
                     lat_ms.clear();
                 } else {
-                    pol.on_ride_end();
                     saves += static_cast<uint64_t>(st.save_dirty(pol));
                     std::vector<double> s = lat_ms;
                     std::sort(s.begin(), s.end());

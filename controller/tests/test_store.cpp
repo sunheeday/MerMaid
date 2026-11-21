@@ -39,10 +39,13 @@ int main() {
     std::string junk;
     CHECK(!store::read_file(dir + "/tolerance/airflow-01.json.tmp", junk), "no tmp file left behind");
 
-    const Profile want{12.5, 1.1, 1.265};
+    const Profile want{12.5, 1.1};
     st.save_profile("phone-a", want);
-    CHECK(st.load_profile("phone-a", p) && p.mssq == 12.5 && p.sens_mssq == 1.1 && p.sens == 1.265,
-          "profile round trip: %.17g %.17g %.17g", p.mssq, p.sens_mssq, p.sens);
+    CHECK(st.load_profile("phone-a", p) && p.mssq == 12.5 && p.sens == 1.1, "profile round trip: %.17g %.17g", p.mssq,
+          p.sens);
+    const Profile old = store::parse_profile(R"({"mssq": 20.0, "sens_mssq": 1.3, "sens": 1.5})");
+    CHECK(old.mssq == 20.0 && old.sens == 1.3, "old profile file: survey sens_mssq kept, adjusted sens dropped (%.17g)",
+          old.sens);
 
     CHECK(store::safe_name("phone-a_1.x") && !store::safe_name("../x") && !store::safe_name("a/b") &&
               !store::safe_name("") && !store::safe_name(".hidden"),

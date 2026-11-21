@@ -164,7 +164,8 @@ def main():
             idx = np.minimum((t * FS).astype(int) - 1, len(s["Gk"]) - 1)
             v = np.isfinite(fut)
             rows_all.append({"p": p, "c": c, "t": t[v], "P": Pm[v], "fut": fut[v], "now": now[v],
-                             "oman": X[v, NAMES.index("oman_score")], "sens": X[v, 74],
+                             "oman": X[v, NAMES.index("oman_score")],
+                             "sens": np.full(int(v.sum()), float(oman.sensitivity(s["mssq"]))),  # 비교 기준용: 모델 입력이 꺼져 있어도 계산되게
                              "omanKp": om(Kp, s["Gk"][idx], s["S"][idx])[v], "Kp": Kp, "X": X[v],
                              "tr": tr, "yr": yr, "t_all": t, "P_all": Pm})
 

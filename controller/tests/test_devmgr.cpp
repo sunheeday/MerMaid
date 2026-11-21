@@ -87,7 +87,7 @@ static std::string join(const std::vector<std::string>& v) {
 // 프로필 저장소 흉내: phone-a만 저장돼 있다
 static bool fake_profile(const std::string& id, Profile& p) {
     if (id != kA) return false;
-    p = Profile{20.0, 1.3, 1.5};
+    p = Profile{20.0, 1.3};
     return true;
 }
 
