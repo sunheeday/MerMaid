@@ -227,7 +227,7 @@ def runtime():
         (250, "P1 acq · 우선순위 40", ["trip.bin → 100 Hz", "clock_nanosleep 절대 시각", "주행 안 seq 번호", "RIDE_START / RIDE_END", "LIVE 모드 미구현"]),
         (510, "P2 feat · 30", ["Wf · Oman · 이벤트 · 휴식", "창 10 s / 1 m / 5 m / 누적", "1,000샘플마다 71개", "seq 빠짐 셈", "RIDE_START에 초기화"]),
         (770, "P3 infer · 20", ["lib_lightgbm 4.6.0", "모델 5개 (로드 95 ms)", "폰마다 77개 행 (최대 9)", "단조 보정 min(p_k, p_k−1)", "--vehicle-type"]),
-        (1030, "P4 policy · 15", ["Tier 1·2·3 문턱 + tol", "hold · off · 쿨다운 · 비활성", "민감도 ×1.15 · 끝에 10% 복귀", "바뀐 상태만 원자 저장", "시각 = 주행 시각"]),
+        (1030, "P4 policy · 15", ["Tier 1·2·3 문턱 + tol", "hold · off · 쿨다운 · 비활성", "프로필은 설문 그대로 저장", "바뀐 상태만 원자 저장", "시각 = 주행 시각"]),
     ]
     for x, t, ls in P:
         w = 190 if x == 1030 else 180
@@ -250,7 +250,7 @@ def runtime():
     outs = [(770, 445, "cycles.csv", "seq · t · 지연 · 폰 · p2~p6 · 기기 ON"),
             (1005, 445, "stdout", "CMD <t> <기기> <tier> <on>"),
             (770, 495, "state/tolerance/<기기>.json", "{\"n\": 허용도 카운터}"),
-            (1005, 495, "state/profiles/<ID>.json", "{mssq, sens_mssq, sens}")]
+            (1005, 495, "state/profiles/<ID>.json", "{mssq, sens} 앱 설문 그대로")]
     for x, y, a, b in outs:
         s.append(f'<rect x="{x}" y="{y}" width="225" height="42" rx="6" class="outpill"/>')
         s.append(f'<text x="{x + 8}" y="{y + 17}" class="m">{E(a)}</text>')
@@ -560,6 +560,10 @@ VERSION_ROWS = [
     [C("v007"), "models", "3", "v006", "T-24 설정 그대로. 문턱 0.53 / 0.51 / 0.59", '<span class="tag ok">CURRENT</span>'],
     [C("v008"), "real-baton", "3", "–", "BATON-Sample, 피처 v3", "현재"],
     [C("v009"), "real-comma2k19", "3", "–", "comma2k19 Chunk 1, 피처 v3", "현재"],
+    [C("v010"), "dataset", "4", "–", "피처 v4 실험: sensitivity 끔, +1 제약을 mssq로", DROP],
+    [C("v011"), "models", "4", "v010", "시뮬 PR k4 0.524, k5 0.252. 실차 BATON k5·k6, comma k4 나빠져 채택 안 함", DROP],
+    [C("v012"), "real-baton", "4", "–", "v011 비교용 BATON-Sample", DROP],
+    [C("v013"), "real-comma2k19", "4", "–", "v011 비교용 comma2k19 Chunk 1", DROP],
 ]
 
 # ------------------------------------------------------------------ 고도화 이력
@@ -634,7 +638,7 @@ FORMULA_ROWS = [
      C("msdv(t) = √(Σ h² Δt)") + ", " + C("h = √(a_w,x² + a_w,y²)"),
      "m/s^1.5, 주행 시작부터 누적",
      LIT + " " + R("iso2631", "ISO 2631-1") + ", " + R("lawther1987", "Lawther & Griffin 1987") + " · " + PRD + " 수평 h ([추측], ISO는 z축)"],
-    ["MSSQ → 민감도<br>G10, P3 기본 행",
+    ["MSSQ → 민감도<br>G10, P3 기본 행 (설문값 그대로)",
      C("z = (MSSQ − 12.90) / 9.90") + "<br>" + C("sens = clip(e^(0.3 z), 0.5, 2.0)"),
      "규준 12.90 / 9.90 (n = 257), 기본 프로필 12.90 / 1.0",
      LIT + " 채점과 규준: " + R("golding2006", "Golding 2006") + ", " + R("mssq", "MSSQ-Short") + " · " + PRD + " 계수 0.3, 범위 0.5~2 (근거 문헌 없음, T-09)"],
@@ -654,8 +658,8 @@ FORMULA_ROWS = [
      "학습 쪽 15% 사람 재생에서 Tier 1 탐지율 ≥ 0.85, Tier 2 오경보 ≤ 0.5/h, Tier 3 ≤ 0.25/h를 만족하는 가장 큰 문턱",
      "0.53 / 0.51 / 0.59",
      PRD + " 목표값 (AC-05, T-12) · " + OWN + " 재생으로 고르는 방식"],
-    ["허용도 · 민감도 갱신<br>P4",
-     C("tol_d = 0.4 · tanh(n_d / 6)") + ", n_d ≥ −4<br>꺼진 큐를 켜면 sens × 1.15 (최대 2.0), 주행 끝에 설문값 쪽으로 10% 복귀",
+    ["허용도 갱신<br>P4",
+     C("tol_d = 0.4 · tanh(n_d / 6)") + ", n_d ≥ −4<br>민감도는 바꾸지 않음 (사람별 반영은 개인 보정)",
      "hold 1 / 6 / 12주기, off 0.10 · 6주기, 쿨다운 300 s",
      PRD + " PRD §P4 (근거 문헌 없음)"],
     ["실차 검증 데이터",
@@ -695,7 +699,7 @@ RUNTIME_ROWS = [
     ["P4 policy<br>" + OK, C("p4_policy --config DIR --state DIR [--log FILE] [--hud] [--phone ID:MSSQ:SENS0[:EV]]... [--once] [--prio 15]"),
      ul("← P3 PROFILES, RISK", "← P2→P3→P4 RIDE_*", C("policy.json") + ", " + C("thresholds.json") + " (feature_order_version이 빌드와 다르면 시작 안 함)", C("state/") + " (시작 때 읽음)", "CTX_SCREEN · CTX_OVR · CTX_PROF ← P6 (" + C("--rf") + ")"),
      ul("→ P3 ProfilesReply", "stdout " + C("CMD <t> <기기> <tier> <on>"), "→ P5 DEV_SYNC (회신 = 명부), TIER_CMD (" + C("--rf") + ")"),
-     ul(C("cycles.csv") + ": seq, t, latency_ms, infer_ms, phone, p2..p6, 기기마다 0/1", C("state/tolerance/<기기>.json") + " {n}", C("state/profiles/<ID>.json") + " {mssq, sens_mssq, sens}"),
+     ul(C("cycles.csv") + ": seq, t, latency_ms, infer_ms, phone, p2..p6, 기기마다 0/1", C("state/tolerance/<기기>.json") + " {n}", C("state/profiles/<ID>.json") + " {mssq, sens}"),
      "지연 중앙값 0.57 ms · 최대 2.03 ms · RISK 빠짐 0"],
     ["P5 기기 관리<br>" + OK, C("p5_devmgr --state DIR [--safety-s 30]"),
      ul("← P6 DEV_HELLO / DEV_BYE", "← P4 DEV_SYNC, TIER_CMD"),
@@ -716,9 +720,9 @@ FORMAT_ROWS = [
     [C("v008/real_baton.npz"), "NumPy", "dataset.npz와 같은 칸 + tag_das (운전 보조 켜짐 여부, 사람 운전 행만 고를 때)", "build_real → compare, calibrate"],
     [C("v007/models/model_k.txt"), "LightGBM 4.6.0 텍스트 모델", "objective binary, 77 입력, 단조 제약 9개. models.json에 트리 수, sha256", "S4 → P3, AC-01, compare, tudelft_replay"],
     [C("v007/thresholds.json") + " → " + C("controller/config/thresholds.json"), "JSON", "base_th {1: 0.53, 2: 0.51, 3: 0.59}, 고른 규칙, feature_order_version 3, 배포 쪽에는 run: v007", "S4 → runs.py use → P4"],
-    [C("controller/config/policy.json"), "JSON", "tiers (기기, input_k, shared, hold 1/6/12, gate), off_margin 0.10, off_hold 6, cooldown 300 s, quick_off 30 s, max_quick_offs 3, tolerance {0.4, 6, −4}, sensitivity {1.15, 2.0, 0.10}, safety_timeout 30 s", "사람 → P4, 학습 재생"],
+    [C("controller/config/policy.json"), "JSON", "tiers (기기, input_k, shared, hold 1/6/12, gate), off_margin 0.10, off_hold 6, cooldown 300 s, quick_off 30 s, max_quick_offs 3, tolerance {0.4, 6, −4}, safety_timeout 30 s", "사람 → P4, 학습 재생"],
     [C("state/tolerance/<기기>.json"), "JSON, 임시 파일 → fsync → rename → 디렉터리 fsync", "{\"n\": 정수}", "P4 ↔ 디스크"],
-    [C("state/profiles/<ID>.json"), "JSON, 같은 방식", "{mssq, sens_mssq, sens} (%.17g). EV 경험, 차량 유형은 아직 없음 (T-17)", "P4 ↔ 디스크"],
+    [C("state/profiles/<ID>.json"), "JSON, 같은 방식", "{mssq, sens} (%.17g), 앱 설문 그대로. 옛 형식의 sens_mssq는 설문값으로 읽음. EV 경험, 차량 유형은 아직 없음 (T-17)", "P4 ↔ 디스크"],
     [C("cycles.csv"), "CSV, 주기 × 폰마다 한 줄", "seq, t, latency_ms, infer_ms, phone, p2, p3, p4, p5, p6, airflow-01, display-01, phone-0 …", "P4 → AC-02"],
     [C("v007/parity/vectors.bin"), "float64 행렬", "4,202 × 77 시험 벡터 (expected_p.bin, actual_pi.bin은 4,202 × 5 확률)", "AC-01"],
 ]
@@ -735,12 +739,12 @@ PARAM_ROWS = [
     ["K0 51.4, β 66.2 / 502.4 s, 지수 0.4, 0.63 Hz 입력 LP", "S1 oman_tudelft.py + " + R("irmak2022", "Irmak 2022") + " → " + C("constants.json"), "시뮬레이터 라벨, featurize, P2 Oman 피처"],
     ["ISO Wf 계수, 이벤트 1.5 / −0.75 / 2.0과 되돌림 0.25, 휴식 180 s · 0.05", C("constants.json") + " (" + R("iso2631", "ISO 2631-1") + ", " + R("he2013", "He 2013") + ", " + R("nguyen2019", "Nguyen 2019") + ")", "featurize, P2"],
     ["피처 77개 순서, 단위, 단조, 드롭아웃, enabled, version 3", C("feature_order.json"), "build_dataset, 학습, P2, P3, 문턱 파일 검사"],
-    ["MSSQ → sens = clip(e^(0.3z), 0.5, 2), 기본 프로필 12.90 / 1.0", C("constants.json") + " (" + R("golding2006", "Golding 2006") + ")", "시뮬레이터 승객, P3 기본 행, P4 민감도"],
+    ["MSSQ → sens = clip(e^(0.3z), 0.5, 2), 기본 프로필 12.90 / 1.0", C("constants.json") + " (" + R("golding2006", "Golding 2006") + ")", "시뮬레이터 승객, P3 기본 행, 앱 설문"],
     ["η 0.65, 환경 배수, 라벨 잡음 0.5", "S1 + " + C("sim_config.json") + ", " + C("sim_effects.json"), "시뮬레이터 라벨만"],
     ["운전 · 도로 분포 (고속도로, 가감속, 노면, 차로 흔들림)", "T-23 " + C("calibrate.py") + " → " + C("sim_config.json"), "시뮬레이터 운동"],
     ["model_2~6.txt", "S4 → " + C("v007/models/"), "P3, AC-01, 실차 비교, TU Delft 재생"],
     ["base_th 0.53 / 0.51 / 0.59", "S4 재생 → " + C("v007/thresholds.json") + " → " + C("runs.py use"), "P4, AC-02, TU Delft Tier 리드"],
-    ["hold, off, 쿨다운, 허용도 식, 민감도 규칙", C("policy.json") + " (PRD 설계)", "P4, 학습 재생"],
+    ["hold, off, 쿨다운, 허용도 식", C("policy.json") + " (PRD 설계)", "P4, 학습 재생"],
     ["n[d] → tol = 0.4·tanh(n/6)", "P4 (승객 수동 조작, P6의 CTX_OVR)", "P4 문턱. P3 G8 입력은 꺼짐"],
     ["화면 ON · 응시 (SCR)", "앱, HUD " + NO + " · 지금은 " + C("--hud"), "P4 게이트"],
 ]

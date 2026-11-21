@@ -115,7 +115,7 @@ Outs DevMgr::on_hello(const msg::DevHello& m) {
             msg::OutProf op;
             op.conn = m.conn;
             op.mssq = p.mssq;
-            op.sens = p.sens_mssq;  // 앱이 보낸 설문 민감도 (M06). 현재 민감도는 컨트롤러에만
+            op.sens = p.sens;  // 앱이 보낸 설문 민감도 (M06)
             out.emplace_back(op);
         }
     }

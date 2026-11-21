@@ -82,14 +82,16 @@ static std::string num(double x) {
 std::string tolerance_json(int n) { return "{\"n\": " + std::to_string(n) + "}\n"; }
 
 std::string profile_json(const Profile& p) {
-    return "{\"mssq\": " + num(p.mssq) + ", \"sens_mssq\": " + num(p.sens_mssq) + ", \"sens\": " + num(p.sens) + "}\n";
+    return "{\"mssq\": " + num(p.mssq) + ", \"sens\": " + num(p.sens) + "}\n";
 }
 
 int parse_tolerance(const std::string& text) { return json::parse(text).at("n").integer(); }
 
 Profile parse_profile(const std::string& text) {
     const json::Value v = json::parse(text);
-    return {v.at("mssq").number(), v.at("sens_mssq").number(), v.at("sens").number()};
+    // 옛 형식 {mssq, sens_mssq, sens}: sens는 타면서 바꾼 값이라 버리고 설문값 sens_mssq를 쓴다
+    const char* survey = v.has("sens_mssq") ? "sens_mssq" : "sens";
+    return {v.at("mssq").number(), v.at(survey).number()};
 }
 
 bool safe_name(const std::string& id) {

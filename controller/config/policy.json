@@ -11,6 +11,5 @@
   "quick_off_s": 30,
   "max_quick_offs": 3,
   "tolerance": { "scale": 0.4, "divisor": 6, "n_min": -4 },
-  "sensitivity": { "on_step": 1.15, "max": 2.0, "ride_end_return": 0.10 },
   "safety_timeout_s": 30
 }

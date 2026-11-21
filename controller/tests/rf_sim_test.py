@@ -153,7 +153,7 @@ def main():
     state = os.path.join(tmp, "state")
     os.makedirs(os.path.join(state, "profiles"))
     with open(os.path.join(state, "profiles", PHONE_A + ".json"), "w") as f:
-        json.dump({"mssq": 20.0, "sens_mssq": 1.3, "sens": 1.5}, f)  # P4가 저장해 둔 프로필 흉내
+        json.dump({"mssq": 20.0, "sens_mssq": 1.3, "sens": 1.5}, f)  # 옛 형식 프로필: 설문값 sens_mssq를 돌려줘야 한다
 
     br = Bridge()
     procs = {}

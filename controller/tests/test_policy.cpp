@@ -187,39 +187,27 @@ static void test_tolerance_shifts_threshold() {
     CHECK(pol.is_on(AIR), "0.81 >= 0.805 should turn on");
 }
 
-// ---------------------------------------------------------------- 민감도
-static void test_sensitivity() {
+// ---------------------------------------------------------------- 프로필
+// 프로필은 앱 설문 그대로 저장한다. 수동 조작이나 주행 끝에 민감도를 바꾸지 않는다 (feature_order v4,
+// 사람별 반영은 개인 보정 §12). 같은 값의 재전송은 저장하지 않는다.
+static void test_profile() {
     Policy pol = setup();
     pol.add_phone(PB);
     pol.on_profile(PB, 30.0, 1.5);
-    // A 폰에서 앰비언트(display)를 켬 → A만 x1.15
+    CHECK(pol.profile(PB)->mssq == 30.0 && pol.profile(PB)->sens == 1.5, "survey stored as sent");
+    (void)pol.take_dirty_profiles();
     pol.on_override(0, PA, DISP, true);
-    CHECK(std::fabs(pol.profile(PA)->sens - 1.15) < 1e-12, "sens %.4f want 1.15", pol.profile(PA)->sens);
-    CHECK(pol.profile(PB)->sens == 1.5, "other passenger unchanged");
-    // 송풍 켜기, HUD 버튼, 다른 사람 폰 켜기, 끄기는 민감도를 바꾸지 않음
-    pol.on_override(10, PA, AIR, true);
-    pol.on_override(20, HUD, DISP, false);
-    pol.on_override(30, HUD, DISP, true);
-    pol.on_override(40, PA, PB, true);
-    pol.on_override(50, PA, PA, true);  // 자기 폰 큐 → x1.15
-    CHECK(std::fabs(pol.profile(PA)->sens - 1.15 * 1.15) < 1e-12, "sens %.4f want 1.3225", pol.profile(PA)->sens);
-    // 상한 2.0
-    for (int i = 0; i < 10; i++) {
-        pol.on_override(100.0 + 100 * i, PA, PA, false);
-        pol.on_override(150.0 + 100 * i, PA, PA, true);
-    }
-    CHECK(pol.profile(PA)->sens == 2.0, "sens %.4f capped at 2.0", pol.profile(PA)->sens);
-    // 주행 끝: 설문값 쪽으로 10% 복귀
-    pol.on_ride_end();
-    CHECK(std::fabs(pol.profile(PA)->sens - 1.9) < 1e-12, "ride end sens %.4f want 1.9", pol.profile(PA)->sens);
-    CHECK(pol.profile(PB)->sens == 1.5, "already at survey value");
-    // PROF: 같은 설문값이면 현재 민감도 유지, 바뀌면 다시 시작
-    pol.on_profile(PA, 12.9, 1.0);
-    CHECK(std::fabs(pol.profile(PA)->sens - 1.9) < 1e-12, "same MSSQ keeps current sens");
-    pol.on_profile(PA, 20.0, 1.3);
-    CHECK(pol.profile(PA)->sens == 1.3 && pol.profile(PA)->sens_mssq == 1.3, "new MSSQ resets sens");
+    pol.on_override(10, PA, PA, true);
+    pol.on_override(20, PB, PB, true);
+    pol.on_ride_start();
+    CHECK(pol.profile(PA)->sens == 1.0 && pol.profile(PB)->sens == 1.5, "turning on does not change sensitivity");
+    CHECK(pol.take_dirty_profiles().empty(), "nothing to save after overrides");
+    pol.on_profile(PB, 30.0, 1.5);
+    CHECK(pol.take_dirty_profiles().empty(), "same survey resent: no save");
+    pol.on_profile(PB, 20.0, 1.3);
+    CHECK(pol.profile(PB)->mssq == 20.0 && pol.profile(PB)->sens == 1.3, "new survey replaces");
     auto dirty = pol.take_dirty_profiles();
-    CHECK(dirty.size() == 2, "both profiles marked to save (%zu)", dirty.size());
+    CHECK(dirty.size() == 1 && dirty[0] == PB, "new survey saved (%zu)", dirty.size());
 }
 
 // ---------------------------------------------------------------- 설정 파일
@@ -233,7 +221,7 @@ static void test_config() {
       "2":{"device":"display-01","input_k":4,"shared":true,"hold_cycles":6,"gate":"hud_screen_on"},
       "3":{"device":"phone","input_k":4,"shared":false,"hold_cycles":12,"gate":"screen_on_and_att"}},
       "off_margin":0.1,"off_hold_cycles":6,"cooldown_s":300,"quick_off_s":30,"max_quick_offs":3,
-      "tolerance":{"scale":0.4,"divisor":6,"n_min":-4},"sensitivity":{"on_step":1.15,"max":2.0,"ride_end_return":0.1}})";
+      "tolerance":{"scale":0.4,"divisor":6,"n_min":-4}})";
     auto th = [](const char* placeholder, int version) {
         return std::string("{\"placeholder\":") + placeholder + ",\"feature_order_version\":" + std::to_string(version) +
                ",\"base_th\":{\"1\":0.6,\"2\":0.6,\"3\":0.7}}";
@@ -273,7 +261,7 @@ int main() {
     test_gates();
     test_shared_max_and_personal();
     test_tolerance_shifts_threshold();
-    test_sensitivity();
+    test_profile();
     test_config();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
