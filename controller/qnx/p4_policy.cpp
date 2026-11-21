@@ -7,6 +7,8 @@
 //           RF로 온 폰의 EV 경험은 M06 PROF에 없어서 NaN으로 P3에 준다.
 //   --phone / --hud  명령행으로 고정 등록 (화면 켜짐, 주의 있음). BLE 없이 AC-02를 돌릴 때.
 // 허용도와 프로필은 --state 아래에 바뀔 때마다 저장하고(store.hpp), 시작할 때나 기기가 등록될 때 읽어 온다.
+// 개인 보정 state/calib/<phone>.json은 읽기만 한다: 폰이 등록될 때와 RIDE_START마다 다시 읽어 PROFILES 회신에
+// cal_a, cal_b로 P3에 넘긴다 (DATA_LOGGING §12-5). 없거나 잘못된 파일이면 1, 0 (잘못된 파일은 stderr에 한 번).
 // 명령은 stdout에 "CMD <t> <device> <tier> <0|1>", 주기 로그는 --log CSV.
 // 정책 시각은 주행 시각(RISK의 t)을 쓴다. OVR는 마지막 RISK의 t로 처리한다.
 // RISK를 처리한 뒤 P7에 LOG_DECISION (기기별 on, tier, 이번 주기에 바뀌었는지. 2 ms 시간 초과, 실패는 log_fail만).
@@ -92,6 +94,24 @@ int main(int argc, char** argv) {
         Policy pol(load_policy_config(cfg_dir + "/policy.json", cfg_dir + "/thresholds.json"));
         store::Store st(state_dir);
         std::map<std::string, double> ev;
+        std::map<std::string, calib::Calib> cal;
+        auto load_cal = [&](const std::string& id) {
+            calib::Calib c;
+            try {
+                if (!st.load_calib(id, c)) c = {};
+            } catch (const std::exception& e) {
+                std::fprintf(stderr, "p4: ignoring calib for %s: %s\n", id.c_str(), e.what());
+                c = {};
+            }
+            const auto it = cal.find(id);
+            const bool changed = it == cal.end() ? !calib::identity(c) : (it->second.a != c.a || it->second.b != c.b);
+            if (changed) std::printf("CAL %s a=%.4f b=%.4f\n", id.c_str(), c.a, c.b);
+            cal[id] = c;
+        };
+        auto cal_of = [&](const std::string& id) {
+            const auto it = cal.find(id);
+            return it == cal.end() ? calib::Calib{} : it->second;
+        };
         std::vector<std::string> devices;
         if (hud) {
             pol.set_hud_connected(true);
@@ -105,6 +125,7 @@ int main(int argc, char** argv) {
             if (st.load_profile(p.id, saved)) pol.restore_profile(p.id, saved);
             pol.on_profile(p.id, p.mssq, p.sens0);  // 같은 설문값이면 저장된 현재 민감도를 유지
             ev[p.id] = p.ev;
+            load_cal(p.id);
             devices.push_back(p.id);
         }
         for (const auto& d : devices) {
@@ -172,6 +193,7 @@ int main(int argc, char** argv) {
                     Profile saved;
                     if (!pol.profile(id) && st.load_profile(id, saved)) pol.restore_profile(id, saved);
                     restore_device(id);
+                    load_cal(id);
                     std::printf("REG phone %s on\n", id.c_str());
                 }
                 kept.insert(id);
@@ -246,6 +268,8 @@ int main(int argc, char** argv) {
                     e.sens = pf ? pf->sens : p.sens0;
                     e.ev = ev[p.id];
                     e.tol = pol.tol(p.id);
+                    e.cal_a = cal_of(p.id).a;
+                    e.cal_b = cal_of(p.id).b;
                 }
                 for (const auto& id : rf_phones) {  // PROF가 아직 없으면 PRD 기본 프로필
                     if (rep.n >= static_cast<uint32_t>(msg::kMaxPhones)) break;
@@ -256,6 +280,8 @@ int main(int argc, char** argv) {
                     e.sens = pf ? pf->sens : proto::kDefaultSens;
                     e.ev = std::nan("");
                     e.tol = pol.tol(id);
+                    e.cal_a = cal_of(id).a;
+                    e.cal_b = cal_of(id).b;
                 }
                 ipc::Server::reply(rcvid, &rep, sizeof rep);
             } else if (type == msg::RISK) {
@@ -290,6 +316,9 @@ int main(int argc, char** argv) {
                 ipc::Server::reply(rcvid);
                 if (type == msg::RIDE_START) {
                     sync();
+                    for (const auto& p : phones) load_cal(p.id);  // 새로 넣은 보정은 다음 주행부터
+                    for (const auto& id : rf_phones) load_cal(id);
+                    std::fflush(stdout);
                     pol.on_ride_start();
                     cycles = gaps = expect = cmds = log_fail = 0;
                     lat_ms.clear();

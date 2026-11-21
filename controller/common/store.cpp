@@ -94,6 +94,13 @@ Profile parse_profile(const std::string& text) {
     return {v.at("mssq").number(), v.at(survey).number()};
 }
 
+calib::Calib parse_calib(const std::string& text) {
+    const json::Value v = json::parse(text);
+    const calib::Calib c{v.at("a").number(), v.at("b").number()};
+    if (!calib::valid(c)) throw std::runtime_error("calib out of range: a " + num(c.a) + ", b " + num(c.b));
+    return c;
+}
+
 bool safe_name(const std::string& id) {
     if (id.empty() || id.size() > 64 || id[0] == '.') return false;
     for (char c : id)
@@ -104,6 +111,7 @@ bool safe_name(const std::string& id) {
 Store::Store(std::string dir) : dir_(std::move(dir)) {
     make_dirs(dir_ + "/tolerance");
     make_dirs(dir_ + "/profiles");
+    make_dirs(dir_ + "/calib");
 }
 
 static std::string checked(const std::string& id) {
@@ -122,6 +130,13 @@ bool Store::load_profile(const std::string& phone, Profile& p) const {
     std::string t;
     if (!read_file(dir_ + "/profiles/" + checked(phone) + ".json", t)) return false;
     p = parse_profile(t);
+    return true;
+}
+
+bool Store::load_calib(const std::string& phone, calib::Calib& c) const {
+    std::string t;
+    if (!read_file(dir_ + "/calib/" + checked(phone) + ".json", t)) return false;
+    c = parse_calib(t);
     return true;
 }
 

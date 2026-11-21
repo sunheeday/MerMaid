@@ -61,7 +61,9 @@ def main():
     tmp = tempfile.mkdtemp(prefix="pipesim", dir="/tmp")
     env = dict(os.environ, QNXSIM_DIR=os.path.join(tmp, "ipc"))
     state = os.path.join(tmp, "state")
-    os.makedirs(state)
+    os.makedirs(os.path.join(state, "calib"))
+    with open(os.path.join(state, "calib", PHONE + ".json"), "w") as f:  # 개인 보정 (fit_calib.py가 만드는 형식)
+        json.dump({"a": 1.25, "b": -0.5, "run": "test"}, f)
     trip = os.path.join(tmp, "trip.bin")
     write_trip(trip)
     log = os.path.join(tmp, "cycles.csv")
@@ -102,8 +104,9 @@ def main():
         p1 = start("p1_acq", trip, "--speed", str(SPEED), "--timeout-ms", "200")  # Mac은 실시간 OS가 아님. 시간은 Pi에서 확인
         check(p4.wait_log(r"REG phone phone-a on", 0, 5), "P4 registers phone-a from the DEV_SYNC reply")
         check(p4.wait_log(r"REG hud on", 0, 1), "P4 registers the HUD")
-        check(p3.wait_log(r"PROFILES 1 phone-a:30\.00:1\.600:nan", 0, 8),
-              "P3 gets phone-a with the PROF values (EV NaN)")
+        check(p4.wait_log(r"CAL phone-a a=1\.2500 b=-0\.5000", 0, 1), "P4 reads state/calib for phone-a")
+        check(p3.wait_log(r"PROFILES 1 phone-a:30\.00:1\.600:nan:1\.250:-0\.500", 0, 8),
+              "P3 gets phone-a with the PROF values (EV NaN) and its calibration")
         check(br.wait(INT.format(c=2, t=1, on="true"), m, 8) is not None, "high risk -> Tier 1 on at the HUD")
         on3 = br.wait(INT.format(c=1, t=3, on="true"), m, 130 / SPEED + 5)
         check(on3 is not None, "high risk -> Tier 3 on at the phone")

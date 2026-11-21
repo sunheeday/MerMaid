@@ -493,34 +493,42 @@ p_i,k = σ( a_i · logit(p_k) + b_i )      k = 2..6, 사람 i마다 a_i > 0, b_i
 
 | 신호 | 쓰는 방법 | 가중치 |
 |---|---|---|
-| **MISC (M08 SYM)** — 주 라벨 | §10과 같은 규칙: 주기 t의 y_k = (t, t+300] 안에 MISC ≥ k. 그 구간에 SYM이 없으면 쓰지 않음 | 1 |
+| **MISC (M08 SYM)** — 주 라벨 | §10과 같은 규칙: 주기 t의 y_k = (t, t+300] 안에 MISC ≥ k. 그 구간에 SYM이 없으면 쓰지 않음 | 라벨 창 하나에 1 (주기 관측 하나는 10/300) |
 | 빠른 끄기 (자동 ON 뒤 30초 안 OVR off) | 그 뒤 300초 동안 SYM이 있고 모두 MISC < input_k면, 끈 시점 주기의 y_{input_k} = 0 | 0.5 |
 | 자기 폰에서 직접 켜기 | 켠 시점 주기의 y_{input_k} = 1 (MISC 기록이 그 구간에 없을 때만) | 0.5 |
 
 - **입력 p는 항상 보정 전 모델 출력**이다(`infer.p2..p6`). 그래서 LOG_INFER와 `infer` 표에 보정 전 확률과 적용한 a, b를 같이 남긴다(§6-2, §6-5).
 - 그 밖에 끈 이유(방해, 이미 멀미)는 MISC로만 구분한다. OVR 하나만으로는 판단하지 않는다.
+- **MISC 가중치를 주기/300으로 나누는 이유:** 300초 창이 10초마다 겹쳐 라벨 하나가 약 30주기에 들어간다. 주기마다 1을 주면 독립 관측 수를 30배로 착각해 사전분포가 거의 안 듣고, 라벨 몇십 개의 뽑기 운이 그대로 a, b가 된다(가짜 주행 시험에서 확인).
+- 빠른 끄기의 자동 ON은 `decision`에서 `changed = 1, on = 1`인 행이다(`changed`는 P4 정책 명령으로 바뀐 주기만 1). 끄기·켜기는 `ctx` kind `OVR`(`sender` = 누른 폰).
 
 ### 12-4. 안전 한계와 채택 기준
 
 - a_i ∈ [0.5, 2.0].
 - **낮추는 쪽 상한:** 각 Tier 문턱 근처(문턱 ± 0.05)의 p에서 `p − p_i ≤ 0.10`. 넘으면 b_i를 한계까지 올린다. 놓치는 것(멀미)이 귀찮은 것보다 나쁘기 때문이다.
 - **채택:** 그 사람의 주행을 하나씩 빼고 맞춰 본 log loss(leave-one-ride-out)가 a=1, b=0보다 좋을 때만 채택한다. 라벨이 있는 주행이 2개 미만이면 a=1, b=0.
+- |b| ≤ 4 (`calib.hpp`, `fit_calib.py` 같은 값). P4는 범위 밖 파일을 무시하고(stderr) P3도 한 번 더 거른다.
+- σ_a, σ_b: 주행 2개 이상인 사람이 3명 이상이면 그 사람들의 MAP 값으로 5번 다시 맞춘다(σ_a ∈ [0.05, 0.5], σ_b ∈ [0.1, 1.0]). 그보다 적으면 σ_a = 0.25, σ_b = 0.5.
 - 실제 데이터에서 사람마다 얼마나 움직이는지(평균에 머무는지)는 로그가 쌓인 뒤 검증한다. 시뮬레이터 검증은 이번 범위가 아니다.
 
 ### 12-5. 만들고 내려보내는 길
 
 ```
 로그 서버의 주행 파일 ─▶ ml/personal/fit_calib.py ─▶ ml/out/runs/vNNN/ (kind "calib")
-                                                       calib.json { "<phone>": {"a", "b", "n_rides", "n_labels", "loo_gain"} }
+                                                       calib.json { "version", "sigma_a", "sigma_b", "phones": { "<phone>":
+                                                         {"a", "b", "n_rides", "n_labels", "n_ovr", "loo_gain", "adopted", "status"} } }
+                                                       calib/<phone>.json { "a", "b", "run", "adopted" }  ← 내려보낼 파일
                                     tools/collect_logs.py --push-calib vNNN ─ssh─▶ Pi state/calib/<phone>.json
 ```
 
+- 채택되지 않은 사람도 `calib/<phone>.json`을 a=1, b=0으로 만든다. 예전에 채택됐던 값이 차에 남지 않게 하려는 것이다.
+- `--push-calib`은 `<state>/calib/<phone>.json.tmp`로 보낸 뒤 `mv`한다(P4가 반쯤 쓴 파일을 읽지 않게).
 - **`state/calib/`은 P4가 읽기만 한다.** P4가 쓰는 `state/profiles/`와 나눈 이유: 밖에서 넣은 값을 P4가 메모리의 옛 프로필로 덮어쓰지 않게 하려는 것이다.
-- P4는 폰이 등록될 때(허용도와 같은 시점) `state/calib/<phone>.json`을 읽는다. 다음 등록이나 주행부터 적용된다.
+- P4는 폰이 등록될 때(허용도와 같은 시점)와 RIDE_START마다 `state/calib/<phone>.json`을 읽는다. 다음 등록이나 주행부터 적용된다. 값이 바뀌면 stdout에 `CAL <phone> a=… b=…`.
 - P4 → P3: `ProfileEntry`에 `cal_a`, `cal_b` 두 칸을 추가한다(PROFILES 회신). 기본 프로필(`default`)은 1, 0이다.
 - P3: 단조 보정을 거친 Risk에 위 식을 적용한 뒤 RISK로 보낸다. a=1, b=0이면 식을 건너뛰어 지금과 비트 단위로 같은 값이 나온다.
 - P4의 "직접 켜기 → 민감도 × 1.15" 규칙은 없앴다(12-1). 그래서 직접 켜기는 보정의 학습 신호(12-3)로만 한 번 반영된다.
-- Python 정책 재생(`ml/train/policy.py`)과 P3 동등성 시험(`model_parity.py`)도 같은 식을 쓰게 맞춘다.
+- 식은 C++ `controller/common/calib.hpp`와 Python `ml/personal/fit_calib.py` `apply_calib` 두 곳에 있고, `ml/tests/test_calib.py`가 C++ 도구 `calib_apply`로 둘이 1e-12 안에서 같은지 본다. `policy.py` 재생과 `model_parity.py`는 보정 전 모델 확률을 다루므로 바꾸지 않는다(보정은 P3에서 모델 뒤에 붙는 한 단계).
 
 ## 13. 시험
 
@@ -547,7 +555,7 @@ p_i,k = σ( a_i · logit(p_k) + b_i )      k = 2..6, 사람 i마다 a_i > 0, b_i
 | 4 | M08 SYM (프로토콜 · P6 · 앱 · 문서) | 앱 입력이 1초 안에 label 표에 들어감, 범위 밖 값은 버려짐 |
 | 5 | 서버 + `collect_logs.py` | pytest 통과, 같은 파일 두 번 올려도 한 번, `.uploaded` 생김 |
 | 6 | `build_real.py --source mermaid` + `train.py` NaN 라벨 | 실주행으로 vNNN 생성, `train.py`가 읽음, `recompute`와 `board` 피처 차이 < 1e-6 |
-| 7 | 개인 보정 B (§12): `fit_calib.py`, `state/calib`, P4 → P3 `cal_a/cal_b`, P3 적용, `policy.py` 맞춤 | 가짜 로그로 추정 → 배포 → P3 적용 경로 통과, a=1·b=0이면 확률 비트 동일, 안전 한계 시험 통과. 실데이터 효과 검증은 로그가 쌓인 뒤 |
+| 7 | 개인 보정 B (§12): `fit_calib.py`, `state/calib`, P4 → P3 `cal_a/cal_b`, P3 적용, `collect_logs.py --push-calib` | **경로 완료 (2026-11-21):** 가짜 주행 파일로 추정(`test_calib.py`) → 버전 폴더 → 내려보내기 → P4 → P3(`pipeline_rf_sim`), a=1·b=0이면 확률 비트 동일, 안전 한계 시험 통과. 남은 것: 실데이터 효과 검증(로그와 4단계 SYM 라벨이 쌓인 뒤) |
 
 1과 2·3은 서로 기다리지 않는다. 4는 앱 작업이 함께 필요하다. 5·6은 3의 주행 파일 형식이 정해지면 시작할 수 있다(재생 모드 파일로 개발). 7은 3·4·5가 끝난 뒤.
 
