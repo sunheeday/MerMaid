@@ -52,6 +52,8 @@ class BleLink(
     private var writing = false
     private var writeToken = 0
 
+    private companion object { const val BOND_TIMEOUT_MS = 30_000 }
+
     override fun open() {
         val adapter = ctx.getSystemService(BluetoothManager::class.java)?.adapter
         if (adapter == null) return fail("블루투스 없음")
@@ -116,12 +118,34 @@ class BleLink(
         if (inbox.size() > Proto.MAX_MSG * 2) inbox.reset()
     }
 
+    /**
+     * 브리지(v7~)는 암호화가 끝나야 컨트롤러에 CONNECT를 알리고, 그 전에 쓴 줄은 버린다. 그래서 본딩이 없으면
+     * 앱이 먼저 페어링(Just Works, 시스템 확인 창)을 요청하고 끝난 뒤에 MTU·서비스 검색·HELLO로 넘어간다.
+     * 이미 본딩된 폰은 바로 진행 (브리지의 보안 요청으로 저장된 키로 암호화).
+     */
+    private fun awaitBond(g: BluetoothGatt, waitedMs: Int, wasBonding: Boolean) {
+        if (closed || gatt !== g) return
+        val state = g.device.bondState
+        when {
+            state == BluetoothDevice.BOND_BONDED -> { if (!g.requestMtu(Proto.MTU)) g.discoverServices() }
+            state == BluetoothDevice.BOND_NONE && wasBonding -> { cb.onClosed("페어링 실패 또는 취소"); g.disconnect() }
+            waitedMs > BOND_TIMEOUT_MS -> { cb.onClosed("페어링 시간 초과"); g.disconnect() }
+            else -> {
+                if (state == BluetoothDevice.BOND_NONE && waitedMs == 0) {
+                    com.mermaid.passenger.data.Repo.log('·', "처음 연결: 페어링 요청")
+                    g.device.createBond()
+                }
+                h.postDelayed({ awaitBond(g, waitedMs + 300, wasBonding || state == BluetoothDevice.BOND_BONDING) }, 300)
+            }
+        }
+    }
+
     private val gattCb = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             if (closed) return
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                 g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-                if (!g.requestMtu(Proto.MTU)) g.discoverServices()
+                awaitBond(g, 0, false)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
                 g.close()
                 if (gatt === g) { gatt = null; rx = null }

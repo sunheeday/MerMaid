@@ -11,8 +11,9 @@
 
 1. Android Studio → `Open` → 이 `app/android/` 폴더
 2. Gradle 동기화 (Gradle 8.9 · AGP 8.7.3 · Kotlin 2.0.21 · JDK 17은 Android Studio 내장 JBR 사용)
-   - `gradlew` 실행 파일(wrapper jar)은 넣지 않았습니다. Android Studio가 `gradle/wrapper/gradle-wrapper.properties`를 보고 Gradle을 받습니다.
-     명령줄 빌드가 필요하면 Gradle 설치 후 이 폴더에서 `gradle wrapper` 한 번 실행
+   - 명령줄 빌드(macOS): `local.properties`에 `sdk.dir=<Android SDK 절대 경로>`(예: `/Users/<이름>/Library/Android/sdk`)를 적고 이 폴더에서
+     `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`
+     → `app/build/outputs/apk/debug/app-debug.apk` (`local.properties`와 APK는 커밋하지 않음)
 3. 폰: 설정 → 휴대전화 정보 → 소프트웨어 정보 → 빌드번호 7번 → 개발자 옵션 → USB 디버깅
 4. ▶ Run (`app`) → 첫 실행 온보딩: 시작 → 권한 4단계 → 차 찾기(MSAgent) → 멀미 프로필
 
@@ -60,7 +61,7 @@ app/src/main/java/com/mermaid/passenger/
 | NFR-01 fail-safe | `RfSession.watchdog/safeOff` → `CueOverlay.hideNow` |
 
 ## 아직 확인하지 못한 것
-- **컴파일·실기 시험 전**입니다 (작성 PC에 Android SDK가 없었음). 첫 동기화에서 나는 오류는 대부분 import·버전 문제일 것입니다.
+- **실기 시험 전**입니다. 컴파일은 확인했습니다 (2026-11-19, macOS · Android Studio 내장 JBR 21 · `./gradlew :app:assembleDebug`가 소스 수정 없이 통과). 폰 설치·실행은 아직 하지 않았습니다.
 - One UI에서 CDM 존재 감지로 앱이 깨어나는지 (요구사항정의서 8장 #3)
 - 브리지 광고 패킷에 이름과 128비트 UUID가 함께 들어가는지 → 등록 필터를 둘 다 걸어 둠
 - SCR `att` 정의 변경 (8장 #1), MOT 부호 (#2)
