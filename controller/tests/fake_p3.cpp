@@ -2,7 +2,7 @@
 // 주기마다 P4에 PROFILES를 물은 뒤 정해진 확률로 RISK를 보낸다. 주행 경계는 그대로 넘긴다.
 //   fake_p3 [--p P2,P3,P4,P5,P6] [--once]
 // 진짜 P3처럼 P7에 LOG_INFER도 보낸다 (x = 차량 피처 71칸 + 승객 칸 NaN, 모델 "fake"). 실패 수는 stdout 마지막 줄 log_fail.
-// stdout: 주기마다 "PROFILES <n> <id>:<mssq>:<sens>:<ev> ..." (P4가 RF 명부를 P3에 넘기는지 확인용)
+// stdout: 주기마다 "PROFILES <n> <id>:<mssq>:<sens>:<ev>:<cal_a>:<cal_b> ..." (P4가 RF 명부를 P3에 넘기는지 확인용)
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -58,8 +58,9 @@ int main(int argc, char** argv) {
                 if (!p4.send(&q, sizeof q, &rep, sizeof rep)) rep.n = 0;
                 std::printf("PROFILES %u", rep.n);
                 for (uint32_t i = 0; i < rep.n && i < static_cast<uint32_t>(msg::kMaxPhones); i++)
-                    std::printf(" %s:%.2f:%.3f:%s", rep.e[i].id, rep.e[i].mssq, rep.e[i].sens,
-                                std::isnan(rep.e[i].ev) ? "nan" : std::to_string(rep.e[i].ev).c_str());
+                    std::printf(" %s:%.2f:%.3f:%s:%.3f:%.3f", rep.e[i].id, rep.e[i].mssq, rep.e[i].sens,
+                                std::isnan(rep.e[i].ev) ? "nan" : std::to_string(rep.e[i].ev).c_str(), rep.e[i].cal_a,
+                                rep.e[i].cal_b);
                 std::printf("\n");
                 std::fflush(stdout);
                 msg::RiskMsg out;
@@ -83,8 +84,8 @@ int main(int argc, char** argv) {
                     for (int f = 0; f < proto::kNumFeatures; f++)
                         lg.x[r][f] = f < proto::kNumVehicle ? v.x[static_cast<size_t>(f)] : std::nan("");
                     lg.p[r] = out.p[r];
-                    lg.cal_a[r] = 1;
-                    lg.cal_b[r] = 0;
+                    lg.cal_a[r] = rep.n ? rep.e[r].cal_a : 1;  // 대역은 보정을 적용하지 않고 받은 값만 남긴다
+                    lg.cal_b[r] = rep.n ? rep.e[r].cal_b : 0;
                 }
                 lg.mono_ns = ipc::now_ns();
                 if (!p7.send(&lg, sizeof lg)) log_fail++;

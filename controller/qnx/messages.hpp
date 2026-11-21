@@ -55,6 +55,7 @@ struct Veh {
 struct ProfileEntry {
     char id[kIdLen] = {};
     double mssq = 0, sens = 1, ev = 0, tol = 0;
+    double cal_a = 1, cal_b = 0;  // 개인 보정 (state/calib, DATA_LOGGING §12). 없으면 1, 0
 };
 
 struct ProfilesReq {

@@ -10,6 +10,11 @@
 4. 409(같은 id, 다른 내용)나 422(검증 실패)는 표시만 하고 다음 파일로. 하나라도 실패하면 종료 코드 1
 
 --local DIR: SSH 대신 이 폴더에서 (보드 폴더를 마운트했거나 시험할 때). API 키는 --key 또는 MERMAID_API_KEY.
+
+개인 보정 내려보내기 (docs/DATA_LOGGING.md §12-5):
+  python3 tools/collect_logs.py --push-calib vNNN --state <P4의 --state 폴더> [--host ...] [--local X]
+  ml/personal/fit_calib.py가 만든 vNNN/calib/<phone>.json을 차의 <state>/calib/로 (임시 이름 → mv).
+  --local을 주면 --state를 이 컴퓨터의 폴더로 본다. P4는 폰이 등록될 때와 다음 주행 시작에 읽는다.
 """
 from __future__ import annotations
 
@@ -136,6 +141,61 @@ def collect(source, client: httpx.Client, key: str, dry_run: bool = False, log=p
     return result
 
 
+REPO = Path(__file__).resolve().parents[1]
+CALIB_FILE = re.compile(r"^[A-Za-z0-9_.-]{1,64}\.json$")
+
+
+def calib_files(run: str) -> list[Path]:
+    """vNNN(또는 폴더)의 calib/*.json. a, b 범위를 한 번 더 확인 (P4도 거른다)"""
+    sys.path.insert(0, str(REPO / "ml"))
+    import runs
+    d = runs.resolve(run) / "calib"
+    files = sorted(p for p in d.glob("*.json") if CALIB_FILE.match(p.name) and not p.name.startswith("."))
+    for f in files:
+        v = json.loads(f.read_text())
+        a, b = float(v["a"]), float(v["b"])
+        if not (0.5 <= a <= 2.0 and abs(b) <= 4.0):
+            raise ValueError(f"{f.name}: a {a}, b {b} out of range")
+    return files
+
+
+def push_calib(run: str, state: str, host: str | None, log=print) -> int:
+    """보정 파일을 <state>/calib/로. 반환: 실패 수"""
+    files = calib_files(run)
+    if not files:
+        log(f"no calib files in {run}")
+        return 1
+    fail = 0
+    if host is None:
+        dest = Path(state) / "calib"
+        dest.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            tmp = dest / (f.name + ".tmp")
+            shutil.copyfile(f, tmp)
+            os.replace(tmp, dest / f.name)
+            log(f"PUSHED   {f.name} -> {dest}")
+        return 0
+    remote = state.rstrip("/") + "/calib"
+    r = subprocess.run(["ssh", *SSH_OPTS, host, f"mkdir -p {shlex.quote(remote)}"], capture_output=True, text=True,
+                       timeout=60)
+    if r.returncode != 0:
+        log(f"FAILED   mkdir {host}:{remote}: {r.stderr.strip() or r.returncode}")
+        return len(files)
+    for f in files:
+        tmp, final = f"{remote}/{f.name}.tmp", f"{remote}/{f.name}"
+        r = subprocess.run(["scp", "-q", *SSH_OPTS, str(f), f"{host}:{tmp}"], capture_output=True, text=True,
+                           timeout=60)
+        if r.returncode == 0:
+            r = subprocess.run(["ssh", *SSH_OPTS, host, f"mv {shlex.quote(tmp)} {shlex.quote(final)}"],
+                               capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            fail += 1
+            log(f"FAILED   {f.name}: {r.stderr.strip() or r.returncode}")
+        else:
+            log(f"PUSHED   {f.name} -> {host}:{remote}")
+    return fail
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", default="qnxuser@192.168.2.2", help="차(Pi) SSH 주소")
@@ -144,7 +204,22 @@ def main(argv=None) -> int:
     ap.add_argument("--server", default="http://localhost:8080")
     ap.add_argument("--key", default=os.environ.get("MERMAID_API_KEY"))
     ap.add_argument("--dry-run", action="store_true", help="올릴 목록만 보여 준다")
+    ap.add_argument("--push-calib", metavar="VNNN", help="개인 보정 파일을 차의 state/calib/로 보낸다 (업로드 대신)")
+    ap.add_argument("--state", help="--push-calib: P4의 --state 폴더 (차, 또는 --local이면 이 컴퓨터)")
     a = ap.parse_args(argv)
+    if a.push_calib:
+        if not a.state:
+            print("--push-calib needs --state", file=sys.stderr)
+            return 2
+        if not a.local and not shutil.which("ssh"):
+            print("ssh not found", file=sys.stderr)
+            return 2
+        try:
+            fail = push_calib(a.push_calib, a.state, None if a.local else a.host)
+        except (OSError, ValueError, KeyError) as e:
+            print(f"push-calib: {e}", file=sys.stderr)
+            return 1
+        return 1 if fail else 0
     if not a.key and not a.dry_run:
         print("API key: --key 또는 MERMAID_API_KEY", file=sys.stderr)
         return 2
