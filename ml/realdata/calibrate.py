@@ -38,13 +38,11 @@ def speed_share(X, j):
     return [float((v < 30).mean()), float(((v >= 30) & (v < 80)).mean()), float((v >= 80).mean())]
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("sim")
-    ap.add_argument("--json")
-    a = ap.parse_args()
-    S = np.load(a.sim)
-    T, names = targets()
+def evaluate(sim_path, T=None, names=None):
+    """시뮬레이터 dataset.npz 하나를 실차 기준과 비교. 피처마다 p10/p50/p90 (실차, 시뮬)과 KS. ks_mean이 보정 점수"""
+    if T is None:
+        T, names = targets()
+    S = np.load(sim_path)
     res = {}
     for tn, tgt in T.items():
         sm = S["t"] <= tgt["tmax"]
@@ -54,12 +52,23 @@ def main():
             x, y = tgt["X"][:, j], S["X"][sm, j]
             x, y = x[np.isfinite(x)], y[np.isfinite(y)]
             r["features"][f] = {"real": float(np.median(x)), "sim": float(np.median(y)),
+                                "real_q": np.percentile(x, [10, 50, 90]).tolist(),
+                                "sim_q": np.percentile(y, [10, 50, 90]).tolist(),
                                 "ks": float(ks_2samp(x, y).statistic)}
         r["ks_mean"] = float(np.mean([v["ks"] for v in r["features"].values()]))
         js = names.index("speed_mean_1m")
         r["speed_share"] = {"real": speed_share(tgt["X"], js), "sim": speed_share(S["X"][sm], js)}
         r["label"] = {"real": tgt["y"].mean(0).round(3).tolist(), "sim": S["y"][sm].mean(0).round(3).tolist()}
         res[tn] = r
+    return res
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("sim")
+    ap.add_argument("--json")
+    a = ap.parse_args()
+    res = evaluate(a.sim)
     print(f"{'feature':22s} | {'BATON real/sim  KS':>24s} | {'comma real/sim  KS':>24s}")
     for f in FEATS:
         b, c = res["baton"]["features"][f], res["comma"]["features"][f]

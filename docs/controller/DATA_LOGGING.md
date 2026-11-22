@@ -466,11 +466,12 @@ python3 ml/realdata/build_real.py --source mermaid --root server/data/rides [--r
 - `person_id` = 폰 ID(영구 기기 ID, `PROTOCOL.md` §4). 사람 단위 분할에 쓴다.
 - 기존 `npz` 키(`X, y, t, misc, ride_id, trip_id, person_id, k, feature_names, feature_version`)를 그대로 맞춰 `train.py`, `calibrate.py`, `compare.py`가 바로 읽게 한다.
 
-## 11. Claude 합성 루프와 이어지는 곳 (구현은 나중)
+## 11. Claude 합성 루프와 이어지는 곳
 
 - 이미 있는 `ml/realdata/calibrate.py`(피처마다 KS 거리, 평균 KS = 보정 점수)가 루프의 채점기다. MerMaid 실주행이 세 번째 기준 데이터가 된다.
 - 루프: 서버가 만든 **요약 통계** → Claude가 `sim_config.json` / `sim_effects.json` 변경을 허용 범위 안의 JSON 패치로 제안 → `build_dataset.py`(작게) → `calibrate.py` → 점수가 좋아지고 실제 MISC(TU Delft 재생, MerMaid 떼어 둔 사람) 성능이 나빠지지 않을 때만 채택 → `train.py` → `runs.py use`.
 - Claude에게 보내지 않는 것: 원본 샘플, 주행별 행, MSSQ·MISC 개인 값, 기기 ID.
+- 1단계 구현: `ml/synth/` (`ml/README.md` "시뮬레이터 보정 루프"). 지금은 공개 데이터(BATON, comma2k19)만 기준으로 쓰고 `sim_effects.json`은 잠겨 있다. 서버 DB 요약과 실제 MISC 게이트, 정기 실행은 백엔드 도커화 뒤에 붙인다.
 
 ## 12. 개인 보정 (B): 사람마다 확률을 다시 맞추기
 

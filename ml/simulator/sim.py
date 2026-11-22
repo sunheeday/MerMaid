@@ -2,9 +2,11 @@
 
 경로(trip) → 운전(ride: 회생 설정마다 속도 프로파일을 다시 계산) → 100 Hz trip.bin 행 + 정답 MISC.
 모든 수치는 sim_config.json과 sim_effects.json에서 읽는다. 함수는 난수 생성기만 받으면 재현된다.
+환경 변수 MERMAID_SIM_DIR를 주면 그 폴더의 두 파일을 읽는다 (ml/synth 후보 설정 시험용).
 """
 import json
 import math
+import os
 import pathlib
 import sys
 
@@ -17,8 +19,9 @@ sys.path.insert(0, str(HERE.parent))
 import oman  # noqa: E402
 import trip as tripio  # noqa: E402
 
-CFG = json.loads((HERE / "sim_config.json").read_text())
-EFF = json.loads((HERE / "sim_effects.json").read_text())
+SIM_DIR = pathlib.Path(os.environ.get("MERMAID_SIM_DIR") or HERE).resolve()
+CFG = json.loads((SIM_DIR / "sim_config.json").read_text())
+EFF = json.loads((SIM_DIR / "sim_effects.json").read_text())
 FS = tripio.FS
 DT = 1.0 / FS
 G = 9.81

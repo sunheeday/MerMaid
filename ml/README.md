@@ -27,6 +27,7 @@ python3 -m pytest ml/tests
 | S1 Oman 검증 | `oman.py`, `verify/oman_tudelft.py` | K0, MAE, LOPO 기준선 (`verify/out/`) |
 | S3 합성 데이터 | `simulator/sim.py`, `simulator/build_dataset.py` | 새 버전 `out/runs/vNNN/`: `dataset.npz`, `dataset_report.json`, `trips/ride_*.bin` |
 | S4 학습 | `train/train.py`, `train/policy.py` | 새 버전 `out/runs/vNNN/`: `train/report.md`, `models/model_2~6.txt`, `thresholds.json`. 배포는 `runs.py use vNNN` (`controller/config/thresholds.json`) |
+| 시뮬레이터 보정 루프 | `synth/loop.py` (Claude API), `synth/bounds.json` | 새 버전 `out/runs/vNNN/` (kind synth): `synth.json`, 라운드별 요청·제안·점수, `best/` 설정. 적용은 `synth/loop.py adopt vNNN` |
 | 실차 비교 | `realdata/` (comma2k19, BATON 변환) | 새 버전에 `real_*.npz`, 모델 버전에 `compare/*.md`. 설명은 `docs/ml/REALDATA.md` |
 | S6 AC-01 모델 동등성 | `verify/model_parity.py` (+ 보드의 `verify_model`) | 모델 버전의 `parity/result.json`. 절차는 `controller/bringup/README.md` |
 | S6 P1→P4 파이프라인 | `verify/pipeline_check.py` (+ 보드의 `controller/qnx/run_pipeline.sh`) | Pi 결과와 Mac featurize + Python 비교. 절차는 같은 문서 |
@@ -47,3 +48,30 @@ python3 -m pytest ml/tests
 - Oman 라벨 입력은 중력과 진동을 뺀 운동학 수평 가속도입니다. P2는 IMU 값을 쓰므로 둘이 다릅니다.
 - 잡음 σ 0.5를 1분 단위로 묶어 더한 뒤 반올림합니다. 미래 5분이 다 있는 시점만 학습 행이 됩니다.
 - 모든 수치는 `simulator/sim_config.json`, `simulator/sim_effects.json`에 있고 근거가 없는 값은 `guess`로 표시했습니다.
+
+## 시뮬레이터 보정 루프 (`synth/`, Claude API)
+
+Claude는 샘플을 만들지 않습니다. 실차와 시뮬레이터의 분포 요약을 보고 `sim_config.json` 값을 바꾸는 후보를 JSON으로 내고, 데이터는 지금처럼 `sim.py`가 만듭니다.
+
+```bash
+export ANTHROPIC_API_KEY=...   # 또는 ant auth login. 저장소에 두지 않습니다
+```
+
+```bash
+python3 ml/synth/loop.py run --dry-run
+```
+
+```bash
+python3 ml/synth/loop.py run --rounds 2 --candidates 4 --trips 40
+```
+
+```bash
+python3 ml/synth/loop.py adopt vNNN
+```
+
+- 라운드: 지금 설정으로 작은 데이터셋(`--trips`, 시드 고정) → `realdata/calibrate.py`의 KS → Claude(`claude-opus-5-5`, 구조화 출력)가 후보 N개 → `bounds.json` 검사 → 후보마다 같은 크기·시드로 데이터셋 → KS.
+- 채택: BATON KS 평균이 `--min-gain`(0.005) 이상 줄고 comma KS 평균이 `--comma-guard`(0.02)보다 더 나빠지지 않은 후보 중 가장 좋은 것. 다음 라운드의 기준이 됩니다.
+- 바꿀 수 있는 값은 `synth/bounds.json`에 있는 것뿐입니다(구간 비율, 구간 속도·길이, 운전자, 노면, 흔들림, 진동). 승객, 라벨, `sim_effects.json`은 잠겨 있습니다. 라벨 효과는 MerMaid 실제 MISC 라벨이 생기면 엽니다.
+- 보내는 것은 분포 요약(분위수, KS, 비율)과 설정값뿐입니다. `summarize.assert_aggregate`가 보내기 전에 검사합니다.
+- `ml/simulator/`는 `adopt`로만 바뀝니다. 그 뒤 `git diff`로 검토하고 전체 `build_dataset.py` → `train.py` → `compare` → `runs.py use`는 지금처럼 사람이 합니다.
+- 한 라운드는 후보 4개 기준으로 시뮬레이터 5번(40경로마다 약 1분)과 Claude 호출 1번입니다.

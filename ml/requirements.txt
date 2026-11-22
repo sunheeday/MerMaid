@@ -6,3 +6,6 @@ scipy
 scikit-learn
 jsonschema
 matplotlib
+# ml/synth (Claude API로 시뮬레이터 설정 후보 받기)
+anthropic>=0.97
+pydantic>=2

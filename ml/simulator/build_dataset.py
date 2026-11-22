@@ -5,13 +5,16 @@
 경로마다 승객 4명이 다른 좌석, 회생 설정, 공조로 탄다(도메인 랜덤화). 탑승마다:
 trip.bin 작성 → C++ featurize(차량 피처 71개) → G8(v1 NaN), G10(승객) 붙이기 → Oman 라벨.
 출력: 새 버전 폴더 ml/out/runs/vNNN/ (ml/runs.py): dataset.npz, dataset_report.json, rides.json,
-      trips/ride_XXXX.bin (재생용, 앞 --keep-trips개). --out을 주면 그 경로 (이미 있으면 거부, 덮어쓰지 않음)
+      sim_config.json + sim_effects.json (이번에 쓴 설정 사본), trips/ride_XXXX.bin (재생용, 앞 --keep-trips개).
+      --out을 주면 그 경로 (이미 있으면 거부, 덮어쓰지 않음)
+설정은 ml/simulator/의 두 JSON. 환경 변수 MERMAID_SIM_DIR로 다른 폴더를 줄 수 있다 (sim.py).
 """
 import argparse
 import json
 import multiprocessing as mp
 import pathlib
 import sys
+import shutil
 import tempfile
 import time
 
@@ -90,8 +93,11 @@ def main():
         od = pathlib.Path(a.out).parent
         od.mkdir(parents=True, exist_ok=True)
     else:
-        od = runs.new("dataset", a.note, params={k: v for k, v in vars(a).items() if k not in ("out", "note", "jobs")})
+        params = {k: v for k, v in vars(a).items() if k not in ("out", "note", "jobs")}
+        od = runs.new("dataset", a.note, params={**params, "sim_dir": runs.rel(sim.SIM_DIR)})
         a.out = str(od / "dataset.npz")
+        for f in ("sim_config.json", "sim_effects.json"):
+            shutil.copy(sim.SIM_DIR / f, od / f)
     keep_dir = od / "trips"
     keep_dir.mkdir(exist_ok=True)
 
@@ -117,7 +123,7 @@ def main():
     meta = [r["meta"] for r in rides]
     y = data["y"]
     report = {
-        "seed": a.seed, "trips": a.trips, "rides": len(rides), "passengers": a.passengers,
+        "sim_dir": runs.rel(sim.SIM_DIR), "seed": a.seed, "trips": a.trips, "rides": len(rides), "passengers": a.passengers,
         "rows": int(len(y)), "seconds": round(time.time() - t0, 1),
         "ride_minutes_mean": float(np.mean([m["minutes"] for m in meta])),
         "label_rate": {f"P(>={k})": float(y[:, i].mean()) for i, k in enumerate(sim.CFG["label"]["k"])},
