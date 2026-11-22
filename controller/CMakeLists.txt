@@ -24,6 +24,9 @@ add_executable(policy_replay tools/policy_replay.cpp)
 target_link_libraries(policy_replay mmcommon)
 target_compile_definitions(policy_replay PRIVATE MM_CONFIG_DIR="${MM_CONFIG_DIR}")
 
+add_executable(calib_apply tools/calib_apply.cpp)
+target_link_libraries(calib_apply mmcommon)
+
 enable_testing()
 add_executable(test_features tests/test_features.cpp)
 target_link_libraries(test_features mmcommon)

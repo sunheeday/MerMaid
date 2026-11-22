@@ -1,4 +1,4 @@
-// P3·P4·P5·P6 → P7 로그 메시지 (docs/DATA_LOGGING.md §6-2). 모두 고정 크기 POD.
+// P3·P4·P5·P6 → P7 로그 메시지 (docs/controller/DATA_LOGGING.md §6-2). 모두 고정 크기 POD.
 // 보내는 쪽 규칙: ipc::Client(kNameP7, kLogTimeoutNs). 실패하면 자기 통계 log_fail만 올리고 계속한다.
 // P7은 받자마자 복사하고 바로 회신하며, 아무에게도 MsgSend 하지 않는다 (교착 고리 없음).
 #pragma once
@@ -48,7 +48,7 @@ struct LogDecision {
 };
 
 // ctx 표의 kind 칸에 이름 그대로 들어간다. 0~4는 기기가 보낸 것(P6이 규칙을 통과시킨 뒤), 5~10은 P6이 본 링크 사건과
-// Pi → 기기로 실제 나간 것, 11~13은 P5의 안전 OFF. 번호는 바꾸지 않고 뒤에만 붙인다 (docs/DATA_LOGGING.md §6-2)
+// Pi → 기기로 실제 나간 것, 11~13은 P5의 안전 OFF. 번호는 바꾸지 않고 뒤에만 붙인다 (docs/controller/DATA_LOGGING.md §6-2)
 enum class CtxKind : uint8_t {
     HELLO = 0,       // 기기 등록 (P5에 전달된 뒤 한 번)
     BYE = 1,         // P6이 등록을 지움 (P5에 DEV_BYE)

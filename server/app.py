@@ -1,8 +1,8 @@
-"""MerMaid 로그 서버 (docs/DATA_LOGGING.md §9). 차의 P7이 남긴 주행 파일을 받아 보관하고, 색인·10초 기록·원본 구간을 돌려준다.
+"""MerMaid 로그 서버 (docs/controller/DATA_LOGGING.md §9). 차의 P7이 남긴 주행 파일을 받아 보관하고, 색인·10초 기록·원본 구간을 돌려준다.
 
 실행 (저장소 루트에서):
   MERMAID_API_KEY=… uvicorn server.app:app --host 0.0.0.0 --port 8080
-환경 변수:
+환경 변수 (server/.env.example을 server/.env로 복사해 채운다):
   MERMAID_API_KEY   필수. 모든 /api 요청의 X-API-Key 헤더 (/api/health 제외)
   MERMAID_DATA      데이터 폴더 (기본 server/data): incoming/, rides/, mermaid.db
   MERMAID_MAX_UPLOAD_MB  업로드 최대 크기 (기본 1024)

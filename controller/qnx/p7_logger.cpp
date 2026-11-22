@@ -3,7 +3,7 @@
 //             [--prio 11] [--once]
 //   --config DIR  imu_mount.json, policy.json, thresholds.json을 주행 파일 meta에 그대로 적는다
 //   --once        첫 주행 파일을 닫으면 끝 (시험용)
-// 설계: docs/DATA_LOGGING.md §6. 판단과 SQLite 쓰기는 common/ride_log.cpp.
+// 설계: docs/controller/DATA_LOGGING.md §6. 판단과 SQLite 쓰기는 common/ride_log.cpp.
 //
 // 스레드 두 개 (로그는 제어를 막지 않는다):
 //   받기 스레드(main, 우선순위 --prio): mermaid_p7로 LOG_*를 받아 큐에 복사하고 바로 회신. 디스크 I/O 없음

@@ -6,7 +6,7 @@
 // 받는 것 (mermaid_p5): P6의 DEV_HELLO·DEV_BYE, P4의 TIER_CMD·DEV_SYNC
 // 보내는 것: P6에 OUT_INT·OUT_STREAM·OUT_PROF·OUT_RESYNC (P6의 받기 스레드는 바로 회신하므로 멈추지 않는다)
 // 다시 시작: 시작하면 P6에 OUT_RESYNC (전달될 때까지 1초마다) → P6이 등록된 기기를 DEV_HELLO로 다시 알려 준다.
-//   그 HELLO에 실린 'P6이 마지막으로 보낸 INT'로 Tier 상태도 되찾는다 (docs/RF_MESSAGES.md §4)
+//   그 HELLO에 실린 'P6이 마지막으로 보낸 INT'로 Tier 상태도 되찾는다 (docs/controller/RF_MESSAGES.md §4)
 // P4에게는 먼저 보내지 않는다. 명부는 DEV_SYNC의 회신으로만 준다.
 // 안전: 1초마다 확인해서 DEV_SYNC가 30초 없으면 모든 개입 OFF.
 // 주행 로그: 안전 OFF 진입·해제와 잡아 둔 ON 적용을 P7에 LOG_CTX로 보낸다 (sender "p5", 2 ms 제한).

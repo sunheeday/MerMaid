@@ -3,7 +3,7 @@
 
   python3 controller/tests/log_rf_sim_test.py <build 폴더>     (ctest의 log_rf_sim이 부른다)
 
-같은 폰 대본을 두 번 돌린다 (docs/DATA_LOGGING.md §6-2, §13).
+같은 폰 대본을 두 번 돌린다 (docs/controller/DATA_LOGGING.md §6-2, §13).
   A. P7이 살아 있음: 닫힌 주행 파일(SQLite)을 열어 ctx·label 표를 검사
      - 주행 전: CONNECT, HELLO, 첫 INT, HELLO 없는 연결의 DROP(no_hello_5s) → t NULL로 들어감
        (P5가 --safety-s 4라 주행 전에도 안전 OFF에 들어가 있다. 첫 주기의 송풍 ON은 잡혔다가 DEV_SYNC 뒤에 적용)

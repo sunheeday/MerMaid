@@ -1,7 +1,7 @@
 """실차 주행 + 합성 승객 → dataset.npz와 같은 모양의 데이터셋
 
-    python3 ml/realdata/build_real.py --source comma2k19 --root data/raw/comma2k19/chunk1
-    python3 ml/realdata/build_real.py --source baton --root data/raw/baton
+    python3 ml/realdata/build_real.py --source comma2k19 --root ml/data/raw/comma2k19/chunk1
+    python3 ml/realdata/build_real.py --source baton --root ml/data/raw/baton
 
 주행(운동학)만 실제이고 나머지는 시뮬레이터와 같다: 주행마다 승객 4명(시뮬레이터와 같은 승객 풀,
 같은 seed)이 각자 공조·좌석 설정(sim.gen_ride, sim.cabin_rows)으로 탄다. 라벨은 sim.label을
@@ -68,14 +68,14 @@ def main():
     ap.add_argument("--root", required=True)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--passengers", type=int, default=sim.CFG["scale"]["passengers"])
-    ap.add_argument("--keep-trips", action="store_true", help="주행마다 첫 탑승 trip.bin을 data/trips/real/에 남긴다")
+    ap.add_argument("--keep-trips", action="store_true", help="주행마다 첫 탑승 trip.bin을 ml/data/trips/real/에 남긴다")
     ap.add_argument("--jobs", type=int, default=mp.cpu_count())
     ap.add_argument("--note", default="", help="run.json에 남길 설명")
     a = ap.parse_args()
     reader = __import__(READERS[a.source])
     found = reader.routes(a.root)
     if not found:
-        sys.exit(f"{a.root}: 주행을 못 찾음 (docs/REALDATA.md의 폴더 구조 참고)")
+        sys.exit(f"{a.root}: 주행을 못 찾음 (docs/ml/REALDATA.md의 폴더 구조 참고)")
     rng = np.random.default_rng(a.seed)
     pax = [sim.gen_passenger(rng, i) for i in range(a.passengers)]  # build_dataset과 같은 승객 풀
     prng = np.random.default_rng([a.seed, 1])

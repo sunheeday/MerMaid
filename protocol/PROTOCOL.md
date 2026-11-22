@@ -12,7 +12,7 @@ QNX 컨트롤러, ESP32-S3 브리지, Android 앱, HUD 시뮬레이터가 공유
 
 ## 1. UART (Raspberry Pi ↔ ESP32-S3)
 
-- Pi UART3 (PL011) `/dev/ser3`, GPIO4 핀 7 (TX) → ESP32 GPIO18 / GPIO5 핀 29 (RX) ← ESP32 GPIO17 / 핀 9 GND, 3.3 V, 115,200 bps, 8N1. mini UART `/dev/ser1`은 QNX 콘솔이라 쓰지 않음 (켜는 법: `bridge/README.md`)
+- Pi UART3 (PL011) `/dev/ser3`, GPIO4 핀 7 (TX) → ESP32 GPIO18 / GPIO5 핀 29 (RX) ← ESP32 GPIO17 / 핀 9 GND, 3.3 V, 115,200 bps, 8N1. mini UART `/dev/ser1`은 QNX 콘솔이라 쓰지 않음 (켜는 법: `firmware/bridge/README.md`)
 - 프레임: `<id>|<payload>\n`. `id`는 브리지 연결 인덱스 `0`~`8` 또는 `ALL`. 프레임 최대 512 바이트
 - `payload`는 JSON 한 줄 또는 제어 토큰
 
@@ -64,7 +64,7 @@ QNX 컨트롤러, ESP32-S3 브리지, Android 앱, HUD 시뮬레이터가 공유
 
 - 프로토콜 버전은 HELLO에서 한 번만 보냅니다.
 - 양쪽 모두 M07을 1초마다 보내고, 5초 동안 아무 메시지도 못 받으면 연결이 끊긴 것으로 봅니다.
-- M08 `SYM`은 앱만, HELLO 뒤에 보냅니다. `misc`가 0~10 정수가 아니면(소수, 문자열, 범위 밖) 컨트롤러가 버리고 거부 사건으로 기록합니다. 회신은 없습니다. M04(음성 MISC)와 다른 메시지이고 M04 번호는 계속 비워 둡니다 (2026-11 팀 합의, `docs/DATA_LOGGING.md` §7).
+- M08 `SYM`은 앱만, HELLO 뒤에 보냅니다. `misc`가 0~10 정수가 아니면(소수, 문자열, 범위 밖) 컨트롤러가 버리고 거부 사건으로 기록합니다. 회신은 없습니다. M04(음성 MISC)와 다른 메시지이고 M04 번호는 계속 비워 둡니다 (2026-11 팀 합의, `docs/controller/DATA_LOGGING.md` §7).
 
 ## 4. 기기 ID
 

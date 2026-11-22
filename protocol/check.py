@@ -3,6 +3,7 @@
 1. PROTOCOL.md의 예시 메시지가 messages.schema.json을 통과하고, 잘못된 메시지는 거부되는지
 2. feature_order.json이 77개, 인덱스 연속, 그룹 개수와 범위가 맞는지
 3. UUID, 설정 파일의 버전과 값이 서로 맞는지
+4. ride_schema.sql이 SQLite에서 실행되고 표 7개가 있는지, protocol_gen.hpp가 JSON·SQL과 같은지
 """
 import json
 import pathlib
@@ -83,6 +84,18 @@ tf = load(ROOT / "trip_format.json")
 names = [x["name"] for x in tf["columns"]]
 check(names[:7] == ["t", "ax", "ay", "az", "gx", "gy", "gz"], "trip_format 앞 7열은 t, ax..gz")
 check(len(set(names)) == len(names), "trip_format 열 이름 중복")
+
+import sqlite3  # noqa: E402
+
+rs = (ROOT / "ride_schema.sql").read_text()
+check(re.search(r"^-- schema_version: \d+$", rs, re.M) is not None, "ride_schema.sql에 '-- schema_version: N' 줄이 없음")
+try:
+    con = sqlite3.connect(":memory:")
+    con.executescript(rs)
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    check(tables == {"meta", "samples", "infer", "decision", "ctx", "label", "health"}, f"ride_schema.sql 표가 다름: {sorted(tables)}")
+except sqlite3.Error as e:
+    check(False, f"ride_schema.sql이 SQLite에서 실행되지 않음: {e}")
 
 import subprocess  # noqa: E402
 gen = subprocess.run([sys.executable, str(ROOT / "gen_cpp.py"), "--check"], capture_output=True, text=True)

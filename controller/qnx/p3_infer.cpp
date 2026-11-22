@@ -4,6 +4,8 @@
 // MSSQ 12.90, 민감도 1.0, constants.json default_profile) "default" 한 행만 추론한다 (공용 기기
 // Tier 1·2는 그 값으로 동작). 기본 프로필의 EV 경험은 모르므로 NaN, 폰 허용도도 NaN.
 // feature_order에서 enabled=false인 칸(v1: svc_conflict, G8 허용도)은 학습 때처럼 NaN.
+// 개인 보정: PROFILES 회신의 cal_a, cal_b로 p' = σ(a·logit(p) + b)를 RISK에 적용한다 (calib.hpp, DATA_LOGGING §12-5).
+// 기본 프로필과 a=1, b=0은 그대로. LOG_INFER에는 보정 전 확률과 적용한 a, b를 남긴다 (보정을 다시 맞출 때 입력).
 // RISK를 보낸 뒤 P7에 LOG_INFER (77칸 입력과 확률, 2 ms 시간 초과). P7이 없거나 느려도 log_fail만 센다.
 #include <cmath>
 #include <cstdio>
@@ -13,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "calib.hpp"
 #include "inference.hpp"
 #include "ipc.hpp"
 #include "log_messages.hpp"
@@ -58,6 +61,7 @@ int main(int argc, char** argv) {
         msg::ProfilesReply prof, last;  // P4에 못 물으면 마지막으로 받은 목록
         uint64_t cycles = 0, prof_fail = 0, risk_fail = 0, log_fail = 0, infer_max_ns = 0;
         std::vector<double> X(static_cast<size_t>(msg::kMaxPhones) * proto::kNumFeatures);
+        calib::Calib cal[msg::kMaxPhones];
         for (;;) {
             const int rcvid = srv.receive(&in, sizeof in);
             const uint16_t type = in.h.type;
@@ -80,6 +84,8 @@ int main(int argc, char** argv) {
                     x[proto::F_SENSITIVITY] = have ? pr.e[r].sens : proto::kDefaultSens;
                     x[proto::F_EV_EXPERIENCE] = have ? pr.e[r].ev : nan;
                     x[proto::F_VEHICLE_TYPE] = vtype;
+                    cal[r] = have ? calib::Calib{pr.e[r].cal_a, pr.e[r].cal_b} : calib::Calib{};
+                    if (!calib::valid(cal[r])) cal[r] = {};  // P4가 거른 값이지만 한 번 더
                     for (int f = 0; f < proto::kNumFeatures; f++)
                         if (!proto::kFeatureEnabled[f]) x[f] = nan;
                 }
@@ -95,7 +101,7 @@ int main(int argc, char** argv) {
                 for (int r = 0; r < n; r++) {
                     if (pr.n > 0) std::memcpy(out.id[r], pr.e[r].id, msg::kIdLen);
                     else msg::copy_id(out.id[r], "default");
-                    out.p[r] = P[static_cast<size_t>(r)];
+                    out.p[r] = calib::apply(P[static_cast<size_t>(r)], cal[r]);
                 }
                 if (!p4.send(&out, sizeof out)) risk_fail++;
                 lg = msg::LogInfer{};
@@ -106,9 +112,9 @@ int main(int argc, char** argv) {
                 for (int r = 0; r < n; r++) {
                     std::memcpy(lg.id[r], out.id[r], msg::kIdLen);
                     std::memcpy(lg.x[r], &X[static_cast<size_t>(r) * proto::kNumFeatures], sizeof lg.x[r]);
-                    lg.p[r] = out.p[r];
-                    lg.cal_a[r] = 1;  // 개인 보정은 7단계
-                    lg.cal_b[r] = 0;
+                    lg.p[r] = P[static_cast<size_t>(r)];  // 보정 전
+                    lg.cal_a[r] = cal[r].a;
+                    lg.cal_b[r] = cal[r].b;
                 }
                 lg.mono_ns = ipc::now_ns();
                 if (!p7.send(&lg, sizeof lg)) log_fail++;

@@ -1,6 +1,6 @@
 """TU Delft ATDOMS로 Oman 구현(ml/oman.py) 검증 (S1)
 
-    python3 ml/verify/oman_tudelft.py data/raw/ATDOMS.mat [--hz 100]
+    python3 ml/verify/oman_tudelft.py ml/data/raw/ATDOMS.mat [--hz 100]
 
 1. 자극 재구성: 앞뒤 0.3 Hz 사인파, C1~C4 = 1 / 1.5 / 2 / 2.5 m/s², 시작과 끝 10초 램프
 2. 진폭 순서 확인: 24가지 순서 중 공통 K = 70.8에서 가장 잘 맞는 것

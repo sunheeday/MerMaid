@@ -2,7 +2,7 @@
 //   p2_feat [--once] [--motion] [--prio P]
 // 샘플은 받자마자 회신해 P1을 풀어 준다. 주행 경계(RIDE_START/END)는 같은 순서로 P3에 넘긴다.
 // --motion: 10샘플(100 ms, constants.json mot_period_ms)마다 P6(mermaid_p6)에 MOTION을 보낸다.
-//   ax, ay = Wf 가중 가속도, pax, pay = trip 열 pred_ax_10s, pred_ay_10s (docs/RF_MESSAGES.md §5).
+//   ax, ay = Wf 가중 가속도, pax, pay = trip 열 pred_ax_10s, pred_ay_10s (docs/controller/RF_MESSAGES.md §5).
 //   P6이 없거나 늦으면 20 ms 뒤 포기하고 센다 (피처 계산은 계속).
 //   빠른 재생(p1_acq --speed 2 초과)이면 주행 시각 100 ms가 실제 50 ms보다 짧아진다. BLE는 10 Hz를 넘게 못 나르므로
 //   앞 MOTION에서 실제 시계로 반 주기(50 ms)가 안 지났으면 건너뛰고 센다 (mot_skip). 실시간 재생에서는 건너뛰지 않는다.

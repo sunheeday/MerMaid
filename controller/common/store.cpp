@@ -82,14 +82,23 @@ static std::string num(double x) {
 std::string tolerance_json(int n) { return "{\"n\": " + std::to_string(n) + "}\n"; }
 
 std::string profile_json(const Profile& p) {
-    return "{\"mssq\": " + num(p.mssq) + ", \"sens_mssq\": " + num(p.sens_mssq) + ", \"sens\": " + num(p.sens) + "}\n";
+    return "{\"mssq\": " + num(p.mssq) + ", \"sens\": " + num(p.sens) + "}\n";
 }
 
 int parse_tolerance(const std::string& text) { return json::parse(text).at("n").integer(); }
 
 Profile parse_profile(const std::string& text) {
     const json::Value v = json::parse(text);
-    return {v.at("mssq").number(), v.at("sens_mssq").number(), v.at("sens").number()};
+    // 옛 형식 {mssq, sens_mssq, sens}: sens는 타면서 바꾼 값이라 버리고 설문값 sens_mssq를 쓴다
+    const char* survey = v.has("sens_mssq") ? "sens_mssq" : "sens";
+    return {v.at("mssq").number(), v.at(survey).number()};
+}
+
+calib::Calib parse_calib(const std::string& text) {
+    const json::Value v = json::parse(text);
+    const calib::Calib c{v.at("a").number(), v.at("b").number()};
+    if (!calib::valid(c)) throw std::runtime_error("calib out of range: a " + num(c.a) + ", b " + num(c.b));
+    return c;
 }
 
 bool safe_name(const std::string& id) {
@@ -102,6 +111,7 @@ bool safe_name(const std::string& id) {
 Store::Store(std::string dir) : dir_(std::move(dir)) {
     make_dirs(dir_ + "/tolerance");
     make_dirs(dir_ + "/profiles");
+    make_dirs(dir_ + "/calib");
 }
 
 static std::string checked(const std::string& id) {
@@ -120,6 +130,13 @@ bool Store::load_profile(const std::string& phone, Profile& p) const {
     std::string t;
     if (!read_file(dir_ + "/profiles/" + checked(phone) + ".json", t)) return false;
     p = parse_profile(t);
+    return true;
+}
+
+bool Store::load_calib(const std::string& phone, calib::Calib& c) const {
+    std::string t;
+    if (!read_file(dir_ + "/calib/" + checked(phone) + ".json", t)) return false;
+    c = parse_calib(t);
     return true;
 }
 

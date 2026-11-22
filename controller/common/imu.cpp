@@ -1,4 +1,4 @@
-// MPU-6050 P1 LIVE 코어. 설명은 imu.hpp, 설계는 docs/DATA_LOGGING.md §4
+// MPU-6050 P1 LIVE 코어. 설명은 imu.hpp, 설계는 docs/controller/DATA_LOGGING.md §4
 #include "imu.hpp"
 
 #include "sample_ring.hpp"
