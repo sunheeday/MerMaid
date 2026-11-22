@@ -63,7 +63,7 @@ struct Config {
 struct Stats {
     uint64_t rides_opened = 0, rides_closed = 0, rides_refused = 0, recovered = 0, broken = 0;
     uint64_t samples = 0, hold_samples = 0, ring_lost = 0;
-    uint64_t infer_rows = 0, decision_rows = 0, ctx_rows = 0, label_rows = 0, health_rows = 0;
+    uint64_t infer_rows = 0, decision_rows = 0, ctx_rows = 0, label_rows = 0, health_rows = 0, gps_rows = 0;
     uint64_t outside_ride = 0, bad_msgs = 0, sqlite_errors = 0, deleted_uploaded = 0;
     uint64_t dup_msgs = 0;  // 보내는 쪽이 다시 보낸 같은 사건 (한 번만 적는다)
     bool samples_paused = false;

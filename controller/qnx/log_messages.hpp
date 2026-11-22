@@ -15,6 +15,7 @@ enum LogType : uint16_t {
     LOG_DECISION = 0x8061,  // P4, 10초마다 명령을 다 보낸 뒤
     LOG_CTX = 0x8062,       // P6·P5, 기기 사건 (CtxKind 참고: 폰과 오간 것 전부. HB·MOT는 빼고)
     LOG_SYM = 0x8063,       // P6, 앱의 멀미 점수 (M08 SYM, 0~10 정수)
+    LOG_GPS = 0x8064,       // P6, 앱의 GPS (M09, 규칙 통과한 것) → gps 표 (#18)
 };
 
 constexpr const char* kNameP7 = "mermaid_p7";
@@ -81,6 +82,16 @@ struct LogSym {
     int32_t misc = 0;  // 0~10
 };
 
+struct LogGps {
+    Hdr h{LOG_GPS, 0, 0};
+    uint64_t mono_ns = 0;  // P6이 줄을 받은 때
+    char phone[kIdLen] = {};
+    double spd = 0;        // m/s
+    double brg = 0;        // 도, 없으면 NaN
+    double acc = 0;        // m
+    double alt = 0;        // m, 없으면 NaN
+};
+
 inline const char* ctx_kind_name(CtxKind k) {
     switch (k) {
         case CtxKind::HELLO: return "HELLO";
@@ -128,7 +139,8 @@ inline std::string model_version_from_path(std::string p) {
 }
 
 constexpr size_t kMaxLogBytes = sizeof(LogInfer);  // 가장 큰 메시지 (P7 큐 칸 크기)
-static_assert(sizeof(LogDecision) <= kMaxLogBytes && sizeof(LogCtx) <= kMaxLogBytes && sizeof(LogSym) <= kMaxLogBytes,
+static_assert(sizeof(LogDecision) <= kMaxLogBytes && sizeof(LogCtx) <= kMaxLogBytes && sizeof(LogSym) <= kMaxLogBytes &&
+                  sizeof(LogGps) <= kMaxLogBytes,
               "LogInfer must be the largest log message");
 
 }  // namespace mm::msg

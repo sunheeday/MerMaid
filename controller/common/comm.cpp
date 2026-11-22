@@ -254,6 +254,21 @@ void Comm::on_device_json(uint8_t conn, const std::string& text, Actions& out) {
             const double x = v.at("misc").number();
             if (!(x >= 0 && x <= 10) || x != std::floor(x)) throw std::runtime_error("SYM misc not an integer 0..10");
             out.emplace_back(Sym{c.dev, static_cast<int>(x)});
+        } else if (t == "GPS") {
+            // M09 GPS: 앱만. spd 0~100 m/s, acc >= 0 (필수), brg [0, 360), alt 숫자 (선택). 위도·경도는 받지 않는다
+            if (hud) throw std::runtime_error("GPS from HUD");
+            const double nan = std::nan("");
+            Gps g;
+            g.phone = c.dev;
+            g.spd = v.at("spd").number();
+            g.acc = v.at("acc").number();
+            g.brg = v.has("brg") ? v.at("brg").number() : nan;
+            g.alt = v.has("alt") ? v.at("alt").number() : nan;
+            if (!(g.spd >= 0 && g.spd <= 100)) throw std::runtime_error("GPS spd out of range");
+            if (!(g.acc >= 0) || !std::isfinite(g.acc)) throw std::runtime_error("GPS acc out of range");
+            if (v.has("brg") && !(g.brg >= 0 && g.brg < 360)) throw std::runtime_error("GPS brg out of range");
+            if (v.has("alt") && !std::isfinite(g.alt)) throw std::runtime_error("GPS alt not finite");
+            out.emplace_back(g);
         } else {
             log("unknown t " + t + " from " + from);
             reject(conn, "unknown t " + t, text);

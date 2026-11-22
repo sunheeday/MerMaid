@@ -6,6 +6,8 @@
 //   P4 → P5 → P6(받기 스레드)     명령이 내려가는 방향
 //   P2 → P6(받기 스레드)          MOT 10 Hz
 //   P6(UART 스레드) → P5, P4      기기에서 들어온 것
+//   P6(UART 스레드) → P2          GPS 속도 (#18). P2→P6(MOTION)과 짝이지만 P6 쪽 받는 이가 받기 스레드(바로 회신,
+//                                 MsgSend 안 함)라 고리가 닫히지 않는다 (RF_MESSAGES.md §2-2)
 //   P5는 P4에게 먼저 보내지 않는다. P4가 10초마다 보내는 DEV_SYNC의 회신으로 등록 목록을 준다.
 //   P6의 받기 스레드는 MsgSend 하지 않는다.
 #pragma once
@@ -30,6 +32,7 @@ enum RfType : uint16_t {
     OUT_DROP = 0x8043,    // P5 -> P6, 연결을 끊을 것
     OUT_RESYNC = 0x8044,  // P5 -> P6, P5가 (다시) 시작함: 등록된 기기를 DEV_HELLO로 다시 알려 달라
     MOTION = 0x8050,      // P2 -> P6, 100 ms마다 (constants.json mot_period_ms)
+    GPS_SPEED = 0x8051,   // P6 -> P2, 폰의 M09 GPS 속도 (1~10 Hz, #18)
 };
 
 constexpr int kMaxConn = 9;          // 브리지 연결 번호 0~8 (PROTOCOL.md §1)
@@ -137,6 +140,17 @@ struct OutDrop {
 struct OutResync {
     Hdr h{OUT_RESYNC, 0, 0};
 };
+
+// ---- P6 -> P2 ----
+// 앱이 보낸 M09 GPS 중 속도만 (P6 규칙 통과). P2는 받자마자 회신하고 보관만 한다 (common/gps_speed.hpp)
+struct GpsSpeed {
+    Hdr h{GPS_SPEED, 0, 0};
+    uint64_t mono_ns = 0;     // P6이 줄을 받은 단조 시각
+    double spd = 0;           // m/s, 0~100
+    double acc = 0;           // 수평 정확도 m, >= 0
+    char phone[kIdLen] = {};
+};
+constexpr uint64_t kGpsSpeedTimeoutNs = 3 * 1000000ULL;  // P6 UART 스레드가 P2를 기다리는 한도 (3 ms). 실패는 세기만
 
 // ---- P2 -> P6 ----
 struct Motion {

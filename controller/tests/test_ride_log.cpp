@@ -227,6 +227,23 @@ static void test_normal_ride() {
     lg.on_msg(&sym, sizeof sym, now);  // 다시 보낸 같은 점수
     CHECK(lg.stats().dup_msgs == 3 && lg.stats().label_rows == 1, "resent events are written once (dup %llu)",
           (unsigned long long)lg.stats().dup_msgs);
+    // M09 GPS (#18): gps 표. 다시 보낸 것은 한 번만, 없는 칸(brg·alt)은 NULL
+    msg::LogGps gps;
+    gps.mono_ns = m0 + 210 * 10000000ULL;
+    msg::copy_id(gps.phone, "phone-a");
+    gps.spd = 12.34;
+    gps.brg = 87.5;
+    gps.acc = 3.2;
+    gps.alt = std::nan("");
+    lg.on_msg(&gps, sizeof gps, now);
+    lg.on_msg(&gps, sizeof gps, now);
+    msg::LogGps gps2 = gps;
+    gps2.mono_ns += 100 * 1000000ULL;
+    gps2.brg = std::nan("");
+    gps2.alt = 45.1;
+    lg.on_msg(&gps2, sizeof gps2, now);
+    CHECK(lg.stats().gps_rows == 2 && lg.stats().dup_msgs == 4, "gps rows %llu, dup %llu",
+          (unsigned long long)lg.stats().gps_rows, (unsigned long long)lg.stats().dup_msgs);
     msg::LogSym bad = sym;
     bad.misc = 11;
     lg.on_msg(&bad, sizeof bad, now);
@@ -255,7 +272,7 @@ static void test_normal_ride() {
     CHECK(!exists(op + "-wal") && !exists(op + "-shm"), "no WAL pieces left under the open name");
     CHECK(q1(f, "PRAGMA journal_mode") == "delete", "journal mode delete: %s", q1(f, "PRAGMA journal_mode").c_str());
     auto meta = [&](const char* k) { return q1(f, std::string("SELECT value FROM meta WHERE key='") + k + "'"); };
-    CHECK(meta("schema_version") == "1", "schema_version");
+    CHECK(meta("schema_version") == "2", "schema_version 2 (gps table, #18)");
     CHECK(meta("ride_id") == "pi01-00001-001", "ride_id %s", meta("ride_id").c_str());
     CHECK(meta("source") == "live", "source live");
     CHECK(meta("columns") == "[\"ax\", \"ay\", \"az\", \"gx\", \"gy\", \"gz\"]", "columns %s", meta("columns").c_str());
@@ -305,6 +322,10 @@ static void test_normal_ride() {
     CHECK(q1(f, "SELECT printf('%.2f', t) FROM ctx WHERE kind='OVR'") == "1.50", "ctx t from mono_ns: %s",
           q1(f, "SELECT t FROM ctx WHERE kind='OVR'").c_str());
     CHECK(q1(f, "SELECT printf('%.2f', t) || ' ' || misc FROM label") == "2.00 4", "label");
+    CHECK(q1(f, "SELECT group_concat(printf('%.2f %s %.2f %.1f %s %s', t, phone, spd, acc, quote(brg), quote(alt)), ';') FROM "
+                "(SELECT * FROM gps ORDER BY mono_ns)") == "2.10 phone-a 12.34 3.2 87.5 NULL;2.20 phone-a 12.34 3.2 NULL 45.1",
+          "gps rows: %s",
+          q1(f, "SELECT group_concat(printf('%.2f %s %.2f %.1f %s %s', t, phone, spd, acc, quote(brg), quote(alt)), ';') FROM gps").c_str());
     CHECK(q1(f, "SELECT value FROM health WHERE key='hold_samples'") == "2.0", "hold health %s",
           q1(f, "SELECT value FROM health WHERE key='hold_samples'").c_str());
     CHECK(q1(f, "SELECT value FROM health WHERE key='ring_overrun'") == "0.0", "ring overrun health");

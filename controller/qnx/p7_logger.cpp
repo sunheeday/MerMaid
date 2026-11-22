@@ -45,6 +45,7 @@ size_t size_of(uint16_t type) {
         case msg::LOG_DECISION: return sizeof(msg::LogDecision);
         case msg::LOG_CTX: return sizeof(msg::LogCtx);
         case msg::LOG_SYM: return sizeof(msg::LogSym);
+        case msg::LOG_GPS: return sizeof(msg::LogGps);
         default: return 0;
     }
 }
@@ -164,14 +165,14 @@ int main(int argc, char** argv) {
                     std::printf("{\"proc\": \"p7\", \"session\": %llu, \"rides_opened\": %llu, \"rides_closed\": %llu, "
                                 "\"rides_refused\": %llu, \"samples\": %llu, \"hold_samples\": %llu, \"ring_lost\": %llu, "
                                 "\"infer_rows\": %llu, \"decision_rows\": %llu, \"ctx_rows\": %llu, \"label_rows\": %llu, "
-                                "\"queue_drop\": %llu, \"outside_ride\": %llu, \"bad_msgs\": %llu, \"sqlite_errors\": %llu, "
+                                "\"gps_rows\": %llu, \"queue_drop\": %llu, \"outside_ride\": %llu, \"bad_msgs\": %llu, \"sqlite_errors\": %llu, "
                                 "\"recovered\": %llu, \"broken\": %llu, \"dup_msgs\": %llu}\n",
                                 (unsigned long long)lg.session(), (unsigned long long)s.rides_opened,
                                 (unsigned long long)s.rides_closed, (unsigned long long)s.rides_refused,
                                 (unsigned long long)s.samples, (unsigned long long)s.hold_samples,
                                 (unsigned long long)s.ring_lost, (unsigned long long)s.infer_rows,
                                 (unsigned long long)s.decision_rows, (unsigned long long)s.ctx_rows,
-                                (unsigned long long)s.label_rows, (unsigned long long)queue.dropped(),
+                                (unsigned long long)s.label_rows, (unsigned long long)s.gps_rows, (unsigned long long)queue.dropped(),
                                 (unsigned long long)s.outside_ride, (unsigned long long)s.bad_msgs,
                                 (unsigned long long)s.sqlite_errors, (unsigned long long)s.recovered,
                                 (unsigned long long)s.broken, (unsigned long long)s.dup_msgs);

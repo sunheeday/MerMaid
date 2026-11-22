@@ -47,11 +47,11 @@
 | 프로세스 | 언어 | 우선순위 | 이번 작업 |
 |---|---|---|---|
 | P1 수집 | C++17 | 40 | **`--live` 추가**, 공유 메모리 링 쓰기 |
-| P2 피처 | C++17 | 30 | 변경 없음 |
+| P2 피처 | C++17 | 30 | (#18) P6이 보낸 GPS 속도로 LIVE의 speed 칸을 채움 (`RF_MESSAGES.md` §4-2) |
 | P3 추론 | C++17 | 20 | LOG_INFER 보내기 |
 | P4 정책 | C++17 | 15 | LOG_DECISION 보내기 |
 | P5 기기 관리 | C++17 | 14 | 안전 OFF 진입·해제, 잡아 둔 ON 적용을 LOG_CTX로 |
-| P6 통신 | C++17 | 12 | M08 SYM 규칙, 폰·HUD와 오간 사건 전부를 LOG_CTX로, SYM은 LOG_SYM으로 |
+| P6 통신 | C++17 | 12 | M08 SYM 규칙, 폰·HUD와 오간 사건 전부를 LOG_CTX로, SYM은 LOG_SYM으로, (#18) M09 GPS는 LOG_GPS로 |
 | **P7 로거 (새로)** | C++17 | 받기 11 / 쓰기 9 | 새로 |
 
 P7도 다른 프로세스와 같은 `controller/` CMake 빌드, `ipc.hpp`, 보드의 gcc를 쓴다.
@@ -238,6 +238,7 @@ p7_logger [--dir ~/mermaid/logs] [--device-id pi01] [--min-free-mb 1024] [--prio
 | LOG_DECISION | 0x8061 | P4 | 10초마다, 명령을 다 보낸 **뒤** | 약 1 KB |
 | LOG_CTX | 0x8062 | P6 (UART 스레드), P5 | 사건마다 | 약 300 B |
 | LOG_SYM | 0x8063 | P6 (UART 스레드) | 앱이 SYM을 보낼 때 (규칙 통과한 것만) | 약 100 B |
+| LOG_GPS | 0x8064 | P6 (UART 스레드) | 앱이 M09 GPS를 보낼 때 (규칙 통과한 것만, 1~10 Hz, #18) | 약 120 B |
 
 ```cpp
 constexpr int kMaxDevices = kMaxPhones + 3;   // 폰 9 + airflow-01 + display-01 + HUD
@@ -270,6 +271,12 @@ struct LogSym {
     char phone[kIdLen];
     int32_t misc;          // 0~10
 };
+struct LogGps {            // #18
+    Hdr h{LOG_GPS, 0, 0};
+    uint64_t mono_ns;      // P6이 줄을 받은 때
+    char phone[kIdLen];
+    double spd, brg, acc, alt;   // m/s, 도(없으면 NaN), m, m(없으면 NaN)
+};
 ```
 
 - **시간 기준:** P3·P4는 주행 시각 `t`를 알지만 P6는 모른다. 모든 메시지에 `mono_ns`를 넣고, P7이 링의 `(seq, mono_ns)` 짝으로 `mono_ns → t`를 바꾼다(가장 가까운 샘플).
@@ -296,7 +303,8 @@ struct LogSym {
 | `SAFE_CLEAR` (12) | P5 | DEV_SYNC가 돌아와 해제 | `{"held"}`: 잡아 둔 ON 개수 |
 | `HELD_ON` (13) | P5 | 안전 OFF 중 잡아 둔 ON을 해제 뒤 적용 | `{"device","tier"}` |
 
-  - 번호는 바꾸지 않고 뒤에만 붙인다. 표 구조는 그대로라 `schema_version`은 1을 유지한다(읽는 쪽은 모르는 kind를 건너뛰면 된다).
+  - 번호는 바꾸지 않고 뒤에만 붙인다. kind는 표 구조를 바꾸지 않으므로 `schema_version`을 올리지 않는다(읽는 쪽은 모르는 kind를 건너뛰면 된다).
+    `schema_version` 2는 `gps` 표 때문이다 (§6-5).
   - **시각:** 모든 줄에 사건이 **생긴 순간**의 `mono_ns`가 있다(보낸 순간이 아니다. P6의 받기 스레드에서 생긴 INT도 그 자리에서 찍는다).
     기기가 보낸 HELLO·BYE·SCR·OVR·PROF·SYM은 **줄을 받은 때**의 시각이다(P4·P5에 전달한 뒤가 아니다). 그래서 원인(OVR)이 결과(INT)보다
     항상 앞 시각으로 남는다.
@@ -306,6 +314,8 @@ struct LogSym {
   - REJECT는 1초에 10개까지만 남긴다(쓰레기 줄이 쏟아질 때 로그 길이 막히지 않게). 원문의 제어 문자와 ASCII 밖 바이트는 `?`로 바꾼다.
   - 10초마다 다시 보내는 SCR·PROF(`CtxResend`)는 사건이 아니라서 보내지 않는다. 스트림 ON/OFF(OUT_STREAM)도 남기지 않는다(INT tier 3·2와 같은 정보).
 - LOG_SYM: P6이 M08 SYM 규칙(§7)을 통과한 점수만 보낸다 → `label` 표. 통과하지 못한 것은 `ctx`에 REJECT로 남는다.
+- LOG_GPS (#18): P6이 M09 GPS 규칙(`RF_MESSAGES.md` §3)을 통과한 값만 보낸다 → `gps` 표. 주행 밖(주행 전·뒤)의 GPS는 남기지 않고 센다(`outside_ride`).
+  P6의 사건 큐(256개)를 같이 쓰므로 P7이 오래 멈추면 오래된 것부터 버린다(`log_drop`). 다시 보낸 같은 시각·폰의 값은 한 번만 적는다.
 
 ### 6-3. 파일 배치
 
@@ -330,7 +340,9 @@ struct LogSym {
 - 컴파일 옵션: `SQLITE_THREADSAFE=0`(DB는 쓰기 스레드만 만짐), `SQLITE_OMIT_LOAD_EXTENSION`, `SQLITE_DEFAULT_FOREIGN_KEYS=1`.
 - 열 때: `journal_mode=WAL`, `synchronous=NORMAL`, `temp_store=MEMORY`. 1초에 트랜잭션 한 번이므로 전원이 갑자기 꺼지면 최대 약 1초를 잃는다.
 
-### 6-5. 주행 파일 스키마 (schema_version 1)
+### 6-5. 주행 파일 스키마 (schema_version 2)
+
+버전 기록: 1 = 처음 (2026-11-21 실차 주행 파일), **2 = `gps` 표 추가 (2026-11, #18)**. 서버는 1과 2를 모두 받는다(1에는 `gps` 표가 없어도 됨).
 
 정본은 **`protocol/ride_schema.sql`** 하나다. P7은 `gen_cpp.py`가 `protocol_gen.hpp`에 넣은 같은 SQL(`proto::kRideSchemaSql`)로 파일을 만들고, 서버(`server/ridefile.py`)와 시험은 이 파일을 직접 읽는다. 아래는 각 칸의 뜻을 붙인 설명본이다.
 
@@ -372,6 +384,11 @@ CREATE TABLE health(mono_ns INTEGER NOT NULL, t REAL, key TEXT NOT NULL, value R
 -- health key: ring_overrun, queue_drop, hold_samples (주행을 닫을 때), sample_rate_hz (1분마다), samples_paused
 --   (I2C 오류·FIFO 넘침은 P1이 주행을 끊고 다시 시작하므로 주행 경계와 P1 통계 줄에 남는다.
 --    보내는 쪽 log_fail은 P7이 받을 수 없을 때 생기는 값이라 각 프로세스의 통계 줄에 남긴다)
+CREATE TABLE gps (mono_ns INTEGER NOT NULL, t REAL, phone TEXT NOT NULL,   -- 스키마 2 (#18): 앱의 M09 GPS, 규칙 통과한 것
+  spd REAL NOT NULL,              -- m/s
+  brg REAL,                       -- 진행 방향 도 [0, 360), 앱이 안 보냈으면 NULL
+  acc REAL NOT NULL,              -- 수평 정확도 m
+  alt REAL);                      -- 고도 m, 없으면 NULL. 위도·경도는 받지도 남기지도 않는다
 CREATE INDEX label_phone ON label(phone, t);
 ```
 
@@ -480,8 +497,8 @@ CREATE TABLE event (ride_id TEXT, t REAL, sender TEXT, kind TEXT, value TEXT);
 | GET | `/api/health` | 살아 있는지 (키 없이) | `{ok, rides}` |
 | POST | `/api/export` | `{ride_ids \| filter, note}` → `build_real.py --source mermaid` 실행 (**6단계**, 아직 없음) | `{version: "v010"}` |
 
-**업로드 검증:** 파일 이름 = `meta.ride_id` (`<device>-<session:05d>-<ride:03d>` 규칙, 경로 문자 거부), `schema_version == 1`,
-`PRAGMA integrity_check == ok`, 필수 표 7개 존재, `meta.closed_reason` 있음(닫힌 파일만), sha256 일치, 크기 ≤ `MERMAID_MAX_UPLOAD_MB`.
+**업로드 검증:** 파일 이름 = `meta.ride_id` (`<device>-<session:05d>-<ride:03d>` 규칙, 경로 문자 거부), `schema_version` 1~2,
+`PRAGMA integrity_check == ok`, 필수 표 존재(2는 8개, 1은 `gps` 없이 7개), `meta.closed_reason` 있음(닫힌 파일만), sha256 일치, 크기 ≤ `MERMAID_MAX_UPLOAD_MB`.
 통과하면 `rides/`로 옮겨 읽기 전용으로 두고, 중앙 DB 표들을 한 트랜잭션으로 채운다(실패하면 옮긴 파일을 지운다).
 같은 ride_id를 동시에 올려도 잠금으로 하나만 받는다.
 
@@ -582,6 +599,7 @@ p_i,k = σ( a_i · logit(p_k) + b_i )      k = 2..6, 사람 i마다 a_i > 0, b_i
 | P7 | 재생 P1 + qnxsim P3/P4/P6 대역 → 주행 파일 검사 | 30분 LIVE |
 | MPU 변환 | 단위: raw → m/s²·rad/s, R 적용, hold 규칙 | 정지 시 z ≈ 9.81 |
 | SYM | `test_comm` 규칙 (역할, 범위, 정수, HELLO 전), `log_rf_sim`에서 label 표까지 | 앱 → label 표 (`ble_check.py --sym`) |
+| GPS (#18) | `test_comm` 규칙, `test_ride_log`(gps 표·NULL·중복), `test_gps_speed`(P2 채움), `gps_risk_sim`: 폰 2대 → gps 표, infer의 G2가 정확한 폰 속도, 끊기면 NaN | 앱 → gps 표, infer의 G2 (`ble_check.py ai --gps`) |
 | 폰과 오간 사건 | `test_comm`·`test_devmgr`(사건 내용), `test_ride_log`(주행 전 사건), `log_rf_sim`: 가짜 폰이 HELLO·SCR·OVR on/off·SYM·거부·무응답 DROP·재연결 → 닫힌 주행 파일의 `ctx`·`label` 검사, P7을 멈추고 죽여도 폰이 받는 줄이 같음 | 실제 폰으로 한 주행 뒤 `ctx` 표 |
 | 서버 | pytest: 업로드 201/200/409/422, 목록, cycles | – |
 | 내보내기 | 작은 가짜 주행 파일 → npz 키와 라벨 규칙 | – |

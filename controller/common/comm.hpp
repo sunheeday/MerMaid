@@ -7,6 +7,8 @@
 //   DevHello/DevBye → P5에 MsgSend
 //   Ctx*            → P4에 MsgSend
 //   CtxResend       → 기억해 둔 SCR·PROF를 P4에 다시 MsgSend (조용히). 결과는 p4_result()로 알려 준다
+//   Sym             → P7에 LOG_SYM
+//   Gps             → P7에 LOG_GPS, P2에 GPS_SPEED (짧은 제한, 실패는 세기만)
 // 시각은 인자로 받는다 (테스트에서 시간을 마음대로 돌리려고). 단위 ms, 단조 시계.
 //
 // 스레드: 이 클래스는 잠그지 않는다. 프로세스에서 뮤텍스를 잡고 on_*()를 부르고,
@@ -64,7 +66,12 @@ struct Sym {
     std::string phone;
     int misc = 0;
 };
-using Action = std::variant<UartLine, msg::DevHello, msg::DevBye, msg::CtxScreen, msg::CtxOvr, msg::CtxProf, CtxResend, Sym>;
+// M09 GPS: 앱이 보낸 속도·정확도 (규칙 통과). P7에 LOG_GPS, P2에 GPS_SPEED (#18). 없는 칸(brg·alt)은 NaN
+struct Gps {
+    std::string phone;
+    double spd = 0, brg = 0, acc = 0, alt = 0;
+};
+using Action = std::variant<UartLine, msg::DevHello, msg::DevBye, msg::CtxScreen, msg::CtxOvr, msg::CtxProf, CtxResend, Sym, Gps>;
 using Actions = std::vector<Action>;
 
 // 주행 로그(P7)에 남길 사건. 규칙을 아는 코어가 만들고, 보내는 일은 프로세스가 한다 (docs/controller/DATA_LOGGING.md §6-2).

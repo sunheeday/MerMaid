@@ -651,6 +651,35 @@ void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_t
                 st_.label_rows++;
             return;
         }
+        case msg::LOG_GPS: {
+            // M09 GPS (#18): 주행 안에서만 남긴다 (주행 밖의 속도는 쓸 데가 없다). 다시 보낸 것은 같은 시각·폰으로 알아본다
+            if (n < sizeof(msg::LogGps)) break;
+            msg::LogGps m;
+            std::memcpy(&m, p, sizeof m);
+            if (!std::isfinite(m.spd) || !std::isfinite(m.acc)) break;
+            const std::string phone = id_of(m.phone, msg::kIdLen);
+            if (seen_before(std::to_string(m.mono_ns) + "|" + phone + "|GPS")) return;
+            if (!writable()) {
+                st_.outside_ride++;
+                return;
+            }
+            ensure_txn();
+            bool ok;
+            const double t = t_of(m.mono_ns, ok);
+            if (file_->run("INSERT INTO gps (mono_ns, t, phone, spd, brg, acc, alt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                           [&](sqlite3_stmt* s) {
+                               sqlite3_bind_int64(s, 1, static_cast<sqlite3_int64>(m.mono_ns));
+                               if (ok) sqlite3_bind_double(s, 2, t);
+                               else sqlite3_bind_null(s, 2);
+                               sqlite3_bind_text(s, 3, phone.c_str(), -1, SQLITE_TRANSIENT);
+                               sqlite3_bind_double(s, 4, m.spd);
+                               bind_real_or_null(s, 5, m.brg);
+                               sqlite3_bind_double(s, 6, m.acc);
+                               bind_real_or_null(s, 7, m.alt);
+                           }))
+                st_.gps_rows++;
+            return;
+        }
         default:
             break;
     }

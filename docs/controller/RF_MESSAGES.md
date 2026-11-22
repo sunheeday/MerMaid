@@ -6,8 +6,8 @@
 > 기기 메시지(JSON)와 UART 프레임은 `protocol/PROTOCOL.md`가 기준. 이 문서는 Pi 안의 P5·P6 메시지를 정한다.
 
 ```
- 앱·HUD ──(A) BLE JSON M00~M07──▶ ESP32 ──(B) UART 줄──▶ P6 ──(C) QNX 메시지──▶ P5 · P4
-                                                           ◀── P2 MOTION
+ 앱·HUD ──(A) BLE JSON M00~M10──▶ ESP32 ──(B) UART 줄──▶ P6 ──(C) QNX 메시지──▶ P5 · P4 · P2(GPS 속도) · P7(로그)
+                                                           ◀── P2 MOTION, P5 OUT_*
 ```
 
 | 층 | 형식 | 기준 |
@@ -43,6 +43,7 @@
 | OUT_DROP | 0x8043 | P5 → P6 | 이벤트 | conn | 빈 |
 | OUT_RESYNC | 0x8044 | P5 → P6 | P5 시작 때 (전달될 때까지 1초마다) | 없음: 등록된 기기를 DEV_HELLO로 다시 알려 달라 | 빈 |
 | MOTION | 0x8050 | P2 → P6 | 100 ms | t, ax, ay, pax, pay (없으면 NaN) | 빈 |
+| GPS_SPEED | 0x8051 | P6(UART 스레드) → P2 | 앱의 M09 GPS마다 (1~10 Hz, 폰마다) | mono_ns(P6이 줄을 받은 때), spd(m/s), acc(m), phone[64] (#18). 제한 3 ms, 실패는 `gps_fail`로 세기만 | 빈 |
 
 CTX_*의 필드는 `Policy`의 함수 인자와 그대로 맞췄다: `on_screen(sender, screen, att)`, `on_override(now, sender, device, on)`, `on_profile(phone, mssq, sens0)`. P4는 받은 값을 그대로 넘기면 된다.
 
@@ -58,10 +59,17 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
            P2 ─────────────▶ P6(받기 스레드)      MOTION
       P6(UART 스레드) ─▶ P5                       HELLO, BYE
       P6(UART 스레드) ─▶ P4                       SCR, OVR, PROF
+      P6(UART 스레드) ─▶ P2                       GPS_SPEED (#18)
 ```
 - P5는 P4에게 먼저 보내지 않는다. 등록 목록은 P4가 10초마다 보내는 DEV_SYNC의 회신으로 준다 (P3 ↔ P4 PROFILES와 같은 방식). 등록 지연은 최대 10초로 추론 주기와 같다.
 - P6은 스레드 2개다. UART 스레드는 읽고 위로 보내고, 받기 스레드는 MsgReceive 뒤 즉시 회신하고 UART에 쓴다. 받기 스레드는 MsgSend 하지 않는다. UART 쓰기는 뮤텍스로 보호한다.
 - 보내기는 `ipc::Client`의 시간 제한을 쓴다. 상대가 멈춰도 P6의 UART 스레드는 계속 돈다.
+- **P2 ↔ P6 (GPS_SPEED와 MOTION, #18)**: P2는 P6에 MOTION을 보내고 P6은 P2에 GPS_SPEED를 보내 서로 보내는 짝처럼 보이지만 고리가 아니다.
+  MOTION을 받는 것은 P6의 **받기 스레드**이고, GPS_SPEED를 보내는 것은 P6의 **UART 스레드**다. 받기 스레드는 MsgSend를 하지 않고
+  받자마자 회신하므로, P2가 MOTION에서 멈추는 일은 UART 스레드가 무엇을 하든 없다. 그래서 P2가 MOTION을 보내는 중이고 P6 UART
+  스레드가 GPS_SPEED를 보내는 중인 경우에도: 받기 스레드가 MOTION에 회신 → P2가 풀려 다음 MsgReceive에서 GPS_SPEED를 받고 바로 회신
+  → UART 스레드가 풀린다. P2는 한 스레드이고 받은 메시지마다 먼저 회신한다(SAMPLE, GPS_SPEED, RIDE_*). P2가 P3에 VEH를 보내며
+  멈춰 있는 동안(제한 1초) GPS_SPEED는 3 ms 제한으로 포기하고 세기만 하므로 UART 스레드가 오래 잡히지 않는다 (P3는 P2에 보내지 않는다).
 - 상대가 다시 시작하면 옛 연결로 보낸 첫 번은 실패하고 연결이 닫힌다. P5·P6·rf_stub은 이때 **바로 한 번 더** 보낸다 (새로 연결). 시간 초과는 연결이 남으므로 다시 보내지 않는다. **진짜 P4도 TIER_CMD를 이렇게 보내야** P5가 다시 시작한 직후의 명령을 잃지 않는다.
 
 ## 3. P6 번역 규칙 (`comm.cpp`)
@@ -75,8 +83,9 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 | `id\|{OVR}` | 대상이 `airflow-01`/`display-01`이면 누구나, 폰 ID면 **그 폰 자신만** → CTX_OVR |
 | `id\|{PROF}` | 앱만, mssq 0~54, sens 0.5~2.0 → CTX_PROF |
 | `id\|{SYM}` | M08 멀미 점수. 앱만, `misc` 0~10 **정수** → LOG_SYM(P7, 주행 로그 `label` 표). P4·P5에는 보내지 않는다 (기록 전용) |
+| `id\|{GPS}` | M09 GPS (#18). 앱만, HELLO 뒤. `spd` 0~100 숫자·`acc` 0 이상 숫자 필수, `brg`는 있으면 [0, 360), `alt`는 있으면 숫자. 통과하면 LOG_GPS(P7, 주행 로그 `gps` 표) + GPS_SPEED(P2). 아니면 REJECT(이유: `GPS spd out of range` 등). 모르는 칸(예: 위도)은 무시하고 기록하지 않는다 |
 | `id\|{HB}` | P6에서 끝 |
-| HELLO 전의 SCR·OVR·PROF·SYM, 모르는 `t`, 깨진 JSON, 규칙에 안 맞는 값 | 로그 후 버림. 주행 로그에 REJECT 사건(이유 + 원문 앞부분)으로 남김 |
+| HELLO 전의 SCR·OVR·PROF·SYM·GPS, 모르는 `t`, 깨진 JSON, 규칙에 안 맞는 값 | 로그 후 버림. 주행 로그에 REJECT 사건(이유 + 원문 앞부분)으로 남김 |
 | 시작할 때 한 번 | `0\|DROP` ~ `8\|DROP` (브리지는 빈 번호의 DROP을 무시) + P5에 DEV_BYE ALL. P6만 다시 시작했을 때 기기가 다시 붙어 HELLO 하게 하는 유일한 방법 |
 | 시작 1초 뒤 한 번 | 그때까지 CONNECT도 HELLO도 오지 않은 번호에 `id\|DROP` 한 번 더 (실제 브리지가 첫 DROP을 가끔 놓친다, #16). 이미 다시 붙은 기기는 건드리지 않는다 |
 | 모르는 연결에서 줄이 옴 (CONNECT도 HELLO도 받은 적 없는 번호의 HB·SCR 등) | 그 연결에 `id\|DROP` (같은 번호는 5초에 한 번까지). P6보다 먼저 붙어 있던 폰은 HB만 보내고 HELLO를 다시 보내지 않으므로, 끊어서 다시 붙게(CONNECT → HELLO) 한다 (#16). 그 번호의 HELLO는 그대로 받아 등록한다. 로그 DROP 이유 `unknown_conn` |
@@ -109,18 +118,30 @@ P1 → P2 → P3 → P4 → P5 → P6(받기 스레드)
 
 ### 4-1. 주행 로그로 보내는 것 (P6·P5 → P7)
 
-폰·HUD와 오간 사건은 모두 P7(`mermaid_p7`)에 `LOG_CTX`(0x8062)로, 멀미 점수는 `LOG_SYM`(0x8063)으로 보낸다. 종류와 내용은
+폰·HUD와 오간 사건은 모두 P7(`mermaid_p7`)에 `LOG_CTX`(0x8062)로, 멀미 점수는 `LOG_SYM`(0x8063)으로, GPS는 `LOG_GPS`(0x8064, #18)로 보낸다. 종류와 내용은
 [`DATA_LOGGING.md`](DATA_LOGGING.md) §6-2 표. HB와 MOT는 보내지 않는다.
 
 | 누가 | 무엇 |
 |---|---|
-| P6 | 기기가 보낸 HELLO·BYE·SCR·OVR·PROF, 링크 사건 CONNECT·DISCONNECT·DROP(+이유), Pi가 내보낸 INT·PROF 회신, 버린 메시지 REJECT(+이유·원문), SYM |
+| P6 | 기기가 보낸 HELLO·BYE·SCR·OVR·PROF, 링크 사건 CONNECT·DISCONNECT·DROP(+이유), Pi가 내보낸 INT·PROF 회신, 버린 메시지 REJECT(+이유·원문), SYM, GPS(`gps` 표) |
 | P5 | 안전 OFF 진입(SAFE_OFF)·해제(SAFE_CLEAR), 잡아 둔 ON 적용(HELD_ON) |
 
 - **로그는 제어를 막지 않는다.** P7에는 2 ms 제한으로 보내고, 실패하면 세기만 한다. P7은 아무에게도 MsgSend 하지 않아 교착 고리가 없다.
 - P6의 받기 스레드는 여전히 MsgSend 하지 않는다(§2-2). 받기 스레드에서 생긴 사건(INT, PROF 회신, P5가 시킨 DROP)은 그 자리에서
   시각을 찍어 큐(256개)에 넣고, UART 스레드가 100 ms 안에 P7에 보낸다. 한 바퀴에 실패는 한 번만 기다린다(2 ms).
 - P5는 P6에 보낼 것을 다 보내고 잠금을 푼 뒤에 P7에 보낸다.
+
+### 4-2. GPS 속도 → P2 피처 (#18)
+
+- P2(`p2_feat.cpp`)는 GPS_SPEED를 받자마자 회신하고 폰마다 최근 값을 보관한다 (`common/gps_speed.hpp`, 시험 `test_gps_speed`).
+- 샘플(100 Hz)을 FeatureExtractor에 넣기 전에 trip 열 `speed`가 NaN이면(LIVE) 보관한 값으로 채운다:
+  최근 **2초** 안의 값 중 `acc`가 가장 작은 폰의 속도, 2초 안의 값이 없으면 3초 안의 가장 최근 값, **3초** 넘게 새 값이 없으면 NaN.
+  재생 trip에 speed가 있으면 덮어쓰지 않는다.
+- speed는 G2 피처(speed_mean_10s·1m·5m, speed_std_1m·5m, stop_ratio_5m, speed_max_5m, `features.cpp`)에만 쓰인다. 벡터를 낼 때
+  마지막 샘플의 speed가 NaN이면 G2 7개가 NaN이다. speed 차분(DECEL)은 regen_decel이 있을 때만 쓰여 GPS의 1 Hz 계단은 문제없다.
+- P2의 주행 끝 통계에 `gps_rx`(받은 GPS_SPEED 수), `gps_filled`(채운 샘플 수). P6의 10초 통계에 `gps N (to P2 n, fail k)`.
+- P1이 P7에 쓰는 원본 샘플(`samples` 표)의 speed는 그대로 NaN이다. GPS 원본은 `gps` 표에 따로 남는다.
+- 시험: `ctest`의 `gps_risk_sim` (폰 2대가 GPS → gps 표, 10·20초 주기의 G2가 정확한 폰의 속도, GPS가 끊기면 다시 NaN).
 
 ## 5. 확정 필요
 
@@ -157,7 +178,7 @@ cmake -S controller -B build && cmake --build build && ctest --test-dir build --
 | 다시 시작 | 무엇이 비나 | 복구 |
 |---|---|---|
 | P5만 | 명부, Tier 1·2·3 기억 | 새 P5가 OUT_RESYNC → P6이 다음 1초 박자에 등록된 기기마다 DEV_HELLO (그 기기에 마지막으로 보낸 INT를 실어서) → P5가 명부와 Tier를 되찾고 같은 상태를 다시 보냄. 기기 화면은 바뀌지 않고, P6의 스트림 표도 그대로. P4의 다음 DEV_SYNC부터 명부가 다시 보임 |
-| P6만 | 연결 표 | 새 P6이 시작하자마자 `0~8\|DROP` + P5에 DEV_BYE ALL → 브리지가 모두 끊음 → 기기가 다시 붙어 HELLO → P5가 기억한 상태(Tier 3 포함)를 보내고 스트림도 다시 켬. 연결 번호는 바뀔 수 있다. 브리지가 DROP을 놓치면 1초 뒤 한 번 더, 그래도 남은 연결은 줄이 올 때 DROP(5초에 한 번, §4) |
+| P6만 | 연결 표 | 새 P6이 시작하자마자 `0~8\|DROP` + P5에 DEV_BYE ALL → 브리지가 모두 끊음 → 기기가 다시 붙어 HELLO → P5가 기억한 상태(Tier 3 포함)를 보내고 스트림도 다시 켬. 연결 번호는 바뀔 수 있다. 브리지가 DROP을 놓치면 1초 뒤 한 번 더, 그래도 남은 연결은 줄이 올 때 DROP(5초에 한 번, §3) |
 
 `rf_sim`이 둘 다 실제 프로세스로 확인한다 ([11]·[12]단계).
 

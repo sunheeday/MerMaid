@@ -500,6 +500,47 @@ static void sym_rules() {
     CHECK(ev.size() == before + 8, "one REJECT per bad SYM");
 }
 
+// M09 GPS (#18): 앱만, HELLO 뒤. spd 0~100, acc >= 0 필수, brg [0,360)·alt 선택. 통과하면 Gps 하나 (P7·P2로)
+static void gps_rules() {
+    Comm c(nullptr, 0);
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    auto rejected = [&](const std::string& line, const char* why) {
+        const size_t n0 = ev.size();
+        const Actions a = c.on_uart_line(line, 100);
+        return a.empty() && ev.size() == n0 + 1 && ev.back().kind == msg::CtxKind::REJECT &&
+               ev.back().value.find(why) != std::string::npos;
+    };
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 0);
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":1,\"acc\":3}", "GPS before HELLO"), "GPS before HELLO dropped");
+    c.on_uart_line("0|" + hello("app", kPhone), 1);
+    c.on_uart_line("1|CONNECT", 2);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 3);
+
+    Actions a = c.on_uart_line("0|{\"t\":\"GPS\",\"spd\":12.34,\"brg\":87.5,\"acc\":3.2,\"alt\":45.1}", 10);
+    const auto* g = only<Gps>(a);
+    CHECK(g && g->phone == kPhone && g->spd == 12.34 && g->brg == 87.5 && g->acc == 3.2 && g->alt == 45.1, "full GPS");
+    a = c.on_uart_line("0|{\"t\":\"GPS\",\"spd\":0,\"acc\":0}", 11);
+    g = only<Gps>(a);
+    CHECK(g && g->spd == 0 && g->acc == 0 && std::isnan(g->brg) && std::isnan(g->alt), "required only, stopped car; brg/alt NaN");
+    a = c.on_uart_line("0|{\"t\":\"GPS\",\"spd\":100,\"acc\":50,\"brg\":0,\"alt\":-12.5,\"x\":1}", 12);
+    CHECK(only<Gps>(a) != nullptr, "edges 100 m/s, brg 0, negative altitude, unknown field ignored");
+    const size_t before = ev.size();
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12}", "missing key acc"), "acc required");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"acc\":3}", "missing key spd"), "spd required");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":-0.1,\"acc\":3}", "spd out of range"), "negative speed");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":100.1,\"acc\":3}", "spd out of range"), "over 100 m/s");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":\"12\",\"acc\":3}", "not a number"), "string speed");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12,\"acc\":-1}", "acc out of range"), "negative accuracy");
+    c.on_tick(1000);  // REJECT는 HB 박자마다 kMaxRejectsPerSec개까지
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12,\"acc\":3,\"brg\":360}", "brg out of range"), "bearing 360");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12,\"acc\":3,\"brg\":-1}", "brg out of range"), "negative bearing");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12,\"acc\":3,\"alt\":null}", "not a number"), "alt null");
+    CHECK(rejected("1|{\"t\":\"GPS\",\"spd\":12,\"acc\":3}", "GPS from HUD") && ev.back().sender == "hud-01", "HUD cannot send GPS");
+    CHECK(ev.size() == before + 10, "one REJECT per bad GPS");
+}
+
 // 주행 로그 사건: 링크(CONNECT·DISCONNECT·DROP + 이유), Pi → 기기(INT·PROF 회신), 버린 것(REJECT). HB·MOT는 없음
 static void log_events() {
     Comm c(nullptr);  // 무응답 감시 켬
@@ -624,6 +665,7 @@ int main() {
     unknown_connection();
     resync();
     sym_rules();
+    gps_rules();
     log_events();
     if (failures) {
         std::printf("%d failure(s)\n", failures);

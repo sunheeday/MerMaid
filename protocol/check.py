@@ -3,7 +3,7 @@
 1. PROTOCOL.md의 예시 메시지가 messages.schema.json을 통과하고, 잘못된 메시지는 거부되는지
 2. feature_order.json이 77개, 인덱스 연속, 그룹 개수와 범위가 맞는지
 3. UUID, 설정 파일의 버전과 값이 서로 맞는지
-4. ride_schema.sql이 SQLite에서 실행되고 표 7개가 있는지, protocol_gen.hpp가 JSON·SQL과 같은지
+4. ride_schema.sql이 SQLite에서 실행되고 표 8개가 있는지, protocol_gen.hpp가 JSON·SQL과 같은지
 """
 import json
 import pathlib
@@ -103,7 +103,7 @@ try:
     con = sqlite3.connect(":memory:")
     con.executescript(rs)
     tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    check(tables == {"meta", "samples", "infer", "decision", "ctx", "label", "health"}, f"ride_schema.sql 표가 다름: {sorted(tables)}")
+    check(tables == {"meta", "samples", "infer", "decision", "ctx", "label", "health", "gps"}, f"ride_schema.sql 표가 다름: {sorted(tables)}")
 except sqlite3.Error as e:
     check(False, f"ride_schema.sql이 SQLite에서 실행되지 않음: {e}")
 

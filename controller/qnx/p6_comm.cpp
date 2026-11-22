@@ -8,6 +8,8 @@
 // 스레드 두 개 (교착 방지, docs/controller/RF_MESSAGES.md §2-2):
 //   UART 스레드(main): UART 읽기 → 규칙 → UART 쓰기 / P5·P4에 MsgSend. 100 ms마다 시계(HB, HELLO 5초, 무응답 5초)
 //   받기 스레드: mermaid_p6로 P5(OUT_*)와 P2(MOTION)를 받아 바로 회신 → 규칙 → UART 쓰기. MsgSend 하지 않는다
+//   GPS (#18): 앱의 M09 GPS는 UART 스레드가 P7(LOG_GPS)과 P2(GPS_SPEED, 3 ms 제한, 실패는 gps_fail로 세기만)에 보낸다.
+//     P2도 P6에 MOTION을 보내지만 P6 쪽 받는 이는 받기 스레드라 고리가 없다 (RF_MESSAGES.md §2-2)
 // 주행 로그 (docs/controller/DATA_LOGGING.md §6-2): 폰·HUD와 오간 사건을 모두 P7에 LOG_CTX로 보낸다 (HB·MOT는 빼고).
 //   기기가 보낸 것: HELLO(P5에 전달됨), BYE, SCR, OVR, PROF / 링크: CONNECT, DISCONNECT, DROP + 이유 /
 //   Pi가 내보낸 것: INT, PROF 회신 / 버린 것: REJECT + 이유와 원문 앞부분. 멀미 점수 SYM은 LOG_SYM으로.
@@ -85,7 +87,7 @@ int open_uart(const char* dev) {
 // P7에 보낼 사건 큐. 두 스레드가 넣고 UART 스레드만 꺼낸다. 차면 가장 오래된 것을 버린다 (메모리가 늘지 않게)
 class LogQueue {
 public:
-    using Item = std::variant<msg::LogCtx, msg::LogSym>;
+    using Item = std::variant<msg::LogCtx, msg::LogSym, msg::LogGps>;
     static constexpr size_t kMax = 256;
 
     // mono_ns = 0: 지금. 기기가 보낸 사건은 줄을 받은 시각을 넘겨 준다 (P4·P5에 전달한 뒤에 넣더라도)
@@ -102,6 +104,16 @@ public:
         m.mono_ns = mono_ns ? mono_ns : ipc::now_ns();
         msg::copy_id(m.phone, phone);
         m.misc = misc;
+        push(m);
+    }
+    void gps(const comm::Gps& g, uint64_t mono_ns) {
+        msg::LogGps m;
+        m.mono_ns = mono_ns ? mono_ns : ipc::now_ns();
+        msg::copy_id(m.phone, g.phone);
+        m.spd = g.spd;
+        m.brg = g.brg;
+        m.acc = g.acc;
+        m.alt = g.alt;
         push(m);
     }
     std::deque<Item> take() {
@@ -284,6 +296,9 @@ int main(int argc, char** argv) {
         };
         ipc::Client p7(msg::kNameP7, msg::kLogTimeoutNs);
         uint64_t log_fail = 0, log_sent = 0;
+        // P2에 GPS 속도 (#18). 짧게 기다리고 실패는 세기만 (P2가 없거나 바쁘면 그 값은 버린다: 1~10 Hz로 다시 온다)
+        ipc::Client p2(msg::kNameP2, msg::kGpsSpeedTimeoutNs);
+        uint64_t gps_rx = 0, gps_sent = 0, gps_fail = 0;
         // 기기가 보낸 사건(HELLO·BYE·SCR·OVR·PROF)의 시각 = 그 줄을 받아 규칙을 통과한 때 (run이 시작할 때 한 번 찍는다).
         // P4·P5에 전달한 뒤에 찍으면, 그 결과로 받기 스레드가 내보낸 INT가 원인인 OVR·HELLO보다 앞 시각으로 남는다
         uint64_t batch_ns = 0;
@@ -392,6 +407,21 @@ int main(int argc, char** argv) {
                 } else if (const auto* y = std::get_if<comm::Sym>(&a)) {
                     log_line("P7", "SYM " + y->phone + " misc=" + std::to_string(y->misc));
                     logq.sym(y->phone, y->misc, batch_ns);  // P4에는 보내지 않는다 (기록 전용)
+                } else if (const auto* g = std::get_if<comm::Gps>(&a)) {
+                    gps_rx++;
+                    logq.gps(*g, batch_ns);
+                    msg::GpsSpeed gs;
+                    gs.mono_ns = batch_ns;
+                    gs.spd = g->spd;
+                    gs.acc = g->acc;
+                    msg::copy_id(gs.phone, g->phone);
+                    if (p2.send(&gs, sizeof gs) || (!p2.connected() && p2.send(&gs, sizeof gs))) gps_sent++;
+                    else gps_fail++;
+                    if (verbose) {
+                        char buf[160];
+                        std::snprintf(buf, sizeof buf, "GPS %s spd=%.2f acc=%.1f", g->phone.c_str(), g->spd, g->acc);
+                        log_line("P2", buf);
+                    }
                 }
             }
             flush_log();  // 받기 스레드가 넣은 사건도 여기서 나간다 (적어도 100 ms마다)
@@ -439,7 +469,8 @@ int main(int argc, char** argv) {
                 log_line("..", "stat: rx " + std::to_string(sh.rx_lines.load()) + " lines, tx " +
                                    std::to_string(sh.tx_lines.load()) + " (MOT " + std::to_string(sh.mot_lines.load()) +
                                    "), log_sent " + std::to_string(log_sent) + ", log_fail " + std::to_string(log_fail) +
-                                   ", log_drop " + std::to_string(logq.dropped()));
+                                   ", log_drop " + std::to_string(logq.dropped()) + ", gps " + std::to_string(gps_rx) +
+                                   " (to P2 " + std::to_string(gps_sent) + ", fail " + std::to_string(gps_fail) + ")");
             }
         }
     } catch (const std::exception& e) {
