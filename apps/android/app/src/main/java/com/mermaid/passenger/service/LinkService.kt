@@ -192,7 +192,7 @@ class LinkService : LifecycleService() {
     }
     private var locWarned = false
 
-    // ───────── GPS (#20): 연결됨(신호 없음 포함) ∧ 주행 기록 수집 동의. 데모는 가짜 GPS를 늘 켠다
+    // ───────── GPS: 연결됨(신호 없음 포함) ∧ 주행 기록 수집 동의. 데모는 가짜 GPS를 늘 켠다
     private fun updateGps(l: Live, s: com.mermaid.passenger.data.Settings, fromApp: Boolean = false) {
         if (!::gps.isInitialized) return
         val linked = l.link == LinkState.CONNECTED || l.link == LinkState.LOST

@@ -13,7 +13,7 @@
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <!-- 차 속도 (M09 GPS, #20). 속도·정확도·방향·고도만 보내고 위도·경도는 보내지도 저장하지도 않음.
+    <!-- 차 속도 (M09 GPS). 속도·정확도·방향·고도만 보내고 위도·경도는 보내지도 저장하지도 않음.
          주행 기록 수집 동의가 켜져 있고 차와 연결됐을 때만 위치를 요청. 백그라운드 위치 권한은 요청하지 않음 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

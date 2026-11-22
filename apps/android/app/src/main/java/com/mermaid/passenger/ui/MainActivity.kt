@@ -179,7 +179,7 @@ object Perms {
     fun notif(c: Context) = Build.VERSION.SDK_INT < 33 || granted(c, Manifest.permission.POST_NOTIFICATIONS)
     fun overlay(c: Context) = Settings.canDrawOverlays(c)
     fun battery(c: Context) = c.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(c.packageName)
-    /** 차 속도(GPS, #20). 정확한 위치여야 GPS 속도가 나온다 */
+    /** 차 속도(GPS). 정확한 위치여야 GPS 속도가 나온다 */
     val LOC = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
     fun loc(c: Context) = GpsFeed.fine(c)
     fun missing(c: Context) = listOf(bt(c), notif(c), overlay(c), battery(c), loc(c)).count { !it }

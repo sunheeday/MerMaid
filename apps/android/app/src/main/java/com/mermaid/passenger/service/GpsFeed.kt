@@ -20,7 +20,7 @@ import kotlin.math.max
 import kotlin.math.sin
 
 /**
- * 폰 GPS → M09 (#20). 위도·경도는 읽기만 하고 버린다: 속도·정확도·방향·고도만 남긴다.
+ * 폰 GPS → M09. 위도·경도는 읽기만 하고 버린다: 속도·정확도·방향·고도만 남긴다.
  * - 켜는 조건(LinkService가 판단): 차와 연결됨 ∧ 주행 기록 수집 동의 (데모 모드는 가짜 GPS, 권한·동의 없이)
  * - 조건이 깨지면 위치 요청을 바로 끊는다 (배터리)
  * - LocationManager.GPS_PROVIDER에 minTime 0, minDistance 0 = 폰이 주는 만큼 자주. 보내기는 RfSession이 10 Hz로 제한

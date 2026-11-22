@@ -63,7 +63,7 @@ import java.util.Locale
 import kotlin.math.ceil
 
 /**
- * 대시보드 (#21): 지금 차 안 · 멀미 위험 확률(M10) · 내 멀미 점수 · 연결 · 속도(GPS) · 최근 로그.
+ * 대시보드: 지금 차 안 · 멀미 위험 확률(M10) · 내 멀미 점수 · 연결 · 속도(GPS) · 최근 로그.
  * 값은 모두 이 폰 메모리(Repo)와 기기 안 파일(SymStore)에서만 읽는다. 보내는 것 없음
  */
 @Composable

@@ -67,8 +67,8 @@ app/src/main/java/com/mermaid/passenger/
 | APP-F-23 홈 수동 조작 | `Home.kt TierRow` → `Cmd.Override` → `RfSession.requestOverride` |
 | APP-F-30~32 프로필 | `Profile.kt`, `Mssq` |
 | 멀미 점수 기록 (M08 SYM) | `Home.kt SymptomCard` → `Cmd.Symptom` → `RfSession.sendSymptom`, 2분 알림 `LinkService.updateSymPrompt` |
-| 차 속도 (M09 GPS, #20) | `GpsFeed` → `RfSession.sendGps`, 조건 `LinkService.updateGps`, 진단 `Diagnostics.kt GpsCard` |
-| 대시보드 (M10 RISK, #21) | `Dashboard.kt`, `Repo.drive/risk/speed`, `SymStore` |
+| 차 속도 (M09 GPS) | `GpsFeed` → `RfSession.sendGps`, 조건 `LinkService.updateGps`, 진단 `Diagnostics.kt GpsCard` |
+| 대시보드 (M10 RISK) | `Dashboard.kt`, `Repo.drive/risk/speed`, `SymStore` |
 | NFR-01 fail-safe | `RfSession.watchdog/safeOff` → `CueOverlay.hideNow` |
 
 ## 아직 확인하지 못한 것
