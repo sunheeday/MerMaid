@@ -18,6 +18,8 @@
       --with-response (응답 있는 쓰기), --skip-link-timeout (p6_comm을 --no-link-timeout으로 띄웠을 때),
       --verbose (HB·MOT까지 모두 출력),
       --sym N (full·ai: 등록 뒤 멀미 점수 M08 SYM을 한 번 보냄. 0~10 정수면 주행 로그 label 표에, 11 같은 값은 거부 사건으로)
+      --gps SPD (ai: 등록 뒤 M09 GPS {"spd":SPD,"acc":5,"brg":90}를 1초마다 보냄 → 주행 파일 gps 표, infer의 G2 속도 피처, #18)
+ai 모드는 M10 RISK(추론 주기 10초마다 이 폰의 위험 확률 5개, #19)도 받는지 확인한다.
 
 처음 실행하면 macOS가 블루투스 권한(터미널 앱)이나 "연결 요청" 창을 띄울 수 있다 → 허용.
 """
@@ -166,7 +168,7 @@ class Phone:
     # ---- 보내기 ----
     async def send(self, obj):
         line = json.dumps(obj, separators=(",", ":"))
-        if obj.get("t") != "HB" or self.args.verbose:
+        if obj.get("t") not in ("HB", "GPS") or self.args.verbose:
             say(f">> {line}")
         await self.client.write_gatt_char(RX, (line + "\n").encode(), response=self.args.with_response)
 
@@ -346,6 +348,28 @@ async def send_sym(ph, args, tag):
     check(not extra, f"SYM에는 회신이 없어야 함 {extra}")
 
 
+async def gps_loop(ph, spd):
+    """M09 GPS를 1초마다 (--gps SPD). 앱처럼 위도·경도 없이 속도·정확도·방향만"""
+    while ph.connected:
+        if ph.hb_on:
+            await ph.send({"t": "GPS", "spd": spd, "acc": 5.0, "brg": 90.0})
+        await asyncio.sleep(1.0)
+
+
+async def check_risk(ph, n0, tag):
+    """M10 RISK: P4 → P5 → P6 → 폰, 추론 주기(10초)마다. 진짜 P4(--rf)일 때만 온다 (rf_stub은 보내지 않음)"""
+    step(f"{tag} M10 RISK: 이 폰의 위험 확률 5개가 10초마다 (#19)", "p4.out 끝 통계 risk_fwd, P6 창 stat의 risk_drop 0")
+    r = await ph.wait_msg(lambda m: m.get("t") == "RISK", 15, n0)
+    if not check(r is not None, "RISK 받음 (15초 안)"):
+        return
+    p = r[2].get("p")
+    check(isinstance(p, list) and len(p) == 5 and all(isinstance(x, (int, float)) and 0 <= x <= 1 for x in p),
+          f"p는 0~1 숫자 5개 {p}")
+    r2 = await ph.wait_msg(lambda m: m.get("t") == "RISK", 15, r[0] + 1)
+    if check(r2 is not None, "다음 RISK"):
+        check(7 <= r2[1] - r[1] <= 13, f"약 10초 간격 ({r2[1] - r[1]:.1f}초)")
+
+
 async def register(ph, args, n0):
     """HELLO → PROF → SCR (앱과 같은 순서) 뒤 INT 상태 3개를 받는다."""
     await ph.hello()
@@ -373,6 +397,11 @@ async def run_ai(ph, args):
     got = await register(ph, args, n0)
     check(set(got) == {1, 2, 3}, f"HELLO 후 INT tier 1·2·3 상태 수신 {got}")
     await send_sym(ph, args, "[2b]")
+    if args.gps is not None:
+        step(f"[2c] M09 GPS spd {args.gps}를 1초마다 보내기 시작 (회신 없음, Pi에서 확인, #18)",
+             "P6 창 stat의 'gps N (to P2 n, fail k)', 주행이 닫힌 뒤 주행 파일 gps 표와 infer의 speed_mean_10s")
+        asyncio.get_running_loop().create_task(gps_loop(ph, args.gps))
+    await check_risk(ph, n0, "[2d]")
 
     step("[3] V2: P4의 결정이 폰까지 (Tier 1 → 2 → 3). 최대 " + str(args.tier3_wait) + "초 기다림",
          "p4.out의 'CMD <t> ... 1'과 같은 순서")
@@ -466,6 +495,7 @@ async def main():
     ap.add_argument("--skip-link-timeout", action="store_true", help="무응답 DROP 확인 건너뛰기")
     ap.add_argument("--verbose", action="store_true", help="HB·MOT까지 출력")
     ap.add_argument("--sym", type=int, help="full·ai: 등록 뒤 멀미 점수 SYM을 한 번 보냄 (0~10. 범위 밖이면 거부되는지 확인)")
+    ap.add_argument("--gps", type=float, help="ai: 등록 뒤 GPS 속도 SPD(m/s, 0~100)를 1초마다 보냄 (#18)")
     args = ap.parse_args()
 
     ph = Phone(args)
