@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pi 4 UART3 (/dev/ser3, 핀 7 TX · 29 RX · 9 GND)를 켠다. 재부팅마다 root로 한 번 (bridge/README.md와 같은 순서).
+# Pi 4 UART3 (/dev/ser3, 핀 7 TX · 29 RX · 9 GND)를 켠다. 재부팅마다 root로 한 번 (firmware/bridge/README.md와 같은 순서).
 #   sudo sh controller/bringup/uart3.sh
 # 끝나면 /dev/ser3를 qnxuser도 열 수 있게 권한을 연다 (p6_comm을 root 없이 띄우려고).
 # 드라이버 파일: 부팅 이미지에 없어서 SDP에서 복사해 둔 /data/home/qnxuser/devc-serpl011

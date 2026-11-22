@@ -1,4 +1,4 @@
-"""중앙 DB (server/data/mermaid.db, docs/DATA_LOGGING.md §9-1).
+"""중앙 DB (server/data/mermaid.db, docs/controller/DATA_LOGGING.md §9-1).
 
 색인과 10초 기록만 둔다. 원본 샘플과 77칸 입력은 주행 파일(server/data/rides/<ride_id>.sqlite)에 그대로 남는다.
 표준 라이브러리 sqlite3. PostgreSQL로 옮길 때 이 파일만 바꾼다.

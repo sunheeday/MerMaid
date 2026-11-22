@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""P7 로거를 실제 프로세스로: P1 LIVE(가짜 IMU) → P2 → P3 대역 → P4, 그리고 P7 (docs/DATA_LOGGING.md §6).
+"""P7 로거를 실제 프로세스로: P1 LIVE(가짜 IMU) → P2 → P3 대역 → P4, 그리고 P7 (docs/controller/DATA_LOGGING.md §6).
 
   python3 controller/tests/log_sim_test.py <build 폴더>     (ctest의 log_sim이 부른다)
 
@@ -7,7 +7,7 @@
   A. 보통: 주행 파일 하나가 닫히고, samples 수 = P1이 보낸 수, infer 2주기, decision 2주기 × 기기 3, meta
   B. 주행 중 P7 kill -9: P1~P4는 그대로 끝난다 (샘플 손실 0, P4 주기 그대로). 다시 띄운 P7이 남은 파일을 복구
   C. 주행 중 P7 SIGSTOP 10초: P1~P4는 그대로 (보내기는 2 ms 시간 초과). 다시 움직이면 링에 남은 샘플을 모두 기록
-  D. (FastAPI가 있으면) 세 주행 파일을 tools/collect_logs.py로 로그 서버(uvicorn)에 올리고 API로 다시 읽는다
+  D. (FastAPI가 있으면) 세 주행 파일을 server/tools/collect_logs.py로 로그 서버(uvicorn)에 올리고 API로 다시 읽는다
 Mac은 실시간 OS가 아니라 주기 시간 변화(< 0.5 ms)는 Pi에서 잰다. 약 1분 30초.
 """
 import json
@@ -104,7 +104,7 @@ def wait_exit(proc, timeout):
 
 
 def server_stage(tmp, rides, env, s1_c):
-    """P7이 만든 진짜 주행 파일 → tools/collect_logs.py → uvicorn server.app (docs/DATA_LOGGING.md §8·§9)"""
+    """P7이 만든 진짜 주행 파일 → server/tools/collect_logs.py → uvicorn server.app (docs/controller/DATA_LOGGING.md §8·§9)"""
     try:
         import fastapi  # noqa: F401
         import httpx
@@ -132,7 +132,7 @@ def server_stage(tmp, rides, env, s1_c):
             except httpx.HTTPError:
                 time.sleep(0.1)
         check(up, "server up")
-        collect = [sys.executable, os.path.join(REPO, "tools", "collect_logs.py"), "--local", rides, "--server", url,
+        collect = [sys.executable, os.path.join(REPO, "server", "tools", "collect_logs.py"), "--local", rides, "--server", url,
                    "--key", key]
         r = subprocess.run(collect, capture_output=True, text=True, timeout=120, env=senv)
         out = json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {}

@@ -1,4 +1,4 @@
-// P7 로거 코어. 설명은 ride_log.hpp, 설계는 docs/DATA_LOGGING.md §6
+// P7 로거 코어. 설명은 ride_log.hpp, 설계는 docs/controller/DATA_LOGGING.md §6
 #include "ride_log.hpp"
 
 #include <dirent.h>
@@ -62,26 +62,6 @@ size_t MsgQueue::size() const {
 
 namespace {
 
-const char* kSchema = R"SQL(
-CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE samples (
-  seq0 INTEGER PRIMARY KEY, n INTEGER NOT NULL, mono_ns0 INTEGER NOT NULL,
-  data BLOB NOT NULL, hold BLOB);
-CREATE TABLE infer (
-  seq INTEGER NOT NULL, t REAL NOT NULL, mono_ns INTEGER NOT NULL, phone TEXT NOT NULL,
-  x BLOB NOT NULL, p2 REAL, p3 REAL, p4 REAL, p5 REAL, p6 REAL,
-  cal_a REAL NOT NULL DEFAULT 1, cal_b REAL NOT NULL DEFAULT 0,
-  PRIMARY KEY (seq, phone));
-CREATE TABLE decision (
-  seq INTEGER NOT NULL, t REAL NOT NULL, device TEXT NOT NULL,
-  on_ INTEGER NOT NULL, tier INTEGER NOT NULL, changed INTEGER NOT NULL,
-  PRIMARY KEY (seq, device));
-CREATE TABLE ctx (mono_ns INTEGER NOT NULL, t REAL, sender TEXT NOT NULL, kind TEXT NOT NULL, value TEXT);
-CREATE TABLE label (mono_ns INTEGER NOT NULL, t REAL, phone TEXT NOT NULL,
-  misc INTEGER NOT NULL CHECK (misc BETWEEN 0 AND 10));
-CREATE TABLE health (mono_ns INTEGER NOT NULL, t REAL, key TEXT NOT NULL, value REAL NOT NULL);
-CREATE INDEX label_phone ON label(phone, t);
-)SQL";
 
 std::string id_of(const char* s, size_t n) { return std::string(s, strnlen(s, n)); }
 
@@ -136,7 +116,7 @@ public:
             err = last_err_;
             return false;
         }
-        if (create && (!exec("BEGIN") || !exec(kSchema) || !exec("COMMIT"))) {
+        if (create && (!exec("BEGIN") || !exec(proto::kRideSchemaSql) || !exec("COMMIT"))) {
             err = last_err_;
             return false;
         }

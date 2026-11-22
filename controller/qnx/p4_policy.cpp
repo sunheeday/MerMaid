@@ -2,7 +2,7 @@
 //   p4_policy --config DIR --state DIR [--log FILE] [--rf] [--hud] [--phone ID:MSSQ:SENS0[:EV]]... [--once] [--prio P]
 // 기기 등록은 두 길이다 (함께 써도 된다).
 //   --rf    P5(mermaid_p5)에 DEV_SYNC를 보내 그 회신 명부로 폰·HUD를 등록/해제하고, 명령을 TIER_CMD로 P5에 보낸다.
-//           P6의 CTX_SCREEN / CTX_OVR / CTX_PROF를 받아 Policy에 넘긴다 (docs/RF_MESSAGES.md).
+//           P6의 CTX_SCREEN / CTX_OVR / CTX_PROF를 받아 Policy에 넘긴다 (docs/controller/RF_MESSAGES.md).
 //           DEV_SYNC는 RISK마다(10초)와 RIDE_START에 보낸다. 주행이 없으면 보내지 않으므로 30초 뒤 P5가 안전 OFF 한다.
 //           RF로 온 폰의 EV 경험은 M06 PROF에 없어서 NaN으로 P3에 준다.
 //   --phone / --hud  명령행으로 고정 등록 (화면 켜짐, 주의 있음). BLE 없이 AC-02를 돌릴 때.
@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
         bool rf_hud = false;
         uint64_t sync_seq = 0, sync_fail = 0, cmd_fail = 0;
         // P5가 다시 시작했으면 옛 연결로 보낸 첫 번은 실패하고 연결이 닫힌다 → 바로 한 번 더 (새로 연결).
-        // 시간 초과(P5가 바쁨)는 연결이 남으므로 다시 보내지 않는다 (docs/RF_MESSAGES.md §2-2)
+        // 시간 초과(P5가 바쁨)는 연결이 남으므로 다시 보내지 않는다 (docs/controller/RF_MESSAGES.md §2-2)
         auto send_p5 = [&](const void* m, size_t n, void* r = nullptr, size_t rn = 0) {
             return p5->send(m, n, r, rn) || (!p5->connected() && p5->send(m, n, r, rn));
         };

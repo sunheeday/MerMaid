@@ -7,7 +7,7 @@ cmake -S controller -B build && cmake --build build
 ```
 
 ```bash
-python3 ml/verify/oman_tudelft.py data/raw/ATDOMS.mat
+python3 ml/verify/oman_tudelft.py ml/data/raw/ATDOMS.mat
 ```
 
 ```bash
@@ -27,7 +27,7 @@ python3 -m pytest ml/tests
 | S1 Oman 검증 | `oman.py`, `verify/oman_tudelft.py` | K0, MAE, LOPO 기준선 (`verify/out/`) |
 | S3 합성 데이터 | `simulator/sim.py`, `simulator/build_dataset.py` | 새 버전 `out/runs/vNNN/`: `dataset.npz`, `dataset_report.json`, `trips/ride_*.bin` |
 | S4 학습 | `train/train.py`, `train/policy.py` | 새 버전 `out/runs/vNNN/`: `train/report.md`, `models/model_2~6.txt`, `thresholds.json`. 배포는 `runs.py use vNNN` (`controller/config/thresholds.json`) |
-| 실차 비교 | `realdata/` (comma2k19, BATON 변환) | 새 버전에 `real_*.npz`, 모델 버전에 `compare/*.md`. 설명은 `docs/REALDATA.md` |
+| 실차 비교 | `realdata/` (comma2k19, BATON 변환) | 새 버전에 `real_*.npz`, 모델 버전에 `compare/*.md`. 설명은 `docs/ml/REALDATA.md` |
 | S6 AC-01 모델 동등성 | `verify/model_parity.py` (+ 보드의 `verify_model`) | 모델 버전의 `parity/result.json`. 절차는 `controller/bringup/README.md` |
 | S6 P1→P4 파이프라인 | `verify/pipeline_check.py` (+ 보드의 `controller/qnx/run_pipeline.sh`) | Pi 결과와 Mac featurize + Python 비교. 절차는 같은 문서 |
 

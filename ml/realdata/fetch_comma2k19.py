@@ -1,6 +1,6 @@
 """comma2k19 원본 청크에서 신호 파일만 받기 (영상·raw_log 제외, 청크 하나 ~9 GB 대신 ~140 MB)
 
-    python3 -I ml/realdata/fetch_comma2k19.py --chunk 1 --out data/raw/comma2k19/chunk1
+    python3 -I ml/realdata/fetch_comma2k19.py --chunk 1 --out ml/data/raw/comma2k19/chunk1
 
 HF commaai/comma2k19의 raw_data/Chunk_N.zip을 HTTP range 요청으로 읽어, 연속 세그먼트가
 --min-run개 이상인 구간의 IMU·CAN·global_pose 파일만 푼다. CRC를 확인한다. 이미 받은 파일은 건너뛴다.

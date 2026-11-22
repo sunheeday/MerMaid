@@ -6,7 +6,7 @@
 //
 // LIVE:  p1_acq --live [--i2c /dev/i2c1] [--i2c-speed 400000] [--mount controller/config/imu_mount.json]
 //                      [--state DIR] [--timeout-ms T] [--prio P] [--ring NAME|none] [--duration-s S] [--fake-imu]
-//   MPU-6050을 FIFO로 읽는다 (common/imu.hpp, 설계 docs/DATA_LOGGING.md §4). 보정(정지 2초)이 끝나면 RIDE_START,
+//   MPU-6050을 FIFO로 읽는다 (common/imu.hpp, 설계 docs/controller/DATA_LOGGING.md §4). 보정(정지 2초)이 끝나면 RIDE_START,
 //   SIGINT/SIGTERM이나 --duration-s가 지나면 RIDE_END를 보내고 끝낸다. 센서 오류로 주행이 끊기면 다시 보정 후 새 주행.
 //   --state DIR    자이로 바이어스를 DIR/imu_bias.json에 저장하고, 정지 판정을 못 얻으면 그 값을 쓴다
 //   --fake-imu     실제 IMU 대신 가짜 MPU (Mac 시험, IMU 없는 보드 시험). QNX가 아니면 --live에 필수

@@ -1,4 +1,4 @@
-// P3·P4·P6 → P7 로그 메시지 (docs/DATA_LOGGING.md §6-2). 모두 고정 크기 POD.
+// P3·P4·P6 → P7 로그 메시지 (docs/controller/DATA_LOGGING.md §6-2). 모두 고정 크기 POD.
 // 보내는 쪽 규칙: ipc::Client(kNameP7, kLogTimeoutNs). 실패하면 자기 통계 log_fail만 올리고 계속한다.
 // P7은 받자마자 복사하고 바로 회신하며, 아무에게도 MsgSend 하지 않는다 (교착 고리 없음).
 #pragma once

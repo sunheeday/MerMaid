@@ -1,4 +1,4 @@
-// 개인 보정 (docs/DATA_LOGGING.md §12): p' = σ(a·logit(p) + b), 사람마다 a, b 하나씩.
+// 개인 보정 (docs/controller/DATA_LOGGING.md §12): p' = σ(a·logit(p) + b), 사람마다 a, b 하나씩.
 // k = 2..6에 같은 a > 0, b를 쓰므로 σ(a·logit(p) + b)가 p에 대해 증가해 p2 ≥ … ≥ p6 순서가 유지된다.
 // a = 1, b = 0이면 계산을 건너뛰어 입력과 비트 단위로 같은 값을 돌려준다.
 // Python 쪽 같은 식: ml/personal/fit_calib.py apply_calib (ml/tests/test_calib.py가 둘을 비교).

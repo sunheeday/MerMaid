@@ -1,7 +1,7 @@
 """S6 파이프라인 확인: Pi의 P1→P4 결과(cycles.csv)가 Mac의 featurize + Python LightGBM + 정책 재생과 같은지
 
     python3 ml/verify/pipeline_check.py spec <ride_id>...          # Pi 실행 인자 (폰 프로필, 차량 유형)
-    (Pi)    controller/qnx/run_pipeline.sh data/trips/ride_XXXX.bin <out> <speed> <vtype> <폰들>
+    (Pi)    controller/qnx/run_pipeline.sh ml/data/trips/ride_XXXX.bin <out> <speed> <vtype> <폰들>
     python3 ml/verify/pipeline_check.py check <trip.bin> <cycles.csv> <ride_id>...
     python3 ml/verify/pipeline_check.py check <trip.bin> <cycles.csv> default:<vtype>   # 폰 없이 돌린 경우
 
