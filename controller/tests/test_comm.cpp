@@ -541,6 +541,49 @@ static void gps_rules() {
     CHECK(ev.size() == before + 10, "one REJECT per bad GPS");
 }
 
+// M10 RISK (#19): OUT_RISK → 그 연결이 등록된 앱이고 기기가 같을 때만 한 줄, 소수 2자리. 로그 RISK_OUT
+static void risk_out() {
+    Comm c(nullptr, 0);
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    c.on_tick(0);
+    c.on_uart_line("3|CONNECT", 0);
+    c.on_uart_line("3|" + hello("app", kPhone), 1);
+    c.on_uart_line("1|CONNECT", 2);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 3);
+    msg::OutRisk r;
+    r.conn = 3;
+    msg::copy_id(r.device, kPhone);
+    const double p[5] = {0.994, 0.856, 0.5549, 0.03, 0.0};
+    for (int k = 0; k < 5; k++) r.p[k] = p[k];
+    Actions a = c.on_out_risk(r);
+    CHECK(lines(a).size() == 1 && lines(a)[0] == "3|{\"t\":\"RISK\",\"p\":[0.99,0.86,0.55,0.03,0.00]}", "RISK line: %s",
+          lines(a).empty() ? "-" : lines(a)[0].c_str());
+    CHECK(!ev.empty() && ev.back().kind == msg::CtxKind::RISK_OUT && ev.back().sender == kPhone &&
+              ev.back().value == "{\"conn\":3,\"p\":[0.99,0.86,0.55,0.03,0.00]}",
+          "RISK_OUT logged: %s", ev.empty() ? "-" : ev.back().value.c_str());
+    r.p[0] = std::nan("");
+    r.p[1] = 1.7;
+    r.p[2] = -0.2;
+    a = c.on_out_risk(r);
+    CHECK(lines(a).size() == 1 && lines(a)[0] == "3|{\"t\":\"RISK\",\"p\":[0.00,1.00,0.00,0.03,0.00]}",
+          "NaN and out-of-range values clamped to valid JSON 0..1");
+    const size_t n = ev.size();
+    r.conn = 1;  // HUD에는 보내지 않는다
+    msg::copy_id(r.device, "hud-01");
+    CHECK(c.on_out_risk(r).empty(), "not to the HUD");
+    r.conn = 3;
+    msg::copy_id(r.device, "other-phone");
+    CHECK(c.on_out_risk(r).empty(), "device on that conn changed: dropped");
+    r.conn = 5;
+    msg::copy_id(r.device, kPhone);
+    CHECK(c.on_out_risk(r).empty(), "unregistered conn: dropped");
+    r.conn = 200;
+    CHECK(c.on_out_risk(r).empty(), "bad conn: dropped");
+    CHECK(ev.size() == n && c.risk_dropped() == 4, "dropped RISK counted, not logged (%llu)",
+          (unsigned long long)c.risk_dropped());
+}
+
 // 주행 로그 사건: 링크(CONNECT·DISCONNECT·DROP + 이유), Pi → 기기(INT·PROF 회신), 버린 것(REJECT). HB·MOT는 없음
 static void log_events() {
     Comm c(nullptr);  // 무응답 감시 켬
@@ -666,6 +709,7 @@ int main() {
     resync();
     sym_rules();
     gps_rules();
+    risk_out();
     log_events();
     if (failures) {
         std::printf("%d failure(s)\n", failures);

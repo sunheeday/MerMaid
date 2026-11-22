@@ -113,6 +113,9 @@ public:
     Actions on_out_stream(const msg::OutStream& m);  // UART로 나가는 것은 없고 스트림 표만 바뀐다
     Actions on_out_prof(const msg::OutProf& m);
     Actions on_out_drop(const msg::OutDrop& m);
+    // M10 RISK 한 줄 (#19). 그 연결이 등록된 앱이고 기기 ID가 같을 때만 (아니면 버리고 센다)
+    Actions on_out_risk(const msg::OutRisk& m);
+    uint64_t risk_dropped() const { return risk_dropped_; }
     // P5가 다시 시작함: 등록된 연결을 모두 'P5에 아직 못 알림'으로 되돌린다. 다음 on_tick(1초 박자)이 DEV_HELLO를
     // 다시 내보낸다 (받기 스레드는 MsgSend 하지 않으므로 표만 바꾼다)
     void on_resync();
@@ -160,6 +163,7 @@ private:
     bool p4_down_ = false;
     uint64_t hb_seq_ = 0;
     int rejects_ = 0;  // 이번 HB 박자에 남긴 REJECT 수
+    uint64_t risk_dropped_ = 0;
     LogFn log_;
     EventFn event_;
     int64_t link_timeout_ms_;

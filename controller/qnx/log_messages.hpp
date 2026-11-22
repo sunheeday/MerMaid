@@ -65,6 +65,7 @@ enum class CtxKind : uint8_t {
     SAFE_OFF = 11,   // P5: DEV_SYNC가 끊겨 전부 OFF
     SAFE_CLEAR = 12, // P5: DEV_SYNC가 돌아와 안전 OFF 해제
     HELD_ON = 13,    // P5: 안전 OFF 중에 잡아 둔 ON을 해제 뒤 적용
+    RISK_OUT = 14,   // C → 앱으로 나간 M10 RISK (#19)
 };
 
 struct LogCtx {
@@ -108,6 +109,7 @@ inline const char* ctx_kind_name(CtxKind k) {
         case CtxKind::SAFE_OFF: return "SAFE_OFF";
         case CtxKind::SAFE_CLEAR: return "SAFE_CLEAR";
         case CtxKind::HELD_ON: return "HELD_ON";
+        case CtxKind::RISK_OUT: return "RISK_OUT";
     }
     return "?";
 }

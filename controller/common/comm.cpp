@@ -1,7 +1,9 @@
 // P6 통신 핵심 로직. 설명은 comm.hpp.
 #include "comm.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #include <exception>
 
@@ -424,6 +426,27 @@ Actions Comm::on_out_drop(const msg::OutDrop& m) {
     }
     out.emplace_back(UartLine{std::to_string(m.conn) + "|DROP"});
     event(who(m.conn), msg::CtxKind::DROP, conn_json(m.conn) + ",\"reason\":\"p5\"}");
+    return out;
+}
+
+Actions Comm::on_out_risk(const msg::OutRisk& m) {
+    Actions out;
+    std::string dev(m.device, strnlen(m.device, sizeof m.device));
+    if (!valid(m.conn) || !conn_[m.conn].registered || conn_[m.conn].role != msg::Role::App || conn_[m.conn].dev != dev) {
+        risk_dropped_++;  // 그 사이 나갔거나 번호가 다른 기기로 바뀜. 다음 주기(10초)에 다시 온다
+        return out;
+    }
+    std::string ps;
+    for (int k = 0; k < 5; k++) {
+        double p = m.p[k];
+        if (!std::isfinite(p)) p = 0;  // JSON에 NaN을 쓸 수 없다. P3·P4가 거른 값이라 오지 않는다
+        p = std::min(1.0, std::max(0.0, p));
+        char b[16];
+        std::snprintf(b, sizeof b, "%.2f", p);
+        ps += (k ? "," : "") + std::string(b);
+    }
+    out.emplace_back(UartLine{std::to_string(m.conn) + "|{\"t\":\"RISK\",\"p\":[" + ps + "]}"});
+    event(dev, msg::CtxKind::RISK_OUT, conn_json(m.conn) + ",\"p\":[" + ps + "]}");
     return out;
 }
 

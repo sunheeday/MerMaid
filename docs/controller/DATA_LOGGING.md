@@ -302,6 +302,7 @@ struct LogGps {            // #18
 | `SAFE_OFF` (11) | P5 | DEV_SYNC가 끊겨 전부 OFF | `{"no_sync_s","conns"}` |
 | `SAFE_CLEAR` (12) | P5 | DEV_SYNC가 돌아와 해제 | `{"held"}`: 잡아 둔 ON 개수 |
 | `HELD_ON` (13) | P5 | 안전 OFF 중 잡아 둔 ON을 해제 뒤 적용 | `{"device","tier"}` |
+| `RISK_OUT` (14) | P6 | Pi → 앱으로 M10 RISK가 나감 (10초마다, #19) | `{"conn","p":[p2,p3,p4,p5,p6]}` (보낸 그대로 소수 2자리) |
 
   - 번호는 바꾸지 않고 뒤에만 붙인다. kind는 표 구조를 바꾸지 않으므로 `schema_version`을 올리지 않는다(읽는 쪽은 모르는 kind를 건너뛰면 된다).
     `schema_version` 2는 `gps` 표 때문이다 (§6-5).
@@ -378,7 +379,7 @@ CREATE TABLE decision (
   PRIMARY KEY (seq, device)
 );
 CREATE TABLE ctx   (mono_ns INTEGER NOT NULL, t REAL, sender TEXT NOT NULL, kind TEXT NOT NULL, value TEXT);
--- kind: HELLO BYE SCR OVR PROF CONNECT DISCONNECT INT PROF_OUT DROP REJECT SAFE_OFF SAFE_CLEAR HELD_ON (§6-2 표). t NULL = 주행 시작 전
+-- kind: HELLO BYE SCR OVR PROF CONNECT DISCONNECT INT PROF_OUT DROP REJECT SAFE_OFF SAFE_CLEAR HELD_ON RISK_OUT (§6-2 표). t NULL = 주행 시작 전
 CREATE TABLE label (mono_ns INTEGER NOT NULL, t REAL, phone TEXT NOT NULL, misc INTEGER NOT NULL CHECK (misc BETWEEN 0 AND 10));
 CREATE TABLE health(mono_ns INTEGER NOT NULL, t REAL, key TEXT NOT NULL, value REAL NOT NULL);
 -- health key: ring_overrun, queue_drop, hold_samples (주행을 닫을 때), sample_rate_hz (1분마다), samples_paused

@@ -20,7 +20,7 @@ namespace mm::devmgr {
 
 constexpr int64_t kSafetyTimeoutMs = 30000;  // policy.json safety_timeout_s
 
-using Out = std::variant<msg::OutInt, msg::OutStream, msg::OutProf, msg::OutDrop, msg::OutResync>;
+using Out = std::variant<msg::OutInt, msg::OutStream, msg::OutProf, msg::OutDrop, msg::OutResync, msg::OutRisk>;
 using Outs = std::vector<Out>;
 
 // 주행 로그(P7)에 남길 사건: 안전 OFF 진입(SAFE_OFF)·해제(SAFE_CLEAR), 잡아 둔 ON 적용(HELD_ON).
@@ -46,6 +46,9 @@ public:
     Outs on_hello(const msg::DevHello& m);    // P6: 기기 등록
     Outs on_bye(const msg::DevBye& m);        // P6: 기기 해제
     Outs on_tier_cmd(const msg::TierCmd& m);  // P4: 기기 하나 ON/OFF
+    // P4: 폰 하나의 위험 확률 (#19) → 그 폰이 연결돼 있으면 OUT_RISK. "default"·HUD·공용 기기·없는 폰은 버리고 센다
+    Outs on_risk(const msg::RiskFwd& m);
+    uint64_t risk_unrouted() const { return risk_unrouted_; }
     msg::DevSyncReply on_sync(const msg::DevSync& m, int64_t now_ms);  // P4: 10초마다, 회신 = 명부
     // 1초마다: P6에 OUT_RESYNC가 전달될 때까지 다시 보냄 + DEV_SYNC가 30초 없으면 전부 OFF
     Outs on_tick(int64_t now_ms);
@@ -90,6 +93,7 @@ private:
     LogFn log_;
     EventFn event_;
     int64_t safety_ms_;
+    uint64_t risk_unrouted_ = 0;
 };
 
 }  // namespace mm::devmgr

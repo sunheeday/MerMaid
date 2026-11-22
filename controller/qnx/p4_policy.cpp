@@ -11,6 +11,7 @@
 // cal_a, cal_b로 P3에 넘긴다 (DATA_LOGGING §12-5). 없거나 잘못된 파일이면 1, 0 (잘못된 파일은 stderr에 한 번).
 // 명령은 stdout에 "CMD <t> <device> <tier> <0|1>", 주기 로그는 --log CSV.
 // 정책 시각은 주행 시각(RISK의 t)을 쓴다. OVR는 마지막 RISK의 t로 처리한다.
+// RISK마다 폰별 확률 5개를 P5에 RISK_FWD로 (#19, 앱 대시보드 표시용. "default" 행은 빼고).
 // RISK를 처리한 뒤 P7에 LOG_DECISION (기기별 on, tier, 이번 주기에 바뀌었는지. 2 ms 시간 초과, 실패는 log_fail만).
 #include <algorithm>
 #include <cmath>
@@ -215,6 +216,21 @@ int main(int argc, char** argv) {
             std::fflush(stdout);
             return cs.size();
         };
+        // 위험 확률을 폰 앱 대시보드로 (#19): 폰마다 RISK_FWD → P5 → P6 → M10 RISK. "default"(폰 없음) 행은 보내지 않는다.
+        // 값은 P3가 개인 보정을 적용한 뒤의 것 (P4가 판단에 쓰는 값). 실패는 risk_fwd_fail로 세기만 (표시 전용)
+        uint64_t risk_fwd = 0, risk_fwd_fail = 0;
+        auto forward_risk = [&](const msg::RiskMsg& r) {
+            if (!p5) return;
+            for (uint32_t i = 0; i < r.n && i < static_cast<uint32_t>(msg::kMaxPhones); i++) {
+                const std::string id = id_of(r.id[i]);
+                if (id.empty() || id == "default") continue;
+                msg::RiskFwd m;
+                msg::copy_id(m.device, id);
+                for (int k = 0; k < 5; k++) m.p[k] = r.p[i][static_cast<size_t>(k)];
+                if (send_p5(&m, sizeof m)) risk_fwd++;
+                else risk_fwd_fail++;
+            }
+        };
         double last_t = 0;
 
         FILE* log = nullptr;
@@ -296,6 +312,7 @@ int main(int argc, char** argv) {
                 const std::vector<Command> cs = pol.on_risk(r.t, risk);
                 cmds += emit(cs, r.t);
                 log_decision(r.seq, r.t, cs);
+                forward_risk(r);
                 sync();  // 다음 주기의 명부 (P3는 이 회신 뒤에 PROFILES를 묻는다)
                 saves += static_cast<uint64_t>(st.save_dirty(pol));
                 const double lat = (ipc::now_ns() - r.t_emit_ns) / 1e6;
@@ -320,7 +337,7 @@ int main(int argc, char** argv) {
                     for (const auto& id : rf_phones) load_cal(id);
                     std::fflush(stdout);
                     pol.on_ride_start();
-                    cycles = gaps = expect = cmds = log_fail = 0;
+                    cycles = gaps = expect = cmds = log_fail = risk_fwd = risk_fwd_fail = 0;
                     lat_ms.clear();
                 } else {
                     saves += static_cast<uint64_t>(st.save_dirty(pol));
@@ -333,9 +350,11 @@ int main(int argc, char** argv) {
                                 (unsigned long long)saves, (unsigned long long)log_fail, s.empty() ? 0.0 : s[s.size() / 2],
                                 s.empty() ? 0.0 : s.back());
                     if (rf)
-                        std::printf(", \"rf_phones\": %zu, \"rf_hud\": %d, \"sync_fail\": %llu, \"tier_cmd_fail\": %llu",
+                        std::printf(", \"rf_phones\": %zu, \"rf_hud\": %d, \"sync_fail\": %llu, \"tier_cmd_fail\": %llu, "
+                                    "\"risk_fwd\": %llu, \"risk_fwd_fail\": %llu",
                                     rf_phones.size(), rf_hud ? 1 : 0, (unsigned long long)sync_fail,
-                                    (unsigned long long)cmd_fail);
+                                    (unsigned long long)cmd_fail, (unsigned long long)risk_fwd,
+                                    (unsigned long long)risk_fwd_fail);
                     std::printf("}\n");
                     std::fflush(stdout);
                     if (once) {

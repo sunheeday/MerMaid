@@ -66,6 +66,8 @@ static std::vector<std::string> show(const Outs& outs) {
             std::snprintf(b, sizeof b, "PROF %d %.2f %.2f", p->conn, p->mssq, p->sens);
         else if (const auto* d = std::get_if<msg::OutDrop>(&o))
             std::snprintf(b, sizeof b, "DROP %d", d->conn);
+        else if (const auto* r = std::get_if<msg::OutRisk>(&o))
+            std::snprintf(b, sizeof b, "RISK %d %s %.2f %.2f", r->conn, r->device, r->p[0], r->p[4]);
         else
             std::snprintf(b, sizeof b, "RESYNC");
         v.push_back(b);
@@ -241,6 +243,38 @@ static void bye_all() {
     EXPECT(m.on_hello(hello(4, kA)), "INT 4 1 0", "INT 4 2 1", "INT 4 3 1", "STR 4 1");
 }
 
+// 위험 확률 (#19): 폰 ID → 그 폰의 연결로 OUT_RISK. default·HUD·공용 기기·없는 폰은 버리고 센다. 안전 OFF 중에도 보냄
+static msg::RiskFwd risk(const std::string& dev, double p0, double p4) {
+    msg::RiskFwd m;
+    msg::copy_id(m.device, dev);
+    m.p[0] = p0;
+    m.p[1] = 0.8;
+    m.p[2] = 0.5;
+    m.p[3] = 0.2;
+    m.p[4] = p4;
+    return m;
+}
+static void risk_forward() {
+    DevMgr m(nullptr, nullptr, 30000);
+    m.resync_delivered();
+    m.on_tick(0);
+    m.on_hello(hello(3, kA));
+    m.on_hello(hello(1, "hud-01", msg::Role::Hud));
+    EXPECT(m.on_risk(risk(kA, 0.99, 0.01)), "RISK 3 phone-a 0.99 0.01");
+    CHECK(m.on_risk(risk("default", 0.5, 0.1)).empty(), "default row not sent");
+    CHECK(m.on_risk(risk("hud-01", 0.5, 0.1)).empty(), "not to the HUD");
+    CHECK(m.on_risk(risk("display-01", 0.5, 0.1)).empty(), "not to shared devices");
+    CHECK(m.on_risk(risk(kB, 0.5, 0.1)).empty(), "phone not connected");
+    CHECK(m.risk_unrouted() == 4, "unrouted counted: %llu", (unsigned long long)m.risk_unrouted());
+    m.on_hello(hello(5, kA));  // 다른 번호로 다시 붙음
+    EXPECT(m.on_risk(risk(kA, 0.7, 0.0)), "RISK 5 phone-a 0.70 0.00");
+    m.on_tick(31000);  // DEV_SYNC 없음 → 안전 OFF. 표시용 RISK는 그래도 보낸다
+    CHECK(m.safe_off(), "safe off");
+    EXPECT(m.on_risk(risk(kA, 0.6, 0.0)), "RISK 5 phone-a 0.60 0.00");
+    m.on_bye(bye(5));
+    CHECK(m.on_risk(risk(kA, 0.6, 0.0)).empty(), "gone after BYE");
+}
+
 int main() {
     hello_sends_state_and_profile();
     tier_commands();
@@ -251,6 +285,7 @@ int main() {
     resync();
     restart_recovers_state();
     bye_all();
+    risk_forward();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;

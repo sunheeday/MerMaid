@@ -180,6 +180,23 @@ Outs DevMgr::on_tier_cmd(const msg::TierCmd& m) {
     return out;
 }
 
+Outs DevMgr::on_risk(const msg::RiskFwd& m) {
+    Outs out;
+    const std::string dev = id_of(m.device);
+    const int c = conn_of(dev);
+    // 표시 전용이라 안전 OFF 중에도 보낸다 (P4가 RISK를 보낸다는 것은 P4가 살아 있다는 뜻)
+    if (dev.empty() || dev == "default" || c < 0 || e_[c].role != msg::Role::App) {
+        risk_unrouted_++;
+        return out;
+    }
+    msg::OutRisk r;
+    r.conn = static_cast<uint8_t>(c);
+    msg::copy_id(r.device, dev);
+    for (int k = 0; k < 5; k++) r.p[k] = m.p[k];
+    out.emplace_back(r);
+    return out;
+}
+
 msg::DevSyncReply DevMgr::on_sync(const msg::DevSync&, int64_t now_ms) {
     last_sync_ = now_ms;
     if (safe_off_) {

@@ -10,6 +10,7 @@
 //   받기 스레드: mermaid_p6로 P5(OUT_*)와 P2(MOTION)를 받아 바로 회신 → 규칙 → UART 쓰기. MsgSend 하지 않는다
 //   GPS (#18): 앱의 M09 GPS는 UART 스레드가 P7(LOG_GPS)과 P2(GPS_SPEED, 3 ms 제한, 실패는 gps_fail로 세기만)에 보낸다.
 //     P2도 P6에 MOTION을 보내지만 P6 쪽 받는 이는 받기 스레드라 고리가 없다 (RF_MESSAGES.md §2-2)
+//   RISK (#19): P5의 OUT_RISK를 받기 스레드가 받아 그 연결에 M10 RISK 한 줄
 // 주행 로그 (docs/controller/DATA_LOGGING.md §6-2): 폰·HUD와 오간 사건을 모두 P7에 LOG_CTX로 보낸다 (HB·MOT는 빼고).
 //   기기가 보낸 것: HELLO(P5에 전달됨), BYE, SCR, OVR, PROF / 링크: CONNECT, DISCONNECT, DROP + 이유 /
 //   Pi가 내보낸 것: INT, PROF 회신 / 버린 것: REJECT + 이유와 원문 앞부분. 멀미 점수 SYM은 LOG_SYM으로.
@@ -184,6 +185,7 @@ union Inbox {
     msg::OutProf out_prof;
     msg::OutDrop out_drop;
     msg::OutResync out_resync;
+    msg::OutRisk out_risk;
     msg::Motion motion;
     _pulse pulse;
     Inbox() {}
@@ -222,6 +224,11 @@ void receive_loop(Shared& sh, ipc::Server& srv) {
             log_line("P5", "RESYNC (P5 restarted)");
             std::lock_guard<std::mutex> lk(sh.core_mu);
             sh.core->on_resync();  // 표만 바꾼다. HELLO는 UART 스레드의 on_tick이 보낸다
+        } else if (type == msg::OUT_RISK) {
+            const msg::OutRisk m = in.out_risk;
+            ipc::Server::reply(rcvid);
+            std::lock_guard<std::mutex> lk(sh.core_mu);
+            acts = sh.core->on_out_risk(m);
         } else if (type == msg::MOTION) {
             const msg::Motion m = in.motion;
             ipc::Server::reply(rcvid);
@@ -470,7 +477,8 @@ int main(int argc, char** argv) {
                                    std::to_string(sh.tx_lines.load()) + " (MOT " + std::to_string(sh.mot_lines.load()) +
                                    "), log_sent " + std::to_string(log_sent) + ", log_fail " + std::to_string(log_fail) +
                                    ", log_drop " + std::to_string(logq.dropped()) + ", gps " + std::to_string(gps_rx) +
-                                   " (to P2 " + std::to_string(gps_sent) + ", fail " + std::to_string(gps_fail) + ")");
+                                   " (to P2 " + std::to_string(gps_sent) + ", fail " + std::to_string(gps_fail) +
+                                   "), risk_drop " + std::to_string(core.risk_dropped()));
             }
         }
     } catch (const std::exception& e) {

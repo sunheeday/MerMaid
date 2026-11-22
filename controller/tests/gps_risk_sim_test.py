@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""폰 GPS(M09) → 주행 파일·속도 피처 (#18): 가짜 폰 2대 + P6·P5 + 진짜 P1(LIVE, 가짜 IMU)·P2·P4 + P3 대역 + P7.
+"""폰 GPS(M09) → 주행 파일·속도 피처 (#18), 위험 확률 M10 RISK → 폰 (#19):
+가짜 폰 2대 + HUD + P6·P5 + 진짜 P1(LIVE, 가짜 IMU)·P2·P4 + P3 대역 + P7.
 
   python3 controller/tests/gps_risk_sim_test.py <build 폴더>     (ctest의 gps_risk_sim이 부른다)
 
@@ -7,6 +8,8 @@
 - 주행 22초쯤 두 폰 모두 GPS를 멈춘다 → 3초 뒤부터 속도 없음(NaN)
 - 확인: ① 주행 파일 gps 표에 두 폰의 행 (t, spd, acc, brg, alt NULL) ② 10초·20초 주기의 infer x에서 G2 피처
   (speed_mean_10s 등)가 NaN이 아니고 A의 속도(10) ③ 30초 주기는 G2가 NaN ④ 잘못된 GPS는 ctx REJECT
+- RISK (#19): 폰마다 추론 주기(10초)마다 {"t":"RISK","p":[0.95,0.90,0.50,0.20,0.10]} (P3 대역의 값), HUD에는 없음,
+  주행 파일 ctx에 RISK_OUT, P4 통계 risk_fwd
 Mac은 실시간 OS가 아니라 시간은 느슨하게 본다. 약 50초.
 """
 import json
@@ -51,6 +54,8 @@ def main():
         br.hello(1, "app", PHONE_B)
         check(br.wait(INT.format(c=0, t=3, on="false"), m, 3) is not None, "phone A registered")
         check(br.wait(INT.format(c=1, t=3, on="false"), m, 3) is not None, "phone B registered")
+        br.hello(2, "hud", "hud-01")
+        check(br.wait(INT.format(c=2, t=2, on="false"), m, 3) is not None, "HUD registered")
 
         def gps_loop():
             while not stop_gps.is_set():
@@ -125,6 +130,24 @@ def main():
         r = by_seq.get(2, [])
         check(bool(r) and all(v[F_SPEED_MEAN_10S] != v[F_SPEED_MEAN_10S] for _, _, v in r),
               "cycle 2 (GPS stopped > 3 s before): G2 speed features NaN again")
+
+        # ---- #19 RISK ----
+        want = '{"t":"RISK","p":[0.95,0.90,0.50,0.20,0.10]}'
+        ra = [t for t, l in br.since(0) if l == "0|" + want]
+        rb = [t for t, l in br.since(0) if l == "1|" + want]
+        check(len(ra) == 3 and len(rb) == 3, f"each phone got RISK every inference cycle (A {len(ra)}, B {len(rb)})")
+        gaps = [b - a for a, b in zip(ra, ra[1:])]
+        check(all(8.0 <= g <= 12.0 for g in gaps), f"RISK about every 10 s ({[round(g, 2) for g in gaps]})")
+        check(not any(l.startswith("2|") and '"RISK"' in l for _, l in br.since(0)), "HUD gets no RISK")
+        check(all(l.split("|", 1)[1] == want for _, l in br.since(0) if '"RISK"' in l), "RISK lines are exactly the M10 format")
+        ro = [json.loads(v) for (v,) in rows(f, "SELECT value FROM ctx WHERE kind='RISK_OUT' AND sender=?", (PHONE_A,))]
+        check(len(ro) == 3 and all(j == {"conn": 0, "p": [0.95, 0.9, 0.5, 0.2, 0.1]} for j in ro),
+              f"RISK_OUT in the ride file ({len(ro)} for phone A)")
+        st4 = [json.loads(l) for l in run.procs["p4_policy"].text().splitlines() if l.startswith('{"proc"')]
+        if check(bool(st4), "P4 stats line"):
+            check(st4[-1].get("risk_fwd") == 6 and st4[-1].get("risk_fwd_fail") == 0,
+                  f"P4 forwarded 2 phones x 3 cycles (risk_fwd {st4[-1].get('risk_fwd')}, fail {st4[-1].get('risk_fwd_fail')})")
+
         for name, p in run.procs.items():
             if name in ("p5_devmgr", "p6_comm"):
                 check(p.p.poll() is None, f"{name} still running")

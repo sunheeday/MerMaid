@@ -3,7 +3,7 @@
 //   --state     P4와 같은 상태 폴더. profiles/<ID>.json을 읽기만 한다 (쓰기는 P4)
 //   --safety-s  DEV_SYNC가 이만큼 없으면 전부 OFF (기본 30 = policy.json safety_timeout_s. 시험에서만 줄임)
 //
-// 받는 것 (mermaid_p5): P6의 DEV_HELLO·DEV_BYE, P4의 TIER_CMD·DEV_SYNC
+// 받는 것 (mermaid_p5): P6의 DEV_HELLO·DEV_BYE, P4의 TIER_CMD·DEV_SYNC·RISK_FWD(#19, 기기 ID → 연결 번호로 바꿔 P6에 OUT_RISK)
 // 보내는 것: P6에 OUT_INT·OUT_STREAM·OUT_PROF·OUT_RESYNC (P6의 받기 스레드는 바로 회신하므로 멈추지 않는다)
 // 다시 시작: 시작하면 P6에 OUT_RESYNC (전달될 때까지 1초마다) → P6이 등록된 기기를 DEV_HELLO로 다시 알려 준다.
 //   그 HELLO에 실린 'P6이 마지막으로 보낸 INT'로 Tier 상태도 되찾는다 (docs/controller/RF_MESSAGES.md §4)
@@ -54,6 +54,9 @@ std::string show(const devmgr::Out& o) {
         std::snprintf(b, sizeof b, "DROP conn %d", d->conn);
     else if (std::holds_alternative<msg::OutResync>(o))
         std::snprintf(b, sizeof b, "RESYNC");
+    else if (const auto* r = std::get_if<msg::OutRisk>(&o))
+        std::snprintf(b, sizeof b, "RISK conn %d %.2f %.2f %.2f %.2f %.2f", r->conn, r->p[0], r->p[1], r->p[2], r->p[3],
+                      r->p[4]);
     else
         b[0] = 0;
     return b;
@@ -65,6 +68,7 @@ union Inbox {
     msg::DevBye bye;
     msg::DevSync sync;
     msg::TierCmd cmd;
+    msg::RiskFwd risk;
     _pulse pulse;
     Inbox() {}
 };
@@ -145,6 +149,7 @@ int main(int argc, char** argv) {
         ipc::Client p6_tick(msg::kNameP6, 200 * 1000000ULL);  // Client는 스레드마다 하나
         // mu를 잡은 채 부른다
         bool resync_warned = false;
+        uint64_t risk_sent = 0;
         auto send_all = [&](ipc::Client& p6, const devmgr::Outs& outs) {
             for (const auto& o : outs) {
                 // P6이 다시 시작했으면 옛 연결로 보낸 첫 번은 실패하고 연결이 닫힌다 → 바로 한 번 더 (새로 연결)
@@ -154,6 +159,10 @@ int main(int argc, char** argv) {
                     if (ok) core.resync_delivered();
                     if (ok || !resync_warned) log_line(ok ? "P6" : "..", ok ? "RESYNC" : "P6 not up yet, RESYNC will retry");
                     resync_warned = true;
+                    continue;
+                }
+                if (ok && std::holds_alternative<msg::OutRisk>(o)) {  // 10초마다 폰마다: 세기만 (1분 요약 줄), 실패는 출력
+                    risk_sent++;
                     continue;
                 }
                 log_line(ok ? "P6" : "ERR", ok ? show(o) : "cannot send to P6: " + show(o));
@@ -200,6 +209,10 @@ int main(int argc, char** argv) {
                     std::string s = "sync #" + std::to_string(m.seq) + ": " + std::to_string(rep.n) + " device(s)";
                     for (uint32_t i = 0; i < rep.n; i++) s += std::string(" ") + rep.e[i].dev;
                     s += ", log_fail " + std::to_string(log_fail.load());
+                    {
+                        std::lock_guard<std::mutex> lk(mu);
+                        s += ", risk_sent " + std::to_string(risk_sent) + ", risk_unrouted " + std::to_string(core.risk_unrouted());
+                    }
                     log_line("P4", s);
                 }
             } else if (type == msg::DEV_HELLO) {
@@ -219,6 +232,12 @@ int main(int argc, char** argv) {
                                    (m.on ? " ON" : " OFF"));
                 std::lock_guard<std::mutex> lk(mu);
                 send_all(p6_main, core.on_tier_cmd(m));
+            } else if (type == msg::RISK_FWD) {
+                // 위험 확률 (#19): 바로 회신하고 연결 번호로 바꿔 P6에. P5는 P4에 먼저 보내지 않는다 (교착 방지 그대로)
+                const msg::RiskFwd m = in.risk;
+                ipc::Server::reply(rcvid);
+                std::lock_guard<std::mutex> lk(mu);
+                send_all(p6_main, core.on_risk(m));
             } else {
                 ipc::Server::error(rcvid, EINVAL);
             }
