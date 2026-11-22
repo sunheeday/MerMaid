@@ -1,6 +1,6 @@
 # ---- Data (raw dataset is linked, not committed) ----
-data/raw/
-data/tables/
+ml/data/raw/
+ml/data/tables/
 *.mat
 *.h5
 *.parquet
@@ -8,7 +8,6 @@ data/tables/
 # ---- Logs & replay outputs ----
 logs/
 *.log
-results/**/tmp/
 
 # ---- C/C++ build ----
 build/
@@ -38,7 +37,7 @@ venv/
 *.npy
 ml/out/
 ml/verify/out/
-data/trips/
+ml/data/trips/
 
 # ---- App (JS / mobile) ----
 node_modules/
@@ -57,5 +56,6 @@ wpa_supplicant.conf
 .idea/
 *.swp
 
-# ---- Generated test fixtures (rebuilt by tests/lgbm_capi/gen.py) ----
-tests/lgbm_capi/fixtures/
+
+# ---- Log server data (ride files, central DB) ----
+server/data/

@@ -6,7 +6,8 @@
 - QNX 메시지 전달: tests/qnxsim (Unix 소켓). 프로세스 코드는 Pi와 같은 qnx/*.cpp
 - UART(/dev/ser3): 가상 터미널(pty). 이 스크립트가 ESP32 자리에서 줄을 쓰고 읽는다
 - 확인: HB 1초, HELLO 5초 DROP, P5가 늦게 떠도 등록, 프로필 회신, SCR/OVR → P4, Tier 3 + MOT 10 Hz,
-  남의 폰 OVR 거부, HUD 등록과 Tier 2, 기기 5초 무응답 DROP, 재연결 상태 재전송, P4가 죽으면 안전 OFF와 복구
+  남의 폰 OVR 거부, HUD 등록과 Tier 2, 기기 5초 무응답 DROP, 재연결 상태 재전송, P4가 죽으면 안전 OFF와 복구,
+  P5만 다시 시작(OUT_RESYNC → 명부·Tier 3 복구), P6만 다시 시작(시작 DROP → 기기 재연결 → 복구)
 QNX 자체(커널 스케줄링, /dev/ser3 드라이버)는 확인하지 못한다. 그건 Pi에서.
 """
 import json
@@ -152,7 +153,7 @@ def main():
     state = os.path.join(tmp, "state")
     os.makedirs(os.path.join(state, "profiles"))
     with open(os.path.join(state, "profiles", PHONE_A + ".json"), "w") as f:
-        json.dump({"mssq": 20.0, "sens_mssq": 1.3, "sens": 1.5}, f)  # P4가 저장해 둔 프로필 흉내
+        json.dump({"mssq": 20.0, "sens_mssq": 1.3, "sens": 1.5}, f)  # 옛 형식 프로필: 설문값 sens_mssq를 돌려줘야 한다
 
     br = Bridge()
     procs = {}
@@ -163,8 +164,11 @@ def main():
 
     try:
         print("[1] P6 혼자: HB 1초, HELLO 없으면 5초 뒤 DROP")
+        m = br.mark()
         p6 = start("p6_comm", "--dev", br.path)
         check(p6.wait_log("p6_comm up"), "p6_comm starts on the pty")
+        check(br.wait(r"^8\|DROP$", m, 2) is not None and br.count(r"^\d\|DROP$", m) == 9,
+              "start: 0~8|DROP once (bridge ignores empty slots)")
         m = br.mark()
         hb = br.wait(r'^ALL\|\{"t":"HB","seq":\d+\}$', m, 2.5)
         check(hb is not None, "ALL HB within 2.5 s")
@@ -281,7 +285,64 @@ def main():
         br.send("3|DISCONNECT")
         check(p5.wait_log(r"bye conn 3 phone-a", s5, 2), "P5 removes the phone on DISCONNECT")
 
-        print("[11] 프로세스가 살아 있음 (교착·종료 없음)")
+        print("[11] P5만 다시 시작: OUT_RESYNC → 등록·Tier 3·스트림이 그대로 돌아옴")
+        stub.kill()
+        stub = start("rf_stub", "--motion", "--period", "1")  # cycle 없이: OVR를 그대로 명령으로
+        m = br.mark()
+        br.hello(4, "app", PHONE_B)
+        check(br.wait(INT.format(c=4, t=3, on="false"), m, 3) is not None, "phone-b registered on conn 4")
+        m = br.mark()
+        br.send(f'4|{{"t":"OVR","dev":"{PHONE_B}","on":true}}')
+        check(br.wait(INT.format(c=4, t=3, on="true"), m, 3) is not None, "phone-b Tier 3 on")
+        check(br.wait(MOT.format(c=4), m, 2) is not None, "phone-b gets MOT")
+        p5.kill()
+        s6 = p6.size()
+        m = br.mark()
+        s = stub.size()
+        p5 = start("p5_devmgr", "--state", state, "--safety-s", "6")
+        check(p6.wait_log(r"RESYNC \(P5 restarted\)", s6, 4), "P6 gets OUT_RESYNC from the new P5")
+        check(p5.wait_log(r"resync: Tier 3 phone-b ON", 0, 4), "new P5 recovers phone-b Tier 3 ON from P6's record")
+        check(br.wait(INT.format(c=4, t=3, on="true"), m, 4) is not None, "phone-b gets INT again (still on)")
+        check(br.wait(INT.format(c=2, t=2, on="(true|false)"), m, 4) is not None, "HUD gets INT again")
+        check(br.count(INT.format(c=4, t=3, on="false"), m) == 0, "phone-b never told Tier 3 off")
+        check(stub.wait_log(r"registry: 2 device\(s\) hud-01\(hud\) phone-b", s, 4),
+              "P4 stand-in sees hud-01 and phone-b again via DEV_SYNC")
+        m2 = br.mark()
+        time.sleep(1.0)
+        check(br.count(MOT.format(c=4), m2) >= 7, "MOT to phone-b keeps going")
+        m = br.mark()
+        br.send(f'4|{{"t":"OVR","dev":"{PHONE_B}","on":false}}')
+        check(br.wait(INT.format(c=4, t=3, on="false"), m, 3) is not None, "new P5 routes P4 commands to phone-b")
+        m = br.mark()
+        br.send(f'4|{{"t":"OVR","dev":"{PHONE_B}","on":true}}')
+        check(br.wait(INT.format(c=4, t=3, on="true"), m, 3) is not None, "phone-b Tier 3 on again")
+
+        print("[12] P6만 다시 시작: 시작 DROP → 기기 재연결·HELLO → 복구")
+        p6.kill()
+        m = br.mark()
+        s5 = p5.size()
+        p6 = start("p6_comm", "--dev", br.path)
+        check(br.wait(r"^8\|DROP$", m, 3) is not None, "new P6 sends 0~8|DROP")
+        check(br.count(r"^2\|DROP$", m) == 1 and br.count(r"^4\|DROP$", m) == 1, "HUD and phone-b are dropped")
+        check(p5.wait_log(r"bye all \(P6 restarted\)", s5, 3), "P5 empties its registry (DEV_BYE ALL)")
+        br.hb_conns.clear()  # 브리지가 끊음 → DISCONNECT → 기기가 다시 붙음 (번호는 바뀔 수 있음)
+        br.send("2|DISCONNECT")
+        br.send("4|DISCONNECT")
+        time.sleep(0.3)
+        m = br.mark()
+        s = stub.size()
+        br.hello(0, "app", PHONE_B)
+        br.hello(1, "hud", "hud-01")
+        check(br.wait(INT.format(c=0, t=3, on="true"), m, 4) is not None, "phone-b (now conn 0) gets Tier 3 on back")
+        check(br.wait(INT.format(c=1, t=2, on="(true|false)"), m, 4) is not None, "HUD (now conn 1) gets its state")
+        check(br.wait(MOT.format(c=0), m, 3) is not None, "MOT to phone-b resumes on the new conn")
+        check(stub.wait_log(r"registry: 2 device\(s\) phone-b hud-01\(hud\)", s, 4),
+              "P4 stand-in sees both again")
+        s4 = stub.size()
+        br.send('0|{"t":"SCR","on":true,"att":false}')
+        check(stub.wait_log(r"SCR phone-b on=1 att=0", s4, 3), "phone-b messages reach P4 again")
+
+        print("[13] 프로세스가 살아 있음 (교착·종료 없음)")
         for name, p in procs.items():
             check(p.p.poll() is None, f"{name} still running")
     finally:

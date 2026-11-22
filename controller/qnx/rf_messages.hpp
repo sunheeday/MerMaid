@@ -1,6 +1,6 @@
 // P5(기기 관리)·P6(통신) 메시지 (QNX MsgSend / MsgReceive). messages.hpp(0x8001~0x8006)에 이어지는 번호.
 // 모두 고정 크기 POD. 받는 쪽은 받자마자 복사하고 바로 회신한 뒤 처리한다 (messages.hpp와 같은 규칙).
-// 문서: docs/RF_MESSAGES.md. 기기 메시지(JSON)는 protocol/PROTOCOL.md §3.
+// 문서: docs/controller/RF_MESSAGES.md. 기기 메시지(JSON)는 protocol/PROTOCOL.md §3.
 //
 // 보내는 방향 (교착 방지: MsgSend는 회신까지 멈추므로 서로에게 보내는 짝이 없게 한다)
 //   P4 → P5 → P6(받기 스레드)     명령이 내려가는 방향
@@ -28,6 +28,7 @@ enum RfType : uint16_t {
     OUT_STREAM = 0x8041,  // P5 -> P6, 이 연결에 MOT를 보낼지
     OUT_PROF = 0x8042,    // P5 -> P6, M06 PROF(저장된 프로필)를 보낼 것
     OUT_DROP = 0x8043,    // P5 -> P6, 연결을 끊을 것
+    OUT_RESYNC = 0x8044,  // P5 -> P6, P5가 (다시) 시작함: 등록된 기기를 DEV_HELLO로 다시 알려 달라
     MOTION = 0x8050,      // P2 -> P6, 100 ms마다 (constants.json mot_period_ms)
 };
 
@@ -46,11 +47,15 @@ struct DevHello {
     Role role = Role::App;
     uint16_t ver = 0;
     char dev[kIdLen] = {};  // 폰: 앱 UUID / HUD: 항상 hud-01
+    // 이 연결에 P6이 마지막으로 보낸 INT (bit t-1 = Tier t). P5가 다시 시작했을 때 Tier 상태를 되찾는 데 쓴다.
+    // int_known의 bit가 0이면 그 Tier의 INT를 아직 보낸 적 없음 (새 연결)
+    uint8_t int_known = 0;
+    uint8_t int_on = 0;
 };
 
 struct DevBye {
     Hdr h{DEV_BYE, 0, 0};
-    uint8_t conn = 0;
+    uint8_t conn = 0;  // kConnAll: 전부 (P6이 다시 시작해서 모든 연결을 끊었음)
 };
 
 // ---- P4 -> P5 (회신 있음) ----
@@ -128,12 +133,17 @@ struct OutDrop {
     uint8_t conn = 0;
 };
 
+// P5가 시작할 때 (P6에 보내기 성공할 때까지 1초마다). P6은 등록된 모든 연결의 DEV_HELLO를 다시 보낸다
+struct OutResync {
+    Hdr h{OUT_RESYNC, 0, 0};
+};
+
 // ---- P2 -> P6 ----
 struct Motion {
     Hdr h{MOTION, 0, 0};
     double t = 0;    // 주행 시각 (s)
     double ax = 0;   // Wf 가중 가속도 m/s², x 전후(앞 +)
-    double ay = 0;   // y 좌우 (부호는 docs/RF_MESSAGES.md §5, 확정 필요)
+    double ay = 0;   // y 좌우 (부호는 docs/controller/RF_MESSAGES.md §5, 확정 필요)
     double pax = 0;  // 경로 예측값. 없으면 NaN → JSON에서 생략
     double pay = 0;
 };

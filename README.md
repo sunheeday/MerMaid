@@ -113,27 +113,78 @@ We use two data sources:
 
 The system is implemented on a **Raspberry Pi running QNX**, acting as a prototype vehicle-side controller. It is split into modular components so that sensors, models, and comfort functions can later be replaced or extended without redesigning the whole system:
 
-```
- IMU / prerecorded signal
-          │
-          ▼
- ┌──────────────────┐   ┌───────────────────┐   ┌──────────────────────┐
- │ Data acquisition │──▶│ Feature extraction│──▶│ Model inference      │
- └──────────────────┘   │ 77 features incl. │   │ Ordinal LightGBM     │
-                        │ Oman, MSDV, time  │   └──────────┬───────────┘
-                        └───────────────────┘              ▼
-  Mobile app ◀──── RF (Wi-Fi/BT) ────┐        ┌──────────────────────┐
-  (cues, override,                   ├────────│ Intervention decision│
-   screen state)                     │        │ Policy layer         │
-                                     │        └──────────┬───────────┘
-                                     │                   ▼
-                                     │        ┌──────────────────────┐
-                                     └────────│ Device control       │
-                                              │ Fan · HUD · Display  │
-                                              └──────────────────────┘
+```mermaid
+flowchart LR
+  classDef done fill:#d1fae5,stroke:#059669,color:#064e3b
+  classDef part fill:#fef3c7,stroke:#d97706,color:#78350f
+  classDef plan fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:5 3,color:#374151
+
+  subgraph PI["In the car · Raspberry Pi 4 · QNX 8.0 · C++17"]
+    direction LR
+    IMU["MPU-6050 IMU<br/>(not wired yet)"]:::plan
+    P1["P1 Acquisition<br/>10 ms · prio 40<br/>replay + LIVE (fake IMU)"]:::part
+    P2["P2 Features<br/>71 per 10 s · prio 30"]:::done
+    P3["P3 Inference<br/>LightGBM ×5 · prio 20"]:::done
+    P4["P4 Policy<br/>Tiers 1–3 · prio 15"]:::done
+    P5["P5 Device manager<br/>prio 14"]:::done
+    P6["P6 Communication<br/>UART ↔ QNX · prio 12"]:::done
+    P7["P7 Logger<br/>prio 11 / 9"]:::plan
+    CSV[("cycles.csv<br/>state/*.json")]:::done
+    SD[("SD card<br/>rides/*.sqlite")]:::plan
+
+    IMU -->|"I2C 100 Hz"| P1
+    P1 -->|"Sample"| P2
+    P2 -->|"VEH"| P3
+    P3 -->|"RISK"| P4
+    P4 -->|"TIER_CMD · DEV_SYNC"| P5
+    P5 -->|"OUT_*"| P6
+    P6 -->|"CTX_SCR/OVR/PROF"| P4
+    P2 -->|"MOTION 100 ms"| P6
+    P4 --> CSV
+    P1 -.->|"shared-memory ring"| P7
+    P3 -.->|"LOG_INFER"| P7
+    P4 -.->|"LOG_DECISION"| P7
+    P6 -.->|"LOG_CTX · LOG_SYM"| P7
+    P7 -.-> SD
+  end
+
+  subgraph DEV["Devices"]
+    ESP["ESP32-S3 bridge v8"]:::done
+    APP["Passenger app (Android)<br/>SYM input planned"]:::part
+    HUD["HUD · vehicle display<br/>(web)"]:::done
+  end
+
+  P6 <-->|"UART3"| ESP
+  ESP <-->|"BLE"| APP
+  ESP <-->|"BLE"| HUD
+
+  subgraph OFF["Off the car · Mac · Python 3.12"]
+    COL["collect_logs.py<br/>ssh"]:::plan
+    SRV["Log server<br/>FastAPI + SQLite"]:::plan
+    EXP["build_real<br/>--source mermaid"]:::plan
+    SIM["Simulator"]:::done
+    REAL["Real-drive converters<br/>comma2k19 · BATON · TU Delft"]:::done
+    CAL["calibrate.py<br/>KS score"]:::done
+    TRAIN["featurize → train.py"]:::done
+    RUNS[("runs/vNNN<br/>deployed v007")]:::done
+    LLM["Claude loop"]:::plan
+  end
+
+  SD -.-> COL
+  COL -.-> SRV
+  SRV -.-> EXP
+  EXP -.-> TRAIN
+  SIM --> TRAIN
+  SIM --> CAL
+  REAL --> CAL
+  CAL -->|"parameter fit"| SIM
+  TRAIN --> RUNS
+  RUNS -->|"runs.py use → models · thresholds"| P3
+  SRV -.->|"summary stats"| LLM
+  LLM -.->|"sim parameter proposals"| SIM
 ```
 
-<!-- TODO: replace with a proper diagram image in docs/figures/ -->
+Green: working · amber: partly built · gray dashed: planned (see [docs/controller/DATA_LOGGING.md](docs/controller/DATA_LOGGING.md) for the logging and log-server design).
 
 ### B. Feature Extraction
 
@@ -151,17 +202,19 @@ There is **one model**, not one model per tier. It estimates how far the passeng
 
 The higher the cost of a wrong activation, the more certainty, the longer confirmation, and the narrower conditions a tier requires.
 
-| Tier | Intervention | Extra condition |
-|---|---|---|
-| 1 | **Airflow** (fan) | None |
-| 3 | **Ambient direction cue** (HUD) | Screen on |
-| 4 | **Visual motion dots** (display / phone) | Screen on and attention |
+| Tier | Intervention | Device | Confirmation | Extra condition |
+|---|---|---|---|---|
+| 1 | **Airflow** (fan) | Shared | 10 s | None |
+| 2 | **Ambient direction cue** (HUD) | Shared | 1 min | HUD screen on |
+| 3 | **Visual motion dots** | Each passenger's phone | 2 min | Screen on and attention |
+
+Confirmation is how long the risk must stay above the tier's threshold before the device turns on (`hold_cycles` in `controller/config/policy.json`, one cycle = 10 s).
 
 Passengers can **manually override** any automatic intervention. The system never controls steering, braking, or other safety-critical driving functions.
 
 ### E. Personalized Sensitivity
 
-People differ in both how easily they get sick and how much intervention they will accept. A sensitivity value in the passenger's profile is a model input. If a passenger quickly turns off an intervention, that tier's threshold rises for future activations, without changing the model.
+People differ in both how easily they get sick and how much intervention they will accept. The passenger's motion sickness survey (the MSSQ score and the sensitivity computed from it) is a model input, so a new passenger is personalized from the survey alone. Adjustments learned while riding stay outside the model: if a passenger quickly turns off an intervention, that tier's threshold rises for future activations, and a per-person calibration fitted from ride logs (planned) shifts that passenger's predicted risk.
 
 ### F. Deployment on QNX
 
@@ -240,43 +293,55 @@ Training runs on a development PC (Python, LightGBM). The trained model files ar
 ```
 .
 ├── README.md
-├── protocol/                # the only contract shared by QNX, bridge, app and HUD
-│   ├── PROTOCOL.md          # UART frames, BLE GATT, messages M00–M07, device IDs
+├── docs/                    # documents
+│   ├── proposal/            # Phase 2 proposal, requirements and screen definitions (ui/)
+│   ├── architecture/        # SPEC.md, ARCHITECTURE.html (built by make_architecture.py)
+│   ├── controller/          # RF_MESSAGES.md, DATA_LOGGING.md (controller-side designs)
+│   └── ml/                  # DATASETS.md, REALDATA.md
+│
+├── protocol/                # the contract shared by controller, bridge, apps, ML and server
+│   ├── PROTOCOL.md          # UART frames, BLE GATT, messages, device IDs
 │   ├── messages.schema.json # JSON Schema for the messages
+│   ├── ride_schema.sql      # P7 ride file (SQLite) tables, written by the controller, read by the server
 │   ├── uuids.json           # BLE service / characteristic UUIDs
 │   ├── constants.json       # Oman, Wf, event, rest and MSSQ constants
 │   ├── trip_format.json     # columns of the 100 Hz trip.bin
 │   ├── feature_order.json   # 77 features: order, group, unit, window, monotone, enabled
-│   ├── gen_cpp.py           # JSON → controller/common/protocol_gen.hpp
+│   ├── gen_cpp.py           # JSON + SQL → controller/common/protocol_gen.hpp
 │   └── check.py             # validates the files above
 │
-├── bridge/                  # ESP32-S3 BLE ↔ UART bridge firmware (Arduino)
-│
-├── controller/              # QNX C++ on Raspberry Pi 4 (P1–P6 to come)
+├── controller/              # QNX C++ on Raspberry Pi 4: processes P1–P7
 │   ├── CMakeLists.txt       # cmake -S controller -B build (Mac and Pi)
-│   ├── common/              # portable C++: filters, Oman, 71 vehicle features
-│   ├── tools/featurize.cpp  # trip.bin → features.bin, shared by training and P2
-│   ├── tests/               # feature unit tests (ctest)
-│   ├── bringup/             # standalone hardware tests (MPU-6050)
-│   └── config/              # policy.json, thresholds.json
+│   ├── common/              # portable C++: features, inference, policy, comm, ride log, calibration
+│   ├── qnx/                 # P1–P7 processes and run scripts
+│   ├── config/              # policy.json, thresholds.json, imu_mount.json
+│   ├── tools/               # featurize, policy_replay, calib_apply, verify_model, csv2bin.py
+│   ├── tests/               # unit and process tests (ctest), qnxsim (QNX message passing on Mac)
+│   └── bringup/             # hardware bring-up (MPU-6050, UART) and recordings/
+│
+├── firmware/
+│   └── bridge/              # ESP32-S3 BLE <-> UART bridge (Arduino)
+│
+├── apps/
+│   ├── android/             # passenger app (Kotlin)
+│   └── hud-web/             # vehicle display, HUD and web demo of the passenger app
 │
 ├── ml/                      # Python, development PC
 │   ├── oman.py, wf.py       # reference Oman model and ISO Wf filter
-│   ├── trip.py              # trip.bin / features.bin I/O, runs featurize
-│   ├── simulator/           # synthetic trips, passengers, Oman labels → dataset.npz
+│   ├── trip.py, runs.py     # trip.bin / features.bin I/O, versioned run folders (out/runs/vNNN)
+│   ├── simulator/           # synthetic trips, passengers, Oman labels -> dataset
+│   ├── realdata/            # comma2k19, BATON and MerMaid ride files -> real datasets
+│   ├── train/               # LightGBM training and policy replay
+│   ├── verify/              # Oman on TU Delft, model parity, pipeline check, TU Delft replay
+│   ├── personal/            # personal calibration (a, b per passenger)
 │   ├── tests/               # unit tests and C++ vs Python golden tests
-│   └── verify/              # Oman reproduction on TU Delft, lateral slalom check
+│   └── data/                # raw datasets and trip files, not committed (see ml/data/README.md)
 │
-├── tools/
-│   └── csv2bin.py           # MPU-6050 recording CSV → trip.bin
-│
-├── tests/
-│   ├── portability/         # C++17, threads, timer check on the Pi
-│   └── lgbm_capi/           # LightGBM on QNX vs. Python predictions
-│
-├── data/                    # raw dataset and trip files not committed (see data/README.md)
-├── docs/figures/
-└── results/
+└── server/                  # log server (FastAPI + SQLite)
+    ├── app.py, db.py, ridefile.py
+    ├── .env.example         # settings (API key, data folder, upload limit)
+    ├── tools/               # collect_logs.py: car -> server upload, calibration push
+    └── tests/
 ```
 
 ---

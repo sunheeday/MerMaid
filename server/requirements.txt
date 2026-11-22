@@ -1,0 +1,6 @@
+# 로그 서버 (Python 3.12). 테스트는 httpx (FastAPI TestClient)
+fastapi==0.115.6
+uvicorn==0.34.0
+python-multipart
+numpy
+httpx

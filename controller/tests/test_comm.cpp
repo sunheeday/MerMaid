@@ -1,4 +1,5 @@
-// P6 통신 코어 테스트: 줄 조립, 프레임, HELLO 5초, HB 1초, 기기 메시지 → P4/P5 메시지, P5/P2 메시지 → UART 줄
+// P6 통신 코어 테스트: 줄 조립, 프레임, HELLO 5초, HB 1초, 기기 메시지 → P4/P5 메시지, P5/P2 메시지 → UART 줄,
+// 시작 DROP, P5 재시작(OUT_RESYNC → HELLO 재전송, INT 기록)
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -302,6 +303,124 @@ static void hello_resend() {
     CHECK(count_hello(c.on_tick(3000)) == 0, "no resend after delivery");
 }
 
+static void ctx_resend() {
+    Comm c(nullptr, 0);
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 10);
+    c.on_uart_line("0|" + hello("app", kPhone), 20);
+    c.on_uart_line("1|CONNECT", 30);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 40);
+    c.on_uart_line("0|{\"t\":\"SCR\",\"on\":true,\"att\":true}", 50);
+    c.on_uart_line("0|{\"t\":\"PROF\",\"mssq\":30.0,\"sens\":1.6}", 60);
+    c.on_uart_line("1|{\"t\":\"SCR\",\"on\":true,\"att\":false}", 70);
+    c.on_uart_line("0|{\"t\":\"OVR\",\"dev\":\"" + kPhone + "\",\"on\":false}", 80);
+    auto resends = [](const Actions& a) {
+        std::vector<CtxResend> v;
+        for (const auto& x : a)
+            if (const auto* r = std::get_if<CtxResend>(&x)) v.push_back(*r);
+        return v;
+    };
+    c.p4_result(false);  // P4가 아직 없어서 SCR·PROF를 못 보냈다
+    CHECK(resends(c.on_tick(500)).empty(), "no resend between beats");
+    auto r = resends(c.on_tick(1000));
+    CHECK(r.size() == 2, "resend for phone and HUD with the next HB (%zu)", r.size());
+    if (r.size() == 2) {
+        CHECK(r[0].has_scr && r[0].has_prof && std::string(r[0].scr.sender) == kPhone && r[0].scr.on && r[0].scr.att,
+              "phone: last SCR");
+        CHECK(std::string(r[0].prof.phone) == kPhone && r[0].prof.mssq == 30.0 && std::fabs(r[0].prof.sens - 1.6) < 1e-9,
+              "phone: last PROF");
+        CHECK(r[1].has_scr && !r[1].has_prof && !r[1].scr.att, "HUD: SCR only");
+    }
+    CHECK(resends(c.on_tick(2000)).size() == 2, "again each second while P4 is down");
+    c.p4_result(true);
+    bool quiet = true;
+    for (int t = 3000; t < 12000; t += 1000) quiet = quiet && resends(c.on_tick(t)).empty();
+    CHECK(quiet, "no resend for 10 s after P4 answers");
+    CHECK(resends(c.on_tick(12000)).size() == 2, "refresh every 10 s (P4 may have restarted quietly)");
+    c.on_uart_line("0|DISCONNECT", 12100);
+    c.p4_result(false);
+    r = resends(c.on_tick(13000));
+    CHECK(r.size() == 1 && !r[0].has_prof && std::string(r[0].scr.sender) == "hud-01", "disconnect forgets the phone");
+    c.on_uart_line("0|CONNECT", 13100);
+    c.on_uart_line("0|" + hello("app", kPhone), 13200);
+    r = resends(c.on_tick(14000));
+    CHECK(r.size() == 1, "reconnected phone has nothing to resend until it sends SCR/PROF again");
+}
+
+// P6 시작: 브리지의 모든 연결을 끊고 P5 명부도 비운다
+static void start_drops_all() {
+    Comm c(nullptr, 0);
+    const Actions a = c.on_start();
+    const std::vector<std::string> l = lines(a);
+    CHECK(l.size() == 9 && l[0] == "0|DROP" && l[8] == "8|DROP", "0~8|DROP");
+    CHECK(std::holds_alternative<msg::DevBye>(a.back()) && std::get<msg::DevBye>(a.back()).conn == msg::kConnAll,
+          "then DEV_BYE ALL");
+}
+
+// P5 재시작: OUT_RESYNC → 다음 박자에 등록된 연결마다 DEV_HELLO, 보낸 INT 기록을 싣는다
+static void resync() {
+    Comm c(nullptr, 0);
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 10);
+    c.on_uart_line("0|" + hello("app", kPhone), 20);
+    c.on_uart_line("1|CONNECT", 30);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 40);
+    c.on_uart_line("2|CONNECT", 50);  // HELLO 전: 다시 알릴 것 없음
+    c.hello_delivered(0, kPhone.c_str());
+    c.hello_delivered(1, "hud-01");
+    auto hellos = [](const Actions& a) {
+        std::vector<msg::DevHello> v;
+        for (const auto& x : a)
+            if (const auto* h = std::get_if<msg::DevHello>(&x)) v.push_back(*h);
+        return v;
+    };
+    const Actions first = c.on_uart_line("3|CONNECT", 60);
+    CHECK(hellos(first).empty(), "nothing yet");
+
+    // 새 HELLO의 기록은 비어 있다
+    c.on_uart_line("4|CONNECT", 70);
+    std::vector<msg::DevHello> h = hellos(c.on_uart_line("4|" + hello("app", "phone-z"), 80));
+    CHECK(h.size() == 1 && h[0].int_known == 0 && h[0].int_on == 0, "fresh HELLO has no INT record");
+    c.hello_delivered(4, "phone-z");
+
+    msg::OutInt i;
+    i.conn = 0, i.tier = 1, i.on = 1;
+    c.on_out_int(i);
+    i.tier = 3;
+    c.on_out_int(i);
+    i.conn = msg::kConnAll, i.tier = 2, i.on = 0;
+    c.on_out_int(i);
+    i.conn = 1, i.tier = 1, i.on = 1;
+    c.on_out_int(i);
+    i.conn = 1, i.on = 0;
+    c.on_out_int(i);
+    i.conn = 2, i.tier = 1, i.on = 1;  // 등록 안 된 연결: 기록하지 않음
+    c.on_out_int(i);
+
+    CHECK(hellos(c.on_tick(1000)).empty(), "no HELLO before RESYNC");
+    c.on_resync();
+    h = hellos(c.on_tick(1500));
+    CHECK(h.empty(), "HELLO waits for the next beat");
+    h = hellos(c.on_tick(2000));
+    CHECK(h.size() == 3, "HELLO for each registered conn: %zu", h.size());
+    if (h.size() == 3) {
+        CHECK(h[0].conn == 0 && kPhone == h[0].dev && h[0].int_known == 0b111 && h[0].int_on == 0b101,
+              "phone: Tier 1 on, 2 off, 3 on (%d %d)", h[0].int_known, h[0].int_on);
+        CHECK(h[1].conn == 1 && h[1].role == msg::Role::Hud && h[1].int_known == 0b011 && h[1].int_on == 0,
+              "HUD: Tier 1 off (last), 2 off");
+        CHECK(h[2].conn == 4 && h[2].int_known == 0b010 && h[2].int_on == 0, "phone-z: Tier 2 off from ALL");
+    }
+    c.hello_delivered(0, kPhone.c_str());
+    c.hello_delivered(1, "hud-01");
+    c.hello_delivered(4, "phone-z");
+    CHECK(hellos(c.on_tick(3000)).empty(), "no more HELLO after delivery");
+
+    // 다시 CONNECT 하면 기록도 지운다 (다른 기기일 수 있으므로)
+    c.on_uart_line("0|CONNECT", 3100);
+    h = hellos(c.on_uart_line("0|" + hello("app", kPhone), 3200));
+    CHECK(h.size() == 1 && h[0].int_known == 0, "record cleared on CONNECT");
+}
+
 int main() {
     line_assembler();
     frames();
@@ -314,6 +433,9 @@ int main() {
     motion_stream();
     link_timeout();
     hello_resend();
+    ctx_resend();
+    start_drops_all();
+    resync();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;

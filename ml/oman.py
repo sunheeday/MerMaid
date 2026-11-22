@@ -12,7 +12,7 @@ import math
 import pathlib
 
 import numpy as np
-from scipy.signal import lfilter
+from scipy.signal import lfilter, lfilter_zi
 
 CONST = json.loads((pathlib.Path(__file__).resolve().parents[1] / "protocol" / "constants.json").read_text())
 OMAN = CONST["oman"]
@@ -35,13 +35,19 @@ def lp2(x, beta, dt):
     return f(f(x))
 
 
-def input_signal(ax, ay, dt, lowpass_hz=OMAN["input_lowpass_hz"]):
-    """Oman 입력 c(t). lowpass_hz=None이면 필터 없이 크기만."""
+def input_signal(ax, ay, dt, lowpass_hz=OMAN["input_lowpass_hz"], prime=False):
+    """Oman 입력 c(t). lowpass_hz=None이면 필터 없이 크기만.
+    prime=True면 저역통과를 첫 샘플의 정상상태에서 시작한다 (C++ featurize, T-22).
+    라벨(sim.label)은 정지 상태(가속도 0)에서 출발하므로 기본값 False 그대로 쓴다."""
     ax = np.asarray(ax, dtype=float)
     ay = np.zeros_like(ax) if ay is None else np.asarray(ay, dtype=float)
     if lowpass_hz:
         b, a = butter2_lowpass(lowpass_hz, 1.0 / dt)
-        ax, ay = lfilter(b, a, ax), lfilter(b, a, ay)
+        if prime and len(ax):
+            zi = lfilter_zi(b, a)
+            ax, ay = lfilter(b, a, ax, zi=zi * ax[0])[0], lfilter(b, a, ay, zi=zi * ay[0])[0]
+        else:
+            ax, ay = lfilter(b, a, ax), lfilter(b, a, ay)
     return np.hypot(ax, ay)
 
 

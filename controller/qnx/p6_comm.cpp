@@ -5,10 +5,15 @@
 //   --no-link-timeout  기기가 5초 조용해도 끊지 않음 (HB를 안 보내는 nRF Connect로 손으로 시험할 때)
 //   --verbose          HB, MOT 줄까지 모두 출력
 //
-// 스레드 두 개 (교착 방지, docs/RF_MESSAGES.md §2-2):
+// 스레드 두 개 (교착 방지, docs/controller/RF_MESSAGES.md §2-2):
 //   UART 스레드(main): UART 읽기 → 규칙 → UART 쓰기 / P5·P4에 MsgSend. 100 ms마다 시계(HB, HELLO 5초, 무응답 5초)
 //   받기 스레드: mermaid_p6로 P5(OUT_*)와 P2(MOTION)를 받아 바로 회신 → 규칙 → UART 쓰기. MsgSend 하지 않는다
+// 기기 사건(HELLO 전달됨, BYE, SCR, OVR, PROF)은 UART 스레드가 P7에 LOG_CTX로도 보낸다 (2 ms, 실패는 세기만).
+//   10초마다 다시 보내는 SCR·PROF(CtxResend)는 사건이 아니라서 보내지 않는다.
 // 시작 순서: P6이 가장 먼저 (P5, P2가 P6에 보낸다). P5가 늦게 떠도 등록은 1초마다 다시 보낸다.
+// 다시 시작 (docs/controller/RF_MESSAGES.md §6):
+//   P6이 다시 시작 → 시작할 때 0~8|DROP으로 브리지의 모든 연결을 끊고 P5에 DEV_BYE ALL. 기기가 다시 붙어 HELLO
+//   P5가 다시 시작 → P5가 OUT_RESYNC를 보냄 → 등록된 기기의 DEV_HELLO를 다음 1초 박자에 다시 보냄
 #include <atomic>
 #include <cerrno>
 #include <cstdio>
@@ -20,6 +25,7 @@
 
 #include "comm.hpp"
 #include "ipc.hpp"
+#include "log_messages.hpp"
 #include "rf_messages.hpp"
 
 // termios.h는 프로젝트 헤더 뒤에: termios.h가 B0, B50 같은 보율 이름을 매크로로 정의해서
@@ -102,6 +108,7 @@ union Inbox {
     msg::OutStream out_stream;
     msg::OutProf out_prof;
     msg::OutDrop out_drop;
+    msg::OutResync out_resync;
     msg::Motion motion;
     _pulse pulse;
     Inbox() {}
@@ -135,6 +142,11 @@ void receive_loop(Shared& sh, ipc::Server& srv) {
             ipc::Server::reply(rcvid);
             std::lock_guard<std::mutex> lk(sh.core_mu);
             acts = sh.core->on_out_drop(m);
+        } else if (type == msg::OUT_RESYNC) {
+            ipc::Server::reply(rcvid);
+            log_line("P5", "RESYNC (P5 restarted)");
+            std::lock_guard<std::mutex> lk(sh.core_mu);
+            sh.core->on_resync();  // 표만 바꾼다. HELLO는 UART 스레드의 on_tick이 보낸다
         } else if (type == msg::MOTION) {
             const msg::Motion m = in.motion;
             ipc::Server::reply(rcvid);
@@ -199,9 +211,30 @@ int main(int argc, char** argv) {
         // UART 스레드 (main)
         ipc::Client p5(msg::kNameP5, 200 * 1000000ULL);
         ipc::Client p4(msg::kNameP4, 200 * 1000000ULL);
+        // 상대가 다시 시작했으면 옛 연결로 보낸 첫 번은 실패하고 연결이 닫힌다 → 바로 한 번 더 (새로 연결).
+        // 시간 초과(상대가 바쁨)는 연결이 남으므로 다시 보내지 않는다
+        auto send_to = [](ipc::Client& c, const void* m, size_t n) {
+            return c.send(m, n) || (!c.connected() && c.send(m, n));
+        };
+        ipc::Client p7(msg::kNameP7, msg::kLogTimeoutNs);
+        uint64_t log_fail = 0;
+        auto log_ctx = [&](const std::string& sender, msg::CtxKind kind, const std::string& value) {
+            msg::LogCtx m;
+            m.mono_ns = ipc::now_ns();
+            msg::copy_id(m.sender, sender);
+            m.kind = kind;
+            msg::copy_text(m.value, value);
+            if (!p7.send(&m, sizeof m)) log_fail++;
+        };
+        auto jstr = [](const char* s) {  // ID는 safe_name 규칙이라 따옴표만 막으면 된다
+            std::string out = "\"";
+            for (const char* c = s; *c; c++)
+                if (*c != '"' && *c != '\\') out += *c;
+            return out + "\"";
+        };
         bool p5_warned = false, p4_warned = false;
         auto send_p5 = [&](const void* m, size_t n, const std::string& what) {
-            if (p5.send(m, n)) {
+            if (send_to(p5, m, n)) {
                 if (p5_warned) log_line("..", "P5 reachable again");
                 p5_warned = false;
                 return true;
@@ -210,15 +243,24 @@ int main(int argc, char** argv) {
             p5_warned = true;
             return false;
         };
-        auto send_p4 = [&](const void* m, size_t n, const std::string& what) {
-            log_line("P4", what);
-            if (no_p4) return;
-            if (p4.send(m, n)) {
+        auto p4_result = [&](bool ok) {
+            std::lock_guard<std::mutex> lk(sh.core_mu);
+            core.p4_result(ok);
+        };
+        // quiet: 기억해 둔 SCR·PROF를 다시 보낼 때 (10초마다라 성공하면 로그를 남기지 않는다)
+        auto send_p4 = [&](const void* m, size_t n, const std::string& what, bool quiet = false) {
+            if (!quiet || verbose) log_line("P4", what);
+            if (no_p4) return true;
+            if (send_to(p4, m, n)) {
+                if (p4_warned) log_line("..", "P4 reachable again (" + what + ")");
                 p4_warned = false;
-                return;
+                p4_result(true);
+                return true;
             }
-            if (!p4_warned) log_line("ERR", "cannot send to P4 (" + what + ")");
+            if (!p4_warned) log_line("ERR", "cannot send to P4 (" + what + "), will resend screen and profile");
             p4_warned = true;
+            p4_result(false);
+            return false;
         };
         auto run = [&](const comm::Actions& acts) {
             for (const auto& a : acts) {
@@ -228,24 +270,59 @@ int main(int argc, char** argv) {
                     const std::string what = "HELLO conn " + std::to_string(h->conn) + " " + h->dev;
                     if (send_p5(h, sizeof *h, what)) {
                         log_line("P5", what);
+                        log_ctx(h->dev, msg::CtxKind::HELLO,
+                                "{\"conn\":" + std::to_string(h->conn) + ",\"role\":" +
+                                    std::to_string(static_cast<int>(h->role)) + ",\"ver\":" + std::to_string(h->ver) + "}");
                         std::lock_guard<std::mutex> lk(sh.core_mu);
                         core.hello_delivered(h->conn, h->dev);
                     }
                 } else if (const auto* b = std::get_if<msg::DevBye>(&a)) {
-                    const std::string what = "BYE conn " + std::to_string(b->conn);
+                    const std::string what =
+                        b->conn == msg::kConnAll ? std::string("BYE ALL") : "BYE conn " + std::to_string(b->conn);
                     if (send_p5(b, sizeof *b, what)) log_line("P5", what);
+                    log_ctx(b->conn == msg::kConnAll ? std::string("all") : "conn" + std::to_string(b->conn), msg::CtxKind::BYE,
+                            "{\"conn\":" + std::to_string(b->conn) + "}");
                 } else if (const auto* s = std::get_if<msg::CtxScreen>(&a)) {
                     send_p4(s, sizeof *s,
                             std::string("SCR ") + s->sender + " on=" + std::to_string(s->on) + " att=" + std::to_string(s->att));
+                    log_ctx(s->sender, msg::CtxKind::SCR,
+                            "{\"on\":" + std::to_string(s->on) + ",\"att\":" + std::to_string(s->att) + "}");
                 } else if (const auto* o = std::get_if<msg::CtxOvr>(&a)) {
                     send_p4(o, sizeof *o, std::string("OVR ") + o->sender + " -> " + o->device + " on=" + std::to_string(o->on));
+                    log_ctx(o->sender, msg::CtxKind::OVR,
+                            "{\"device\":" + jstr(o->device) + ",\"on\":" + std::to_string(o->on) + "}");
                 } else if (const auto* p = std::get_if<msg::CtxProf>(&a)) {
                     char buf[160];
                     std::snprintf(buf, sizeof buf, "PROF %s mssq=%.2f sens=%.3f", p->phone, p->mssq, p->sens);
                     send_p4(p, sizeof *p, buf);
+                    std::snprintf(buf, sizeof buf, "{\"mssq\":%.9g,\"sens\":%.9g}", p->mssq, p->sens);
+                    log_ctx(p->phone, msg::CtxKind::PROF, buf);
+                } else if (const auto* r = std::get_if<comm::CtxResend>(&a)) {
+                    bool ok = true;
+                    if (r->has_scr)
+                        ok = send_p4(&r->scr, sizeof r->scr,
+                                     std::string("resend SCR ") + r->scr.sender + " on=" + std::to_string(r->scr.on) +
+                                         " att=" + std::to_string(r->scr.att),
+                                     true);
+                    if (ok && r->has_prof) {
+                        char buf[160];
+                        std::snprintf(buf, sizeof buf, "resend PROF %s mssq=%.2f sens=%.3f", r->prof.phone, r->prof.mssq,
+                                      r->prof.sens);
+                        send_p4(&r->prof, sizeof r->prof, buf, true);
+                    }
                 }
             }
         };
+
+        // 시작: 브리지의 모든 연결을 끊는다 (P6만 다시 시작했을 때 기기가 다시 HELLO 하게)
+        {
+            comm::Actions acts;
+            {
+                std::lock_guard<std::mutex> lk(sh.core_mu);
+                acts = core.on_start();
+            }
+            run(acts);
+        }
 
         comm::LineAssembler asm_;
         int64_t next_stat = now_ms() + 10000;
@@ -278,7 +355,7 @@ int main(int argc, char** argv) {
                 next_stat += 10000;
                 log_line("..", "stat: rx " + std::to_string(sh.rx_lines.load()) + " lines, tx " +
                                    std::to_string(sh.tx_lines.load()) + " (MOT " + std::to_string(sh.mot_lines.load()) +
-                                   ")");
+                                   "), log_fail " + std::to_string(log_fail));
             }
         }
     } catch (const std::exception& e) {

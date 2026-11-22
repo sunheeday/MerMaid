@@ -1,8 +1,9 @@
-// P4 상태 파일 테스트: 저장 → 다시 읽기, 원자적 교체, 파일 이름 검사, Policy의 바뀐 값만 저장
+// P4 상태 파일 테스트: 저장 → 다시 읽기, 원자적 교체, 파일 이름 검사, Policy의 바뀐 값만 저장, 개인 보정 파일과 식
 #include <unistd.h>
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 #include "store.hpp"
@@ -39,11 +40,38 @@ int main() {
     std::string junk;
     CHECK(!store::read_file(dir + "/tolerance/airflow-01.json.tmp", junk), "no tmp file left behind");
 
-    const Profile want{12.5, 1.1, 1.265};
+    const Profile want{12.5, 1.1};
     st.save_profile("phone-a", want);
-    CHECK(st.load_profile("phone-a", p) && p.mssq == 12.5 && p.sens_mssq == 1.1 && p.sens == 1.265,
-          "profile round trip: %.17g %.17g %.17g", p.mssq, p.sens_mssq, p.sens);
+    CHECK(st.load_profile("phone-a", p) && p.mssq == 12.5 && p.sens == 1.1, "profile round trip: %.17g %.17g", p.mssq,
+          p.sens);
+    const Profile old = store::parse_profile(R"({"mssq": 20.0, "sens_mssq": 1.3, "sens": 1.5})");
+    CHECK(old.mssq == 20.0 && old.sens == 1.3, "old profile file: survey sens_mssq kept, adjusted sens dropped (%.17g)",
+          old.sens);
 
+    calib::Calib c;
+    CHECK(!st.load_calib("phone-a", c) && c.a == 1 && c.b == 0, "missing calib reads as absent (identity)");
+    store::write_atomic(dir + "/calib/phone-a.json", R"({"a": 1.25, "b": -0.5, "run": "v014", "loo_gain": 0.01})");
+    CHECK(st.load_calib("phone-a", c) && c.a == 1.25 && c.b == -0.5, "calib read, extra keys ignored (%.17g %.17g)", c.a, c.b);
+    for (const char* bad : {R"({"a": 0.2, "b": 0})", R"({"a": 1.0, "b": 9})", R"({"a": 1.0})", R"({"a": "x", "b": 0})"}) {
+        bool threw = false;
+        try {
+            store::parse_calib(bad);
+        } catch (const std::exception&) {
+            threw = true;
+        }
+        CHECK(threw, "bad calib refused: %s", bad);
+    }
+    {
+        const Risk p{0.9, 0.7, 0.5, 0.3, 1e-9};
+        const Risk same = calib::apply(p, calib::Calib{});
+        CHECK(std::memcmp(&same, &p, sizeof p) == 0, "a=1, b=0 leaves P bit-identical");
+        const Risk q = calib::apply(p, calib::Calib{1.5, -0.4});
+        bool order = true;
+        for (size_t k = 1; k < q.size(); k++) order = order && q[k] <= q[k - 1];
+        CHECK(order && q[2] < p[2], "calibration keeps p2 >= ... >= p6 and lowers p4 here (%.6f)", q[2]);
+        const Risk r = calib::apply(p, calib::Calib{9.0, 0.0});
+        CHECK(std::memcmp(&r, &p, sizeof p) == 0, "out-of-range calib is not applied");
+    }
     CHECK(store::safe_name("phone-a_1.x") && !store::safe_name("../x") && !store::safe_name("a/b") &&
               !store::safe_name("") && !store::safe_name(".hidden"),
           "safe_name");

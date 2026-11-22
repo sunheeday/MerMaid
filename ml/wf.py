@@ -8,7 +8,7 @@ import math
 import pathlib
 
 import numpy as np
-from scipy.signal import bilinear, sosfilt
+from scipy.signal import bilinear, sosfilt, sosfilt_zi
 
 WF = json.loads((pathlib.Path(__file__).resolve().parents[1] / "protocol" / "constants.json").read_text())["wf"]
 
@@ -42,5 +42,10 @@ def analog_gain(f):
     return np.abs(h)
 
 
-def weight(x, fs):
-    return sosfilt(sos(fs), np.asarray(x, dtype=float))
+def weight(x, fs, prime=True):
+    """prime=True: 첫 샘플의 정상상태에서 시작 (C++ featurize와 같음, T-22). False: 상태 0에서 시작."""
+    x = np.asarray(x, dtype=float)
+    S = sos(fs)
+    if not prime or not len(x):
+        return sosfilt(S, x)
+    return sosfilt(S, x, zi=sosfilt_zi(S) * x[0])[0]
