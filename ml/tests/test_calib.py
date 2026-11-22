@@ -1,11 +1,10 @@
-"""개인 보정 B (docs/DATA_LOGGING.md §12): C++ 식과 Python 식이 같은지, 가짜 주행 파일로 a, b를 다시 찾는지
+"""개인 보정 B (docs/controller/DATA_LOGGING.md §12): C++ 식과 Python 식이 같은지, 가짜 주행 파일로 a, b를 다시 찾는지
 
-가짜 주행 파일은 P7과 같은 스키마(controller/common/ride_log.cpp의 kSchema를 그대로 읽음)로 만든다.
+가짜 주행 파일은 P7과 같은 스키마(protocol/ride_schema.sql)로 만든다.
 사람마다 정해 둔 (a*, b*)로 "진짜" 확률 σ(a*·logit(p) + b*)를 만들고, 그 확률로 MISC 라벨을 뽑는다.
 """
 import json
 import pathlib
-import re
 import sqlite3
 import subprocess
 import sys
@@ -18,8 +17,7 @@ sys.path.insert(0, str(REPO / "ml" / "personal"))
 sys.path.insert(0, str(REPO / "ml"))
 import fit_calib as FC  # noqa: E402
 
-SCHEMA = re.search(r'kSchema = R"SQL\((.*?)\)SQL"', (REPO / "controller" / "common" / "ride_log.cpp").read_text(),
-                   re.S).group(1)
+SCHEMA = (REPO / "protocol" / "ride_schema.sql").read_text(encoding="utf-8")
 CFG = FC.load_config()
 OFFSETS = np.array([-1.5, -0.5, 0.3, 1.0, 1.8])  # p_k = σ(z − c_k): k가 클수록 작음
 
@@ -189,7 +187,7 @@ def test_write_run_and_push(fitted, tmp_path, monkeypatch):
     once = json.loads((run / "calib" / "once.json").read_text())
     assert (once["a"], once["b"], once["adopted"]) == (1.0, 0.0, False)  # 예전 값을 지우도록 1, 0도 보낸다
 
-    sys.path.insert(0, str(REPO / "tools"))
+    sys.path.insert(0, str(REPO / "server" / "tools"))
     import collect_logs
     state = tmp_path / "state"
     (state / "calib").mkdir(parents=True)

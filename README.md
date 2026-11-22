@@ -184,7 +184,7 @@ flowchart LR
   LLM -.->|"sim parameter proposals"| SIM
 ```
 
-Green: working · amber: partly built · gray dashed: planned (see [docs/DATA_LOGGING.md](docs/DATA_LOGGING.md) for the logging and log-server design).
+Green: working · amber: partly built · gray dashed: planned (see [docs/controller/DATA_LOGGING.md](docs/controller/DATA_LOGGING.md) for the logging and log-server design).
 
 ### B. Feature Extraction
 
@@ -293,43 +293,55 @@ Training runs on a development PC (Python, LightGBM). The trained model files ar
 ```
 .
 ├── README.md
-├── protocol/                # the only contract shared by QNX, bridge, app and HUD
-│   ├── PROTOCOL.md          # UART frames, BLE GATT, messages M00–M07, device IDs
+├── docs/                    # documents
+│   ├── proposal/            # Phase 2 proposal, requirements and screen definitions (ui/)
+│   ├── architecture/        # SPEC.md, ARCHITECTURE.html (built by make_architecture.py)
+│   ├── controller/          # RF_MESSAGES.md, DATA_LOGGING.md (controller-side designs)
+│   └── ml/                  # DATASETS.md, REALDATA.md
+│
+├── protocol/                # the contract shared by controller, bridge, apps, ML and server
+│   ├── PROTOCOL.md          # UART frames, BLE GATT, messages, device IDs
 │   ├── messages.schema.json # JSON Schema for the messages
+│   ├── ride_schema.sql      # P7 ride file (SQLite) tables, written by the controller, read by the server
 │   ├── uuids.json           # BLE service / characteristic UUIDs
 │   ├── constants.json       # Oman, Wf, event, rest and MSSQ constants
 │   ├── trip_format.json     # columns of the 100 Hz trip.bin
 │   ├── feature_order.json   # 77 features: order, group, unit, window, monotone, enabled
-│   ├── gen_cpp.py           # JSON → controller/common/protocol_gen.hpp
+│   ├── gen_cpp.py           # JSON + SQL → controller/common/protocol_gen.hpp
 │   └── check.py             # validates the files above
 │
-├── bridge/                  # ESP32-S3 BLE ↔ UART bridge firmware (Arduino)
-│
-├── controller/              # QNX C++ on Raspberry Pi 4 (P1–P6 to come)
+├── controller/              # QNX C++ on Raspberry Pi 4: processes P1–P7
 │   ├── CMakeLists.txt       # cmake -S controller -B build (Mac and Pi)
-│   ├── common/              # portable C++: filters, Oman, 71 vehicle features
-│   ├── tools/featurize.cpp  # trip.bin → features.bin, shared by training and P2
-│   ├── tests/               # feature unit tests (ctest)
-│   ├── bringup/             # standalone hardware tests (MPU-6050)
-│   └── config/              # policy.json, thresholds.json
+│   ├── common/              # portable C++: features, inference, policy, comm, ride log, calibration
+│   ├── qnx/                 # P1–P7 processes and run scripts
+│   ├── config/              # policy.json, thresholds.json, imu_mount.json
+│   ├── tools/               # featurize, policy_replay, calib_apply, verify_model, csv2bin.py
+│   ├── tests/               # unit and process tests (ctest), qnxsim (QNX message passing on Mac)
+│   └── bringup/             # hardware bring-up (MPU-6050, UART) and recordings/
+│
+├── firmware/
+│   └── bridge/              # ESP32-S3 BLE <-> UART bridge (Arduino)
+│
+├── apps/
+│   ├── android/             # passenger app (Kotlin)
+│   └── hud-web/             # vehicle display, HUD and web demo of the passenger app
 │
 ├── ml/                      # Python, development PC
 │   ├── oman.py, wf.py       # reference Oman model and ISO Wf filter
-│   ├── trip.py              # trip.bin / features.bin I/O, runs featurize
-│   ├── simulator/           # synthetic trips, passengers, Oman labels → dataset.npz
+│   ├── trip.py, runs.py     # trip.bin / features.bin I/O, versioned run folders (out/runs/vNNN)
+│   ├── simulator/           # synthetic trips, passengers, Oman labels -> dataset
+│   ├── realdata/            # comma2k19, BATON and MerMaid ride files -> real datasets
+│   ├── train/               # LightGBM training and policy replay
+│   ├── verify/              # Oman on TU Delft, model parity, pipeline check, TU Delft replay
+│   ├── personal/            # personal calibration (a, b per passenger)
 │   ├── tests/               # unit tests and C++ vs Python golden tests
-│   └── verify/              # Oman reproduction on TU Delft, lateral slalom check
+│   └── data/                # raw datasets and trip files, not committed (see ml/data/README.md)
 │
-├── tools/
-│   └── csv2bin.py           # MPU-6050 recording CSV → trip.bin
-│
-├── tests/
-│   ├── portability/         # C++17, threads, timer check on the Pi
-│   └── lgbm_capi/           # LightGBM on QNX vs. Python predictions
-│
-├── data/                    # raw dataset and trip files not committed (see data/README.md)
-├── docs/figures/
-└── results/
+└── server/                  # log server (FastAPI + SQLite)
+    ├── app.py, db.py, ridefile.py
+    ├── .env.example         # settings (API key, data folder, upload limit)
+    ├── tools/               # collect_logs.py: car -> server upload, calibration push
+    └── tests/
 ```
 
 ---

@@ -1,6 +1,6 @@
 """TU Delft ATDOMS를 가상 주행으로 바꿔 모델을 실제 사람 MISC로 시험
 
-    python3 ml/verify/tudelft_replay.py data/raw/ATDOMS.mat [--v0-kmh 50]
+    python3 ml/verify/tudelft_replay.py ml/data/raw/ATDOMS.mat [--v0-kmh 50]
 
 실험: 17명 x 조건 4개 (앞뒤 0.3 Hz 사인, 1 / 1.5 / 2 / 2.5 m/s², MISC 6에서 멈추고 휴식 뒤 다시).
 변환: 같은 앞뒤 가속도를 내는 차 = 일정 속도 v0에서 3.3초마다 속도가 오르내리는 주행.

@@ -1,4 +1,4 @@
-"""P7 주행 파일(<ride_id>.sqlite) 읽기와 검증 (docs/DATA_LOGGING.md §6-5).
+"""P7 주행 파일(<ride_id>.sqlite) 읽기와 검증 (docs/controller/DATA_LOGGING.md §6-5).
 
 서버(server/app.py)와 학습 데이터 내보내기(ml/realdata, 6단계)가 같이 쓴다. 표준 라이브러리 sqlite3 + numpy.
 파일은 읽기 전용으로 연다. 받은 파일은 서버가 바꾸지 않는다.
@@ -13,8 +13,10 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA_VERSION = 1
-TABLES = ("meta", "samples", "infer", "decision", "ctx", "label", "health")
+# 표 정의는 protocol/ride_schema.sql 하나 (P7이 같은 SQL로 파일을 만든다)
+SCHEMA_SQL = (Path(__file__).resolve().parents[1] / "protocol" / "ride_schema.sql").read_text(encoding="utf-8")
+SCHEMA_VERSION = int(re.search(r"^-- schema_version: (\d+)$", SCHEMA_SQL, re.M).group(1))
+TABLES = tuple(re.findall(r"^CREATE TABLE (\w+)", SCHEMA_SQL, re.M))
 RIDE_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}-\d{5}-\d{3,}$")  # <device>-<session:05d>-<ride:03d>
 MAX_SAMPLE_WINDOW_S = 600.0
 PROBS = ("p2", "p3", "p4", "p5", "p6")

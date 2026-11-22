@@ -1,5 +1,5 @@
 // P7 로거 코어: 링의 샘플과 P3·P4·P6의 LOG_* 메시지를 주행마다 SQLite 파일 하나에 쓴다.
-// 설계: docs/DATA_LOGGING.md §6. 프로세스(스레드, QNX 메시지)는 qnx/p7_logger.cpp, 이 파일은 시험할 수 있는 판단과 쓰기.
+// 설계: docs/controller/DATA_LOGGING.md §6. 프로세스(스레드, QNX 메시지)는 qnx/p7_logger.cpp, 이 파일은 시험할 수 있는 판단과 쓰기.
 //
 //   <dir>/session_count              시작할 때마다 +1
 //   <dir>/rides/<id>.open.sqlite     기록 중 → 닫으면 <id>.sqlite (파일 하나로 완결)
@@ -16,11 +16,12 @@
 #include <vector>
 
 #include "log_messages.hpp"
+#include "protocol_gen.hpp"
 #include "sample_ring.hpp"
 
 namespace mm::rlog {
 
-constexpr int kSchemaVersion = 1;
+constexpr int kSchemaVersion = proto::kRideSchemaVersion;  // protocol/ride_schema.sql
 constexpr int kChunkSamples = 100;                       // samples 표 한 행 = 1초
 constexpr uint64_t kCommitNs = 1000000000ULL;            // 트랜잭션 1초에 한 번
 constexpr uint64_t kCloseGraceNs = 2000000000ULL;        // RIDE_END 뒤 2초는 늦게 온 LOG_*를 같은 주행에

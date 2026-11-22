@@ -1,6 +1,6 @@
 // P1 LIVE용 MPU-6050: 레지스터 설정, FIFO 읽기, 단위 변환, 장착 회전, 자이로 바이어스 보정, 빠진 샘플 처리.
 // 표준 C++17만 사용. I2C는 Bus 뒤에 숨겨서 Mac 시험(fake_mpu.hpp)과 QNX(qnx/mpu_i2c.hpp)가 같은 코드를 쓴다.
-// 설계: docs/DATA_LOGGING.md §4
+// 설계: docs/controller/DATA_LOGGING.md §4
 //
 // 한 박자(10 ms)마다 Acquirer::step(now)을 부르면 그 사이 FIFO에 쌓인 샘플이 Row로 나온다.
 // 샘플 시각은 센서 클럭 기준 t = seq / 100 (Pi가 늦게 깨어나도 FIFO에 쌓여 있어서 간격은 센서가 정한다).

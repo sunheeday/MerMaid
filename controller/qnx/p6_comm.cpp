@@ -5,13 +5,13 @@
 //   --no-link-timeout  기기가 5초 조용해도 끊지 않음 (HB를 안 보내는 nRF Connect로 손으로 시험할 때)
 //   --verbose          HB, MOT 줄까지 모두 출력
 //
-// 스레드 두 개 (교착 방지, docs/RF_MESSAGES.md §2-2):
+// 스레드 두 개 (교착 방지, docs/controller/RF_MESSAGES.md §2-2):
 //   UART 스레드(main): UART 읽기 → 규칙 → UART 쓰기 / P5·P4에 MsgSend. 100 ms마다 시계(HB, HELLO 5초, 무응답 5초)
 //   받기 스레드: mermaid_p6로 P5(OUT_*)와 P2(MOTION)를 받아 바로 회신 → 규칙 → UART 쓰기. MsgSend 하지 않는다
 // 기기 사건(HELLO 전달됨, BYE, SCR, OVR, PROF)은 UART 스레드가 P7에 LOG_CTX로도 보낸다 (2 ms, 실패는 세기만).
 //   10초마다 다시 보내는 SCR·PROF(CtxResend)는 사건이 아니라서 보내지 않는다.
 // 시작 순서: P6이 가장 먼저 (P5, P2가 P6에 보낸다). P5가 늦게 떠도 등록은 1초마다 다시 보낸다.
-// 다시 시작 (docs/RF_MESSAGES.md §6):
+// 다시 시작 (docs/controller/RF_MESSAGES.md §6):
 //   P6이 다시 시작 → 시작할 때 0~8|DROP으로 브리지의 모든 연결을 끊고 P5에 DEV_BYE ALL. 기기가 다시 붙어 HELLO
 //   P5가 다시 시작 → P5가 OUT_RESYNC를 보냄 → 등록된 기기의 DEV_HELLO를 다음 1초 박자에 다시 보냄
 #include <atomic>

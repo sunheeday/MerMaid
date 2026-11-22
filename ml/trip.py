@@ -29,13 +29,6 @@ def write_trip(path, rows):
         rows.tofile(f)
 
 
-def read_trip(path):
-    raw = np.fromfile(path, dtype="<f8")
-    version, ncol, fs = raw[:3]
-    assert int(version) == FORMAT["version"] and int(ncol) == len(COLUMNS) and fs == FS
-    return raw[3:].reshape(-1, len(COLUMNS))
-
-
 def read_features(path):
     """→ (t, X[:, 71]). 차량 피처만 들어 있다."""
     raw = np.fromfile(path, dtype="<f8")

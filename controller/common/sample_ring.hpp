@@ -1,5 +1,5 @@
 // P1 → P7 공유 메모리 링 (/mermaid_samples). 생산자 1 · 소비자 1, 락 없음. POSIX shm_open + mmap (QNX, Mac, Linux).
-// 설계: docs/DATA_LOGGING.md §5
+// 설계: docs/controller/DATA_LOGGING.md §5
 // - 만드는 쪽은 P1(Writer)이다. P1은 P7이 있든 없든 똑같이 돈다: 쓰기는 복사 + 원자 변수 저장뿐, 기다리지 않는다.
 // - P7(Reader)은 늦으면 덮어쓰인 칸을 잃고, 잃은 개수를 센다. P1이 다시 시작하면 epoch가 바뀌어 처음부터 읽는다.
 // - 칸마다 seqlock: 쓰는 동안 n = kWriting, 다 쓰면 n = 칸 번호. 읽은 뒤 n이 그대로인지 다시 확인한다.

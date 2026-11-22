@@ -2,7 +2,7 @@
 //   p2_feat [--once] [--motion] [--prio P]
 // 샘플은 받자마자 회신해 P1을 풀어 준다. 주행 경계(RIDE_START/END)는 같은 순서로 P3에 넘긴다.
 // --motion: 10샘플(100 ms, constants.json mot_period_ms)마다 P6(mermaid_p6)에 MOTION을 보낸다.
-//   ax, ay = Wf 가중 가속도, pax, pay = trip 열 pred_ax_10s, pred_ay_10s (docs/RF_MESSAGES.md §5).
+//   ax, ay = Wf 가중 가속도, pax, pay = trip 열 pred_ax_10s, pred_ay_10s (docs/controller/RF_MESSAGES.md §5).
 //   P6이 없거나 늦으면 20 ms 뒤 포기하고 센다 (피처 계산은 계속).
 #include <algorithm>
 #include <cstdio>

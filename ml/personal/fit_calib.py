@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""개인 보정 B (docs/DATA_LOGGING.md §12): 주행 파일로 사람(폰)마다 a, b를 맞춘다.
+"""개인 보정 B (docs/controller/DATA_LOGGING.md §12): 주행 파일로 사람(폰)마다 a, b를 맞춘다.
 
     python3 ml/personal/fit_calib.py --root server/data/rides [--rides id1,id2] [--note "..."]
     → ml/out/runs/vNNN/ (kind "calib")
         calib.json             사람마다 a, b, 주행 수, 라벨 수, leave-one-ride-out 이득, 채택 여부
         calib/<phone>.json     Pi state/calib/에 넣을 파일 (채택 안 된 사람은 a=1, b=0으로, 예전 값을 지우게)
-    내려보내기: python3 tools/collect_logs.py --push-calib vNNN --state <Pi의 state 폴더>
+    내려보내기: python3 server/tools/collect_logs.py --push-calib vNNN --state <Pi의 state 폴더>
 
 식: p' = σ(a·logit(p) + b). k = 2..6에 같은 a, b → 순서 유지. C++은 controller/common/calib.hpp (같은 식).
 입력 p는 항상 보정 전 모델 출력 (주행 파일 infer.p2..p6, P3가 보정 전 값을 남긴다).

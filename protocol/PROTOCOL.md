@@ -12,7 +12,7 @@ QNX 컨트롤러, ESP32-S3 브리지, Android 앱, HUD 시뮬레이터가 공유
 
 ## 1. UART (Raspberry Pi ↔ ESP32-S3)
 
-- Pi UART3 (PL011) `/dev/ser3`, GPIO4 핀 7 (TX) → ESP32 GPIO18 / GPIO5 핀 29 (RX) ← ESP32 GPIO17 / 핀 9 GND, 3.3 V, 115,200 bps, 8N1. mini UART `/dev/ser1`은 QNX 콘솔이라 쓰지 않음 (켜는 법: `bridge/README.md`)
+- Pi UART3 (PL011) `/dev/ser3`, GPIO4 핀 7 (TX) → ESP32 GPIO18 / GPIO5 핀 29 (RX) ← ESP32 GPIO17 / 핀 9 GND, 3.3 V, 115,200 bps, 8N1. mini UART `/dev/ser1`은 QNX 콘솔이라 쓰지 않음 (켜는 법: `firmware/bridge/README.md`)
 - 프레임: `<id>|<payload>\n`. `id`는 브리지 연결 인덱스 `0`~`8` 또는 `ALL`. 프레임 최대 512 바이트
 - `payload`는 JSON 한 줄 또는 제어 토큰
 

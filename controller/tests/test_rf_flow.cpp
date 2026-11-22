@@ -1,5 +1,5 @@
 // P6 코어(comm)와 P5 코어(devmgr)를 이어 붙인 흐름 시험. QNX 메시지 전달 자리는 함수 호출로 대신한다.
-// docs/RF_MESSAGES.md와 인수인계 §6-0-1의 예시: 폰 연결 → 등록 → P4 명령 → 폰 화면 → 수동 끔 → 끊김
+// docs/controller/RF_MESSAGES.md와 인수인계 §6-0-1의 예시: 폰 연결 → 등록 → P4 명령 → 폰 화면 → 수동 끔 → 끊김
 // 이어서 다시 시작: P5만 (새 DevMgr) → OUT_RESYNC로 명부·Tier 되찾기, P6만 (새 Comm) → 시작 DROP → 기기 재연결
 #include <cmath>
 #include <cstdio>

@@ -39,7 +39,7 @@ PolicyConfig parse_policy_config(const std::string& policy_json, const std::stri
 PolicyConfig load_policy_config(const std::string& policy_path, const std::string& thresholds_path);
 
 // 앱 설문 결과 (M06 PROF): mssq와 그 설문으로 계산한 sens. 둘 다 모델 입력(G10)이고, 학습 때와 같은 규칙의 값이 되도록
-// 컨트롤러는 바꾸지 않는다. 타면서 사람마다 맞추는 일은 개인 보정(docs/DATA_LOGGING.md §12)이 맡는다.
+// 컨트롤러는 바꾸지 않는다. 타면서 사람마다 맞추는 일은 개인 보정(docs/controller/DATA_LOGGING.md §12)이 맡는다.
 struct Profile {
     double mssq = 0;
     double sens = 1.0;

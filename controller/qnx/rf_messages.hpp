@@ -1,6 +1,6 @@
 // P5(기기 관리)·P6(통신) 메시지 (QNX MsgSend / MsgReceive). messages.hpp(0x8001~0x8006)에 이어지는 번호.
 // 모두 고정 크기 POD. 받는 쪽은 받자마자 복사하고 바로 회신한 뒤 처리한다 (messages.hpp와 같은 규칙).
-// 문서: docs/RF_MESSAGES.md. 기기 메시지(JSON)는 protocol/PROTOCOL.md §3.
+// 문서: docs/controller/RF_MESSAGES.md. 기기 메시지(JSON)는 protocol/PROTOCOL.md §3.
 //
 // 보내는 방향 (교착 방지: MsgSend는 회신까지 멈추므로 서로에게 보내는 짝이 없게 한다)
 //   P4 → P5 → P6(받기 스레드)     명령이 내려가는 방향
@@ -143,7 +143,7 @@ struct Motion {
     Hdr h{MOTION, 0, 0};
     double t = 0;    // 주행 시각 (s)
     double ax = 0;   // Wf 가중 가속도 m/s², x 전후(앞 +)
-    double ay = 0;   // y 좌우 (부호는 docs/RF_MESSAGES.md §5, 확정 필요)
+    double ay = 0;   // y 좌우 (부호는 docs/controller/RF_MESSAGES.md §5, 확정 필요)
     double pax = 0;  // 경로 예측값. 없으면 NaN → JSON에서 생략
     double pay = 0;
 };

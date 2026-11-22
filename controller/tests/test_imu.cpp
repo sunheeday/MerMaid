@@ -1,5 +1,5 @@
 // P1 LIVE IMU 코어 테스트 (가짜 MPU, 시각은 직접 진행): 변환, 장착 행렬, 초기화 레지스터, 보정, 주행 중 복구 규칙.
-// 설계: docs/DATA_LOGGING.md §4
+// 설계: docs/controller/DATA_LOGGING.md §4
 #include <cmath>
 #include <cstdio>
 #include <string>

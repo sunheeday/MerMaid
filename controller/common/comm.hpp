@@ -1,6 +1,6 @@
 // P6 통신의 핵심 로직: UART 줄(ESP32) ↔ QNX 메시지 번역. 표준 C++17만 사용 (QNX API 없음 → Mac에서 테스트).
-// /dev/ser3를 열고 MsgSend / MsgReceive 하는 일은 QNX 프로세스 qnx/p6_comm.cpp가 한다 (아직 없음).
-// 규칙: protocol/PROTOCOL.md §1·§3, docs/RF_MESSAGES.md §4.
+// /dev/ser3를 열고 MsgSend / MsgReceive 하는 일은 QNX 프로세스 qnx/p6_comm.cpp가 한다.
+// 규칙: protocol/PROTOCOL.md §1·§3, docs/controller/RF_MESSAGES.md §4.
 //
 // 쓰는 법: 일이 생길 때마다 on_*()를 부르면 해야 할 일 목록(Actions)이 돌아온다.
 //   UartLine        → '\n'을 붙여 UART에 쓴다
@@ -76,7 +76,6 @@ public:
     void hello_delivered(uint8_t conn, const char* dev);
     // Ctx*·CtxResend를 P4에 보낸 결과. 실패하면 HB 박자(1초)마다 CtxResend가 나오고, 성공하면 kCtxRefreshMs마다로 돌아간다
     void p4_result(bool ok) { p4_down_ = !ok; }
-    bool p4_down() const { return p4_down_; }
 
     // ---- 받기 스레드 (P5, P2가 보낸 메시지) ----
     Actions on_out_int(const msg::OutInt& m);

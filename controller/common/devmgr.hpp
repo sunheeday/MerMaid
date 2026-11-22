@@ -1,6 +1,6 @@
 // P5 기기 관리의 핵심 로직: 등록 명부, P4 명령 → 연결 번호, 재연결 시 상태 재전송, 30초 안전 OFF.
 // 표준 C++17만 사용 (QNX API 없음 → Mac에서 테스트). 프로세스는 qnx/p5_devmgr.cpp.
-// 규칙: docs/RF_MESSAGES.md §4.
+// 규칙: docs/controller/RF_MESSAGES.md §4.
 //
 // P4는 기기를 ID(airflow-01, display-01, 폰 UUID)로, 브리지는 연결 번호(0~8)로 구분한다.
 // 이 클래스가 둘을 잇는다. 돌려주는 Outs는 P6에 보낼 메시지 목록이다 (보내는 일은 프로세스가).

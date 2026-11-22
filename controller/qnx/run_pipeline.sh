@@ -6,7 +6,7 @@
 # 모델: MODELS (기본 ml/out/runs/<CURRENT>/models, ml/runs.py use로 정함)
 # RF=1: P6(UART, 기본 /dev/ser3 = SER)와 P5를 먼저 띄우고 P4는 --rf (P5 명부로 등록, TIER_CMD), P2는 --motion.
 #   폰·HUD는 브리지로 붙고 [phone]...은 비워도 된다. P5·P6은 주행이 끝나면 내린다. 결과: p5.out, p6.out 추가
-#   UART3는 root로 bridge/README.md의 순서대로 켜 둔다. ESP32 없이 P5만 보려면 RF=1 P6=0
+#   UART3는 root로 firmware/bridge/README.md의 순서대로 켜 둔다. ESP32 없이 P5만 보려면 RF=1 P6=0
 B=${BUILD:-build}
 MODELS=${MODELS:-ml/out/runs/$(cat ml/out/runs/CURRENT 2>/dev/null)/models}
 [ -f "$MODELS/models.json" ] || { echo "models not found: $MODELS (ml/runs.py use vNNN)" >&2; exit 2; }
