@@ -1,5 +1,8 @@
 package com.mermaid.passenger.ui
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +28,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,7 +50,13 @@ fun SettingsScreen(act: MainActivity, tick: Int, onBack: () -> Unit, go: (Screen
     val ctx = LocalContext.current
     val s by Prefs.settings.collectAsState()
     var confirm by remember { mutableStateOf(false) }
-    val missing = remember(tick) { Perms.missing(ctx) }
+    var locTick by remember { mutableIntStateOf(0) }
+    val missing = remember(tick, locTick) { Perms.missing(ctx) }
+    val loc = remember(tick, locTick) { Perms.loc(ctx) }
+    val coarseOnly = remember(tick, locTick) { !loc && ctx.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+    // 한 번 거절하면 Android가 창을 다시 띄우지 않을 수 있어 두 번째부터는 앱 설정으로
+    var locAsked by remember { mutableStateOf(false) }
+    val locLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { locTick++; locAsked = true }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -104,9 +114,24 @@ fun SettingsScreen(act: MainActivity, tick: Int, onBack: () -> Unit, go: (Screen
             Row2 {
                 Column(Modifier.weight(1f)) {
                     Text("주행 기록 수집 동의", style = MaterialTheme.typography.titleMedium)
-                    Muted("멀미 점수를 차량 컨트롤러에 저장해요. 끄면 보내지 않고 알림도 없어요")
+                    Muted("멀미 점수와 차 속도(GPS)를 차량 컨트롤러에 저장해요. 끄면 보내지 않고 알림도 없어요")
                 }
                 Switch(s.logConsent, { v -> Prefs.setLogConsent(v) })
+            }
+            Spacer(Modifier.height(10.dp))
+            Row2 {
+                Column(Modifier.weight(1f)) {
+                    Text("차 속도 (GPS)", style = MaterialTheme.typography.titleMedium)
+                    Muted(when {
+                        loc -> "정확한 위치 허용됨 · 위도·경도는 보내지 않아요"
+                        coarseOnly -> "대략적 위치만 허용돼 속도를 잴 수 없어요. '정확한 위치'로 바꿔 주세요"
+                        else -> "위치 권한이 없어 속도를 보내지 않아요"
+                    })
+                }
+                if (!loc) Text("허용", Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).background(MM.Brand.copy(alpha = 0.1f))
+                    .clickable { if (locAsked) act.openAppSettings() else locLauncher.launch(Perms.LOC) }
+                    .padding(horizontal = 10.dp, vertical = 4.dp), color = MM.Brand, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                else Text("허용됨", color = MM.Ok, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
 

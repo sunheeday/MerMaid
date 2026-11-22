@@ -73,23 +73,28 @@ class LinkService : LifecycleService() {
     }
 
     private lateinit var rfThread: HandlerThread
+    private lateinit var rfHandler: Handler
     private lateinit var session: RfSession
     private lateinit var overlay: CueOverlay
     private val main = Handler(Looper.getMainLooper())
     private var screenOn = true
     private var unlocked = true
+    private lateinit var gps: GpsFeed
+    private var fgsLocation = false      // 포그라운드 서비스가 location 종류로 떠 있음
 
     override fun onCreate() {
         super.onCreate()
         Repo.serviceRunning = true
         goForeground()
         rfThread = HandlerThread("mermaid-rf").apply { start() }
+        rfHandler = Handler(rfThread.looper)
         overlay = CueOverlay(this)
         session = RfSession(this, Handler(rfThread.looper), object : RfSession.Listener {
             override fun onMotion(ax: Float, ay: Float, pax: Float?, pay: Float?) = overlay.feed(ax, ay, pax, pay)
             override fun onSafeOff() { main.post { overlay.hideNow() } }
             override fun onGiveUp() { main.post { stopEverything() } }
         })
+        gps = GpsFeed(this, rfHandler) { session.sendGps(it) }
 
         readScreen()
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
@@ -102,7 +107,7 @@ class LinkService : LifecycleService() {
                     is Cmd.Override -> session.requestOverride(cmd.dev, cmd.on)
                     Cmd.ToggleCue -> session.toggleCue()
                     Cmd.SendProfile -> session.sendProfile()
-                    Cmd.RefreshScreen -> readScreen()
+                    Cmd.RefreshScreen -> { readScreen(); updateGps(Repo.live.value, Prefs.settings.value, fromApp = true) } // 앱이 다시 보임: 권한이 바뀌었을 수 있음
                     Cmd.Reconnect -> session.reconnect()
                     Cmd.DemoDrop -> session.demoDrop()
                     is Cmd.Symptom -> session.sendSymptom(cmd.misc)
@@ -115,6 +120,7 @@ class LinkService : LifecycleService() {
                 updateOverlay(l, s)
                 postNotification(l)
                 updateSymPrompt(l, s)
+                updateGps(l, s)
             }
         }
     }
@@ -156,13 +162,50 @@ class LinkService : LifecycleService() {
         return START_STICKY
     }
 
-    /** Android 14+: connectedDevice 유형은 블루투스 권한이나 CDM 등록이 있어야 함. 없으면 시작하지 않음 */
-    private fun goForeground(): Boolean = try {
-        startForeground(NOTI_ID, buildNotification(Repo.live.value), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-        true
-    } catch (e: Exception) {
-        Repo.log('!', "포그라운드 서비스 시작 실패: ${e.message}")
-        false
+    /**
+     * Android 14+: connectedDevice 유형은 블루투스 권한이나 CDM 등록이 있어야 함. 없으면 시작하지 않음.
+     * location 유형은 위치 권한이 있어야 하고, 백그라운드에서 시작하면 거부될 수 있다 → 그때는 connectedDevice만으로
+     * (그러면 앱이 화면에 없는 동안 GPS가 멈출 수 있음. 앱을 한 번 열면 다시 location으로 올린다)
+     */
+    private fun goForeground(): Boolean {
+        val n = buildNotification(Repo.live.value)
+        val base = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (GpsFeed.any(this)) {
+            try {
+                startForeground(NOTI_ID, n, base or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                if (!fgsLocation) Repo.log('·', "포그라운드 서비스: 연결 + 위치")
+                fgsLocation = true
+                return true
+            } catch (e: Exception) {
+                if (fgsLocation || !locWarned) Repo.log('!', "위치 종류로 시작 못 함 (${e.javaClass.simpleName}) — 연결만으로 계속")
+                locWarned = true
+            }
+        }
+        return try {
+            startForeground(NOTI_ID, n, base)
+            fgsLocation = false
+            true
+        } catch (e: Exception) {
+            Repo.log('!', "포그라운드 서비스 시작 실패: ${e.message}")
+            false
+        }
+    }
+    private var locWarned = false
+
+    // ───────── GPS (#20): 연결됨(신호 없음 포함) ∧ 주행 기록 수집 동의. 데모는 가짜 GPS를 늘 켠다
+    private fun updateGps(l: Live, s: com.mermaid.passenger.data.Settings, fromApp: Boolean = false) {
+        if (!::gps.isInitialized) return
+        val linked = l.link == LinkState.CONNECTED || l.link == LinkState.LOST
+        val demo = l.kind == "데모"
+        val want = linked && (demo || s.logConsent)
+        val why = when {
+            !linked -> "꺼짐 · 차와 연결되지 않음"
+            !s.logConsent -> "꺼짐 · 주행 기록 수집 동의가 꺼져 있음"
+            else -> "꺼짐"
+        }
+        // 권한이 새로 생겼는데 서비스가 위치 종류 없이 떠 있으면 올린다. 앱이 화면에 있을 때만 시도 (백그라운드면 거부됨)
+        if (fromApp && want && !demo && !fgsLocation && GpsFeed.any(this)) goForeground()
+        rfHandler.post { gps.set(want, demo, why) }
     }
 
     private val goneTimeout = Runnable {
@@ -171,6 +214,7 @@ class LinkService : LifecycleService() {
 
     private fun stopEverything() {
         stopSymPrompt()
+        rfHandler.post { gps.stop("꺼짐 · 연결 종료") }
         session.stop()
         overlay.hideNow()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -182,6 +226,7 @@ class LinkService : LifecycleService() {
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         main.removeCallbacksAndMessages(null)
         NotificationManagerCompat.from(this).cancel(NOTI_SYM)
+        rfHandler.post { gps.stop("꺼짐 · 연결 종료") }
         session.stop()
         overlay.hideNow()
         rfThread.quitSafely()

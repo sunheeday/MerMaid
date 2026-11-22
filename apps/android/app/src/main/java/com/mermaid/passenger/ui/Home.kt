@@ -156,6 +156,7 @@ fun HomeScreen(act: MainActivity, tick: Int, symFocus: Int = 0, go: (Screen) -> 
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             Text("⚙ 설정", Modifier.clickable { go(Screen.SETTINGS) }.padding(10.dp), fontSize = 14.sp)
+            Text("▤ 대시보드", Modifier.clickable { go(Screen.DASH) }.padding(10.dp), fontSize = 14.sp)
             Text("⌁ RF 진단", Modifier.clickable { go(Screen.DIAG) }.padding(10.dp), fontSize = 14.sp)
         }
     }
@@ -243,7 +244,8 @@ private fun SymptomCard(connected: Boolean, consent: Boolean, consentAsked: Bool
         onDismissRequest = { ask = false; Prefs.edit { putBoolean(Prefs.K_CONSENT_ASKED, true) } },
         title = { Text("주행 기록 수집에 동의할까요?") },
         text = {
-            Text("고른 멀미 점수(0~10)를 차량 컨트롤러에 보내 주행 기록과 함께 저장해요. 멀미 예측을 더 잘하게 만드는 데만 쓰고, " +
+            Text("고른 멀미 점수(0~10)와 폰 GPS로 잰 차 속도를 차량 컨트롤러에 보내 주행 기록과 함께 저장해요. 위도·경도는 보내지 않아요. " +
+                "멀미 예측을 더 잘하게 만드는 데만 쓰고, " +
                 "지금 송풍·모션 큐가 켜지고 꺼지는 데에는 영향을 주지 않아요.\n\n동의하면 주행 중 2분마다 알림으로 멀미 정도를 물어봐요. 설정에서 언제든 끌 수 있어요.")
         },
         confirmButton = {

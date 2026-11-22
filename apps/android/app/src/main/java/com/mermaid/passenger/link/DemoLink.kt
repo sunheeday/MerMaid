@@ -4,11 +4,15 @@ import android.os.Handler
 import android.os.SystemClock
 import com.mermaid.passenger.protocol.Proto
 import org.json.JSONObject
+import org.json.JSONArray
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.sin
 
 /**
  * 개발 빌드 전용 가짜 컨트롤러 (APP-F-44). 브리지 없이 오버레이를 확인한다.
  * 웹 데모(cabin3d/ui/js/demo.js)와 같은 90초 반복 시나리오, P5 규칙대로 Tier 3이 켜진 동안만 MOT 10 Hz.
+ * M10 RISK도 10초마다 흉내 낸다 (흔들림이 큰 구간에서 위험 확률이 오름) → 기기 없이 대시보드 확인.
  */
 class DemoLink(private val h: Handler, private val cb: Transport.Callback) : Transport {
     override val name = "데모"
@@ -20,6 +24,7 @@ class DemoLink(private val h: Handler, private val cb: Transport.Callback) : Tra
     private var seq = 0L
     private var silentUntil = 0L
     private var running = false
+    private var lastRiskAt = -1.0
 
     private val plan = listOf(
         14.0 to (Proto.DEV_AIRFLOW to true), 24.0 to (Proto.DEV_DISPLAY to true), 34.0 to ("phone" to true),
@@ -60,7 +65,7 @@ class DemoLink(private val h: Handler, private val cb: Transport.Callback) : Tra
                 if (!on) cooldownUntil[key] = now + 30
                 set(key, on)
             }
-            "SYM" -> Unit // M08 멀미 점수: 진짜 컨트롤러도 기록만 하고 회신하지 않음
+            "SYM", "GPS" -> Unit // M08 멀미 점수·M09 GPS: 진짜 컨트롤러도 기록만 하고 회신하지 않음
             "PROF" -> h.postDelayed({ out(JSONObject().put("t", "PROF").put("mssq", m.optDouble("mssq")).put("sens", m.optDouble("sens"))) }, 200)
         }
     }
@@ -85,7 +90,21 @@ class DemoLink(private val h: Handler, private val cb: Transport.Callback) : Tra
         return ax to ay
     }
 
+    /**
+     * 흔들림 세기 w(0~1)로 예상 MISC 수준을 만들고, P(MISC ≥ k)를 로지스틱으로 (k가 클수록 작게, 늘 단조 감소).
+     * 진짜 모델 값이 아니라 그래프 모양을 보기 위한 흉내 값
+     */
+    private fun risk(t: Double): List<Double> {
+        val (ax, ay) = motion(t)
+        val level = 0.8 + 1.6 * (abs(ay) + abs(ax)) + 0.4 * sin(t / 13)
+        return (2..6).map { k -> Math.round(1000.0 / (1 + exp(-(level - k) * 1.8))) / 1000.0 }
+    }
+
     private fun step() {
+        if (dev != null && (lastRiskAt < 0 || now - lastRiskAt >= 10)) {
+            lastRiskAt = now
+            out(JSONObject().put("t", "RISK").put("p", JSONArray(risk(now))))
+        }
         val s = now % 90
         if (s < lastS) cooldownUntil.clear()
         for ((at, act) in plan) if (lastS < at && s >= at) set(act.first, act.second, auto = true)

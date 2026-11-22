@@ -32,6 +32,9 @@ object Proto {
     const val SYM_MIN = 0               // 멀미 점수 MISC 0~10 (M08)
     const val SYM_MAX = 10
     const val SYM_PROMPT_MS = 2 * 60_000L // 주행 중 멀미 점수를 물어보는 알림 간격
+    const val GPS_MIN_INTERVAL_MS = 100L  // M09 GPS는 최대 10 Hz
+    const val RISK_LEN = 5                // M10 RISK p = P(MISC ≥ 2, 3, 4, 5, 6)
+    const val RISK_MIN_K = 2              // p[0]이 MISC ≥ 2
 }
 
 /** 컨트롤러 → 앱 메시지 (모르는 t는 null: 명세상 무시) */
@@ -41,6 +44,11 @@ sealed interface Incoming {
     data class Mot(val ax: Float, val ay: Float, val pax: Float?, val pay: Float?) : Incoming
     data class Prof(val mssq: Double, val sens: Double) : Incoming
     data class Hb(val seq: Long) : Incoming
+    /** M10 RISK: 이 폰의 P(MISC ≥ 2,3,4,5,6), 약 10초마다. 앱은 표시만 한다 */
+    data class Risk(val p: List<Double>) : Incoming {
+        /** P(MISC ≥ k), k = 2..6 */
+        fun atLeast(k: Int): Double = p[k - Proto.RISK_MIN_K]
+    }
 }
 
 object Msg {
@@ -63,6 +71,20 @@ object Msg {
     /** M08 SYM: 승객이 직접 고른 멀미 점수(MISC 0~10 정수). 기록 전용이라 회신이 없다 */
     fun sym(misc: Int): String =
         JSONObject().put("t", "SYM").put("misc", misc.coerceIn(Proto.SYM_MIN, Proto.SYM_MAX)).toString()
+
+    /**
+     * M09 GPS: 폰 GPS의 속도·정확도(필수)와 진행 방향·고도(있을 때만). 위도·경도는 보내지 않는다.
+     * spd m/s 소수 2자리, brg 도 0~360 소수 1자리, acc·alt m 소수 1자리
+     */
+    fun gps(spd: Double, acc: Double, brg: Double? = null, alt: Double? = null): String {
+        val o = JSONObject().put("t", "GPS").put("spd", round(spd.coerceAtLeast(0.0), 100))
+        if (brg != null && !brg.isNaN()) o.put("brg", round(((brg % 360) + 360) % 360, 10).let { if (it >= 360.0) 0.0 else it })
+        o.put("acc", round(acc.coerceAtLeast(0.0), 10))
+        if (alt != null && !alt.isNaN()) o.put("alt", round(alt, 10))
+        return o.toString()
+    }
+
+    private fun round(v: Double, scale: Int): Double = (v * scale).roundToLong().toDouble() / scale
 
     fun hb(seq: Long): String = JSONObject().put("t", "HB").put("seq", seq).toString()
 
@@ -87,6 +109,13 @@ object Msg {
                 if (m.isNaN() || s.isNaN()) null else Incoming.Prof(m, s)
             }
             "HB" -> if (o.has("seq")) Incoming.Hb(o.optLong("seq")) else null
+            "RISK" -> {
+                val a = o.optJSONArray("p")
+                if (a == null || a.length() != Proto.RISK_LEN) null else {
+                    val p = (0 until a.length()).map { a.optDouble(it) }
+                    if (p.all { !it.isNaN() && it in 0.0..1.0 }) Incoming.Risk(p) else null
+                }
+            }
             else -> null
         }
     } catch (e: JSONException) {

@@ -15,7 +15,8 @@
      `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`
      → `app/build/outputs/apk/debug/app-debug.apk` (`local.properties`와 APK는 커밋하지 않음)
 3. 폰: 설정 → 휴대전화 정보 → 소프트웨어 정보 → 빌드번호 7번 → 개발자 옵션 → USB 디버깅
-4. ▶ Run (`app`) → 첫 실행 온보딩: 시작 → 권한 4단계 → 차 찾기(MSAgent) → 멀미 프로필
+4. ▶ Run (`app`) → 첫 실행 온보딩: 시작 → 권한 5단계 (마지막이 위치) → 차 찾기(MSAgent) → 멀미 프로필
+5. JVM 단위 시험 (프로토콜 파싱·링버퍼·GPS Hz): `./gradlew :app:testDebugUnitTest` (위와 같은 `JAVA_HOME`)
 
 ## 시험 방법
 | 무엇 | 어떻게 |
@@ -27,24 +28,30 @@
 | 탑승 자동 연결 (APP-F-02) | 앱 종료(최근 앱에서 지움) → 브리지 전원 끔 → 1분 뒤 켬 → 앱을 열지 않아도 상주 알림 “차량과 연결됨” |
 | 로그 | `adb logcat` 대신 앱의 RF 진단 화면 (최근 300줄, 기기 안에만). **로그 복사**로 전체를 클립보드에 |
 | 멀미 점수 (M08 SYM) | 설정 → 주행 기록 수집 동의 켬 → 홈 "지금 멀미 정도"에서 0~10 → RF 진단에 `→ {"t":"SYM","misc":N}`. 주행 중 2분마다 알림. 데모 모드에서도 됨 |
+| 차 속도 (M09 GPS) | 동의 켬 + 정확한 위치 허용 → 연결되면 RF 진단 GPS 카드에 실제 수신 주기(Hz)·속도. 위도·경도는 보내지 않음. 데모 모드는 가짜 GPS |
+| 대시보드 (M10 RISK) | 홈 맨 아래 "▤ 대시보드". 데모 모드에서 위험 확률·속도·Tier 이력이 모두 나옴 |
 
 ## 구조
 ```
 app/src/main/java/com/mermaid/passenger/
   MerMaidApp.kt              알림 채널(중요도 낮음), 설정 초기화
-  protocol/Protocol.kt       UUID·상수·M00~M08 생성/검사, MSSQ-Short 채점·민감도
+  protocol/Protocol.kt       UUID·상수·M00~M10 생성/검사, MSSQ-Short 채점·민감도
   data/Prefs.kt              기기 ID·등록 차량·프로필·큐 설정·주행 기록 수집 동의 (SharedPreferences)
-  data/Repo.kt               화면이 보는 상태(StateFlow), 화면→서비스 명령, RF 로그
+  data/Repo.kt               화면이 보는 상태(StateFlow), 화면→서비스 명령, RF 로그, 대시보드 데이터(주행·RISK·속도)
+  data/Ring.kt               메모리 상한이 있는 링버퍼 (대시보드 그래프)
+  data/Gps.kt                GPS 값(위도·경도 없음), 실제 수신 주기 RateMeter, 10 Hz 제한 Throttle
+  data/SymStore.kt           내가 누른 멀미 점수 기록 (기기 안 파일, 최근 10주행)
   link/BleLink.kt            GATT 클라이언트: MTU 247 → 서비스 검색 → 알림 구독, Write Without Response 큐
   link/RfSession.kt          HELLO·PROF·SCR, HB 1초, 5초 감시(LOST→안전 OFF), 재연결 백오프, OVR 대기
   link/DemoLink.kt           개발용 가짜 컨트롤러
-  service/LinkService.kt     포그라운드 서비스(connectedDevice): 연결·오버레이·상주 알림·화면 상태·멀미 점수 2분 알림
+  service/LinkService.kt     포그라운드 서비스(connectedDevice, 위치 권한이 있으면 +location): 연결·오버레이·상주 알림·화면 상태·멀미 점수 2분 알림·GPS 켜고 끄기
+  service/GpsFeed.kt         LocationManager GPS_PROVIDER → 속도만 M09로 (데모는 가짜 값)
   service/MerMaidCompanionService.kt  CDM 기기 존재 감지 → 탑승 시 서비스 시작
   service/CueTileService.kt  빠른 설정 타일 "모션 큐"
   service/BootReceiver.kt    재부팅 후 존재 감시 재등록
   overlay/CueOverlay.kt      TYPE_APPLICATION_OVERLAY, 터치 통과, 창 alpha ≤ 0.8
   overlay/MotionDotsView.kt  점 배치·이동·페이드 (Choreographer, 120 Hz)
-  ui/                        Compose 화면 APP-01~07
+  ui/                        Compose 화면 APP-01~07, Dashboard.kt (대시보드, Canvas 그래프)
 ```
 
 ## 요구사항 대응 (요약)
@@ -60,6 +67,8 @@ app/src/main/java/com/mermaid/passenger/
 | APP-F-23 홈 수동 조작 | `Home.kt TierRow` → `Cmd.Override` → `RfSession.requestOverride` |
 | APP-F-30~32 프로필 | `Profile.kt`, `Mssq` |
 | 멀미 점수 기록 (M08 SYM) | `Home.kt SymptomCard` → `Cmd.Symptom` → `RfSession.sendSymptom`, 2분 알림 `LinkService.updateSymPrompt` |
+| 차 속도 (M09 GPS, #20) | `GpsFeed` → `RfSession.sendGps`, 조건 `LinkService.updateGps`, 진단 `Diagnostics.kt GpsCard` |
+| 대시보드 (M10 RISK, #21) | `Dashboard.kt`, `Repo.drive/risk/speed`, `SymStore` |
 | NFR-01 fail-safe | `RfSession.watchdog/safeOff` → `CueOverlay.hideNow` |
 
 ## 아직 확인하지 못한 것
@@ -68,3 +77,5 @@ app/src/main/java/com/mermaid/passenger/
 - 브리지 광고 패킷에 이름과 128비트 UUID가 함께 들어가는지 → 등록 필터를 둘 다 걸어 둠
 - SCR `att` 정의 변경 (8장 #1), MOT 부호 (#2)
 - 멀미 점수(SYM) 입력·2분 알림·알림에서 바로 고르기, 로그 복사는 빌드만 확인했고 실기 확인 전 (2026-11-21, `docs/app/폰시험_체크리스트.md` A8~A11)
+- GPS(M09)·대시보드(M10)는 빌드·단위 시험만 확인했고 실기 확인 전 (2026-11-23, 체크리스트 A12~A15). 특히 실제 수신 Hz, 화면이 다른 앱일 때 위치 수신, 차 감지로 시작한 서비스의 location 종류
+- 위치 권한 추가로 매니페스트 주석의 NFR-08(블루투스로 위치를 추론하지 않음)은 그대로지만, 요구사항정의서 6.3 권한 표에 위치 권한을 더해야 함

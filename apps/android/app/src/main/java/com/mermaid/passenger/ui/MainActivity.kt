@@ -47,12 +47,13 @@ import com.mermaid.passenger.data.Cmd
 import com.mermaid.passenger.data.Prefs
 import com.mermaid.passenger.data.Repo
 import com.mermaid.passenger.protocol.Proto
+import com.mermaid.passenger.service.GpsFeed
 import com.mermaid.passenger.service.LinkService
 import com.mermaid.passenger.service.Presence
 import java.util.regex.Pattern
 
 /** 화면 ID (화면정의서 1장) */
-enum class Screen { WELCOME, PERMS, REGISTER, PROFILE_ONB, HOME, REGISTER_AGAIN, PROFILE, SETTINGS, DIAG }
+enum class Screen { WELCOME, PERMS, REGISTER, PROFILE_ONB, HOME, REGISTER_AGAIN, PROFILE, SETTINGS, DIAG, DASH }
 
 class MainActivity : ComponentActivity() {
     /** 화면이 다시 보일 때마다 증가 → 권한 상태 다시 읽기 */
@@ -178,15 +179,21 @@ object Perms {
     fun notif(c: Context) = Build.VERSION.SDK_INT < 33 || granted(c, Manifest.permission.POST_NOTIFICATIONS)
     fun overlay(c: Context) = Settings.canDrawOverlays(c)
     fun battery(c: Context) = c.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(c.packageName)
-    fun missing(c: Context) = listOf(bt(c), notif(c), overlay(c), battery(c)).count { !it }
+    /** 차 속도(GPS, #20). 정확한 위치여야 GPS 속도가 나온다 */
+    val LOC = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    fun loc(c: Context) = GpsFeed.fine(c)
+    fun missing(c: Context) = listOf(bt(c), notif(c), overlay(c), battery(c), loc(c)).count { !it }
 }
 
 @Composable
 fun AppRoot(act: MainActivity, tick: Int) {
     val settings by Prefs.settings.collectAsState()
     var screen by rememberSaveable { mutableStateOf(if (settings.onboarded) Screen.HOME else Screen.WELCOME) }
-    val sub = screen in setOf(Screen.PROFILE, Screen.SETTINGS, Screen.DIAG, Screen.REGISTER_AGAIN)
-    BackHandler(enabled = sub) { screen = Screen.HOME }
+    val sub = screen in setOf(Screen.PROFILE, Screen.SETTINGS, Screen.DIAG, Screen.REGISTER_AGAIN, Screen.DASH)
+    // RF 진단은 홈과 대시보드("전체 보기") 두 곳에서 열 수 있어 돌아갈 곳을 기억한다
+    var diagBack by rememberSaveable { mutableStateOf(Screen.HOME) }
+    val go: (Screen) -> Unit = { next -> if (next == Screen.DIAG) diagBack = if (screen == Screen.DASH) Screen.DASH else Screen.HOME; screen = next }
+    BackHandler(enabled = sub) { screen = if (screen == Screen.DIAG) diagBack else Screen.HOME }
     val symFocus = act.symFocus.intValue
     LaunchedEffect(symFocus) { if (symFocus > 0 && settings.onboarded) screen = Screen.HOME }
 
@@ -199,9 +206,10 @@ fun AppRoot(act: MainActivity, tick: Int) {
                 Screen.REGISTER_AGAIN -> RegisterScreen(act, onboarding = false, onDone = { act.connectIfReady(); screen = Screen.HOME })
                 Screen.PROFILE_ONB -> ProfileScreen(onboarding = true, onBack = null) { act.finishOnboarding(); screen = Screen.HOME }
                 Screen.PROFILE -> ProfileScreen(onboarding = false, onBack = { screen = Screen.HOME }) { screen = Screen.HOME }
-                Screen.HOME -> HomeScreen(act, tick, symFocus) { screen = it }
-                Screen.SETTINGS -> SettingsScreen(act, tick, onBack = { screen = Screen.HOME }) { screen = it }
-                Screen.DIAG -> DiagnosticsScreen(onBack = { screen = Screen.HOME })
+                Screen.HOME -> HomeScreen(act, tick, symFocus, go)
+                Screen.SETTINGS -> SettingsScreen(act, tick, onBack = { screen = Screen.HOME }, go)
+                Screen.DIAG -> DiagnosticsScreen(onBack = { screen = diagBack })
+                Screen.DASH -> DashboardScreen(onBack = { screen = Screen.HOME }, go)
             }
         }
     }
