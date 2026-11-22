@@ -166,6 +166,7 @@ int main() {
     CHECK(pi.p5.on_sync(msg::DevSync{}, 10000).n == 0, "P5 registry emptied by DEV_BYE ALL");
     pi.from_bridge("2|{\"t\":\"SCR\",\"on\":true,\"att\":false}", 10050);  // 끊기기 전에 온 줄: 버림
     CHECK(pi.to_p4_scr.size() == 1, "message from a forgotten conn is dropped");
+    EXPECT_UART(pi, "2|DROP");  // 모르는 연결의 줄 → 그 연결에 DROP 한 번 더 (#16: 브리지가 시작 DROP을 놓쳤을 때)
     pi.from_bridge("1|DISCONNECT", 10100);
     pi.from_bridge("2|DISCONNECT", 10100);
     pi.from_bridge("0|CONNECT", 11000);

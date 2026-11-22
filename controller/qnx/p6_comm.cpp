@@ -402,7 +402,7 @@ int main(int argc, char** argv) {
             comm::Actions acts;
             {
                 std::lock_guard<std::mutex> lk(sh.core_mu);
-                acts = core.on_start();
+                acts = core.on_start(now_ms());
             }
             run(acts);
         }

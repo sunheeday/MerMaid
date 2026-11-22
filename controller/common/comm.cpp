@@ -71,6 +71,15 @@ std::string jesc(const std::string& s, size_t max) {
 
 std::string conn_json(int conn) { return "{\"conn\":" + std::to_string(conn); }
 
+// 기기 JSON의 "t" (못 읽으면 "")
+std::string msg_type(const std::string& text) {
+    try {
+        return json::parse(text).at("t").string();
+    } catch (const std::exception&) {
+        return "";
+    }
+}
+
 }  // namespace
 
 std::string Comm::who(int conn) const {
@@ -110,12 +119,14 @@ msg::DevHello Comm::make_hello(uint8_t conn) const {
     return m;
 }
 
-Actions Comm::on_start() {
+Actions Comm::on_start(int64_t now_ms) {
     Actions out;
     for (int i = 0; i < msg::kMaxConn; i++) {
         out.emplace_back(UartLine{std::to_string(i) + "|DROP"});  // 브리지는 빈 번호의 DROP을 무시한다
         conn_[i] = Conn{};
+        unknown_dropped_[i] = false;
     }
+    redrop_due_ms_ = now_ms + kStartRedropMs;
     msg::DevBye bye;
     bye.conn = msg::kConnAll;
     out.emplace_back(bye);
@@ -135,6 +146,7 @@ Actions Comm::on_uart_line(const std::string& line, int64_t now_ms) {
     if (f.payload == "CONNECT") {
         forget(f.conn, out);  // DISCONNECT를 놓쳤을 때를 대비해 옛 등록을 먼저 지운다
         event(who(f.conn), msg::CtxKind::CONNECT, conn_json(f.conn) + "}");
+        conn_[f.conn].connected = true;
         conn_[f.conn].hello_due = now_ms + kHelloTimeoutMs;
         conn_[f.conn].last_rx = now_ms;
     } else if (f.payload == "DISCONNECT") {
@@ -142,7 +154,19 @@ Actions Comm::on_uart_line(const std::string& line, int64_t now_ms) {
               conn_json(f.conn) + ",\"registered\":" + (conn_[f.conn].registered ? "1" : "0") + "}");
         forget(f.conn, out);
     } else {
-        conn_[f.conn].last_rx = now_ms;  // 무엇이든 받으면 링크는 살아 있음 (HB 포함)
+        Conn& c = conn_[f.conn];
+        c.last_rx = now_ms;  // 무엇이든 받으면 링크는 살아 있음 (HB 포함)
+        // 모르는 연결: P6보다 먼저 붙어 있던 기기 (시작 DROP이 브리지에서 안 먹힘). HB만 계속 오고 HELLO는
+        // 다시 오지 않으므로, 그 연결을 끊어 기기가 다시 붙고(CONNECT) HELLO 하게 한다 (#16). HELLO는 그대로 받는다
+        const bool is_hello = msg_type(f.payload) == "HELLO";
+        if (!c.connected && !c.registered && !is_hello &&
+            (!unknown_dropped_[f.conn] || now_ms - unknown_drop_ms_[f.conn] >= kUnknownDropMs)) {
+            unknown_dropped_[f.conn] = true;
+            unknown_drop_ms_[f.conn] = now_ms;
+            out.emplace_back(UartLine{std::to_string(f.conn) + "|DROP"});
+            log("line from unknown connection " + std::to_string(f.conn) + " (no CONNECT, no HELLO), drop it");
+            event(who(f.conn), msg::CtxKind::DROP, conn_json(f.conn) + ",\"reason\":\"unknown_conn\"}");
+        }
         on_device_json(f.conn, f.payload, out);
     }
     return out;
@@ -249,6 +273,20 @@ void Comm::hello_delivered(uint8_t conn, const char* dev) {
 
 Actions Comm::on_tick(int64_t now_ms) {
     Actions out;
+    if (redrop_due_ms_ >= 0 && now_ms >= redrop_due_ms_) {
+        // 시작 DROP 한 번 더: 그 사이 CONNECT나 HELLO가 온 연결(이미 다시 붙은 기기)은 건드리지 않는다
+        redrop_due_ms_ = -1;
+        std::string list;
+        for (int i = 0; i < msg::kMaxConn; i++) {
+            if (conn_[i].connected || conn_[i].registered) continue;
+            out.emplace_back(UartLine{std::to_string(i) + "|DROP"});
+            list += (list.empty() ? "" : ",") + std::to_string(i);
+        }
+        if (!list.empty()) {
+            log("start: drop again " + list);
+            event("all", msg::CtxKind::DROP, "{\"conn\":[" + list + "],\"reason\":\"p6_start_retry\"}");
+        }
+    }
     if (next_hb_ms_ < 0 || now_ms >= next_hb_ms_) {
         rejects_ = 0;
         out.emplace_back(UartLine{"ALL|{\"t\":\"HB\",\"seq\":" + std::to_string(hb_seq_++) + "}"});

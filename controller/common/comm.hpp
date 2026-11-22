@@ -29,6 +29,8 @@ constexpr int64_t kHbPeriodMs = 1000;      // ALL HB 주기
 constexpr int64_t kLinkTimeoutMs = 5000;   // 등록된 기기에서 이만큼 아무것도 안 오면 끊긴 것으로 봄 (PROTOCOL.md §3)
 constexpr size_t kMaxFrame = 512;          // UART 한 줄 최대 (PROTOCOL.md §1)
 constexpr int64_t kCtxRefreshMs = 10000;   // 연결마다 마지막 SCR·PROF를 P4에 다시 보내는 주기 (P4가 조용히 재시작한 경우)
+constexpr int64_t kStartRedropMs = 1000;   // 시작 DROP(0~8|DROP)을 이만큼 뒤에 한 번 더 (브리지가 첫 번을 가끔 놓친다, #16)
+constexpr int64_t kUnknownDropMs = 5000;   // 모르는 연결(CONNECT도 HELLO도 없음)에 보내는 DROP은 같은 연결에 이 간격에 한 번까지
 
 // UART 바이트 → 줄. '\n'까지 이어 붙이고 '\r'은 버린다. kMaxFrame보다 긴 줄은 다음 '\n'까지 버린다.
 class LineAssembler {
@@ -88,8 +90,10 @@ public:
 
     // ---- UART 스레드 ----
     // 시작할 때 한 번: 브리지의 모든 연결을 끊고(0~8|DROP) P5 명부도 비운다(DEV_BYE ALL).
-    // P6이 다시 시작하면 표가 비어 있으므로, 기기가 다시 붙어 HELLO를 보내게 하는 것이 유일한 복구 방법이다
-    Actions on_start();
+    // P6이 다시 시작하면 표가 비어 있으므로, 기기가 다시 붙어 HELLO를 보내게 하는 것이 유일한 복구 방법이다.
+    // 브리지가 첫 DROP을 놓칠 때가 있어서 kStartRedropMs 뒤 on_tick이 아직 모르는 연결에 한 번 더 보낸다 (#16).
+    // 그래도 남은 연결은 줄이 오면 그 연결에 DROP한다 (on_uart_line, kUnknownDropMs에 한 번)
+    Actions on_start(int64_t now_ms = 0);
     Actions on_uart_line(const std::string& line, int64_t now_ms);  // ESP32에서 온 한 줄
     Actions on_tick(int64_t now_ms);                                // 자주 (예: 100 ms마다)
     // DEV_HELLO를 P5에 보내는 데 성공하면 부른다. 못 보낸 HELLO는 1초마다 다시 나온다 (P5가 늦게 뜬 경우)
@@ -113,6 +117,7 @@ public:
 private:
     struct Conn {
         bool registered = false;  // HELLO 받음
+        bool connected = false;   // CONNECT 받음 (HELLO 전이라도 아는 연결)
         bool stream = false;      // MOT를 보낼지
         int64_t hello_due = -1;   // -1: 기다리는 중 아님
         int64_t last_rx = 0;      // 이 연결에서 마지막으로 받은 시각
@@ -142,6 +147,9 @@ private:
     Conn conn_[msg::kMaxConn];
     int64_t next_hb_ms_ = -1;
     int64_t next_refresh_ms_ = -1;
+    int64_t redrop_due_ms_ = -1;            // 시작 DROP 한 번 더 (-1: 없음)
+    int64_t unknown_drop_ms_[msg::kMaxConn] = {};  // 모르는 연결에 마지막으로 DROP한 시각. forget()이 지우지 않는다
+    bool unknown_dropped_[msg::kMaxConn] = {};
     bool p4_down_ = false;
     uint64_t hb_seq_ = 0;
     int rejects_ = 0;  // 이번 HB 박자에 남긴 REJECT 수

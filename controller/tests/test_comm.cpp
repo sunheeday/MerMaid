@@ -357,6 +357,47 @@ static void start_drops_all() {
           "then DEV_BYE ALL");
 }
 
+// #16: 시작 DROP을 1초 뒤 한 번 더, 모르는 연결(CONNECT도 HELLO도 없음)에서 줄이 오면 그 연결에 DROP (5초에 한 번)
+static void unknown_connection() {
+    Comm c(nullptr, 0);
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    c.on_start(0);
+    CHECK(lines(c.on_tick(500)).size() == 1, "only HB before 1 s");
+    c.on_uart_line("0|CONNECT", 600);  // 첫 DROP 뒤 다시 붙은 기기
+    c.on_uart_line("1|" + hello("app", kPhone), 700);  // CONNECT 없이 HELLO (등록은 된다)
+    Actions a = c.on_tick(1000);
+    CHECK(!has_line(a, "0|DROP") && !has_line(a, "1|DROP") && has_line(a, "2|DROP") && has_line(a, "8|DROP"),
+          "start DROP again, except connections that came back");
+    CHECK(!ev.empty() && ev.back().kind == msg::CtxKind::DROP && ev.back().sender == "all" &&
+              ev.back().value == "{\"conn\":[2,3,4,5,6,7,8],\"reason\":\"p6_start_retry\"}",
+          "retry logged: %s", ev.empty() ? "" : ev.back().value.c_str());
+    a = c.on_tick(2000);
+    for (int i = 0; i < 9; i++) CHECK(!has_line(a, std::to_string(i) + "|DROP"), "retry only once (%d)", i);
+
+    // P6보다 먼저 붙어 있던 폰: CONNECT 없이 HB만 온다 → 그 연결에 DROP
+    a = c.on_uart_line("4|{\"t\":\"HB\",\"seq\":7}", 2100);
+    CHECK(has_line(a, "4|DROP"), "line from unknown connection -> DROP");
+    CHECK(ev.back().kind == msg::CtxKind::DROP && ev.back().sender == "conn4" &&
+              ev.back().value == "{\"conn\":4,\"reason\":\"unknown_conn\"}",
+          "DROP reason unknown_conn: %s", ev.back().value.c_str());
+    CHECK(!has_line(c.on_uart_line("4|{\"t\":\"HB\",\"seq\":8}", 3100), "4|DROP"), "not again within 5 s");
+    CHECK(!has_line(c.on_uart_line("4|{\"t\":\"SCR\",\"on\":true,\"att\":true}", 7000), "4|DROP"), "not again within 5 s (SCR)");
+    CHECK(has_line(c.on_uart_line("4|{\"t\":\"HB\",\"seq\":9}", 7100), "4|DROP"), "again after 5 s (bridge missed it)");
+    // 브리지가 끊고 기기가 다시 붙음 → 정상 등록, 더는 DROP 없음
+    c.on_uart_line("4|DISCONNECT", 7200);
+    c.on_uart_line("4|CONNECT", 7300);
+    CHECK(c.on_uart_line("4|{\"t\":\"HB\",\"seq\":0}", 7400).empty(), "HB after CONNECT, before HELLO: no DROP");
+    c.on_uart_line("4|" + hello("app", "phone-b"), 7500);
+    CHECK(c.registered(4) && c.on_uart_line("4|{\"t\":\"HB\",\"seq\":1}", 7600).empty(), "registered: no DROP");
+    // 등록된 연결(1)과 HELLO 전 연결(0)의 줄은 DROP하지 않는다
+    CHECK(!has_line(c.on_uart_line("1|{\"t\":\"HB\",\"seq\":1}", 7700), "1|DROP"), "HELLO without CONNECT counts as known");
+    CHECK(!has_line(c.on_uart_line("0|{\"t\":\"HB\",\"seq\":1}", 7800), "0|DROP"), "CONNECT without HELLO yet counts as known");
+    // 잘못된 HELLO는 DROP하지 않고(거부만), 다음 줄에서 DROP
+    CHECK(!has_line(c.on_uart_line("6|" + hello("car", "x"), 8000), "6|DROP"), "bad HELLO: only REJECT");
+    CHECK(has_line(c.on_uart_line("6|{\"t\":\"HB\",\"seq\":1}", 8100), "6|DROP"), "then next line -> DROP");
+}
+
 // P5 재시작: OUT_RESYNC → 다음 박자에 등록된 연결마다 DEV_HELLO, 보낸 INT 기록을 싣는다
 static void resync() {
     Comm c(nullptr, 0);
@@ -580,6 +621,7 @@ int main() {
     hello_resend();
     ctx_resend();
     start_drops_all();
+    unknown_connection();
     resync();
     sym_rules();
     log_events();

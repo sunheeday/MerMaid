@@ -290,7 +290,7 @@ struct LogSym {
 | `DISCONNECT` (6) | P6 | 브리지가 끊김을 알림 | `{"conn","registered"}` |
 | `INT` (7) | P6 | Pi → 기기로 INT가 실제로 나감. 받은 기기마다 한 줄 | `{"conn","tier","on"}`, ALL로 나간 것은 `"all":1` |
 | `PROF_OUT` (8) | P6 | Pi → 앱으로 PROF 회신이 나감 | `{"conn","mssq","sens"}` |
-| `DROP` (9) | P6 | 브리지에 끊으라고 함 | `{"conn","reason"}`: `no_hello_5s`(HELLO 5초 없음), `silent_5s`(5초 무응답), `p5`(P5 요청), `p6_start`(P6 시작, conn `"all"`) |
+| `DROP` (9) | P6 | 브리지에 끊으라고 함 | `{"conn","reason"}`: `no_hello_5s`(HELLO 5초 없음), `silent_5s`(5초 무응답), `p5`(P5 요청), `p6_start`(P6 시작, conn `"all"`), `p6_start_retry`(1초 뒤 아직 모르는 연결에 한 번 더, conn은 번호 목록 예: `[2,3]`), `unknown_conn`(CONNECT도 HELLO도 없는 연결에서 줄이 옴: P6보다 먼저 붙어 있던 기기. 같은 연결에 5초에 한 번까지, #16) |
 | `REJECT` (10) | P6 | 기기가 보냈지만 버림 | `{"conn","reason","raw"}`: 이유(60자까지)와 원문 앞 90자. 예: `SYM misc not an integer 0..10`, `OVR target <ID> not allowed`, `SCR before HELLO`, `unknown t X`, `bad line`(conn null) |
 | `SAFE_OFF` (11) | P5 | DEV_SYNC가 끊겨 전부 OFF | `{"no_sync_s","conns"}` |
 | `SAFE_CLEAR` (12) | P5 | DEV_SYNC가 돌아와 해제 | `{"held"}`: 잡아 둔 ON 개수 |
