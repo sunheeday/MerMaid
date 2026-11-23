@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import struct
 import sys
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -85,13 +87,33 @@ def make_ride(path: Path, ride_id: str | None = None, n_samples: int = 2100, hol
     return path
 
 
-@pytest.fixture
-def client(tmp_path):
+# 같은 API 시험을 저장소·DB 조합마다 돌린다. 기본은 로컬 폴더 + SQLite.
+# PostgreSQL + S3(SeaweedFS 같은 S3 호환 서버)도 돌리려면 둘 다 정한다 (docs/controller/DATA_LOGGING.md §9-3):
+#   MERMAID_TEST_DATABASE_URL=postgresql+psycopg://…  MERMAID_TEST_STORAGE_URL=s3://bucket  (+ AWS_* 환경 변수)
+PG_URL = os.environ.get("MERMAID_TEST_DATABASE_URL")
+S3_URL = os.environ.get("MERMAID_TEST_STORAGE_URL")
+BACKENDS = ["local"] + (["pg_s3"] if PG_URL and S3_URL else [])
+
+
+def backend_urls(backend: str) -> tuple[str | None, str | None]:
+    if backend == "local":
+        return None, None
+    from server.db import DB, meta
+
+    db = DB(PG_URL)
+    meta.drop_all(db.engine)  # 시험마다 빈 DB
+    db.dispose()
+    return PG_URL, f"{S3_URL.rstrip('/')}/test-{uuid.uuid4().hex[:12]}"  # 시험마다 새 prefix
+
+
+@pytest.fixture(params=BACKENDS)
+def client(request, tmp_path):
     from fastapi.testclient import TestClient
 
     from server.app import create_app
 
-    app = create_app(tmp_path / "data", KEY)
+    db_url, st_url = backend_urls(request.param)
+    app = create_app(tmp_path / "data", KEY, database_url=db_url, storage_url=st_url)
     with TestClient(app) as c:
         yield c
 

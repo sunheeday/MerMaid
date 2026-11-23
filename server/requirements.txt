@@ -4,3 +4,8 @@ uvicorn==0.34.0
 python-multipart
 numpy
 httpx
+# 중앙 DB: DATABASE_URL 하나로 SQLite ↔ PostgreSQL (server/db.py)
+sqlalchemy>=2.0,<2.2
+psycopg[binary]>=3.2,<4
+# 주행 파일 저장소: s3:// (S3, MinIO). If-None-Match 조건부 쓰기는 1.35부터 (server/storage.py)
+boto3>=1.35

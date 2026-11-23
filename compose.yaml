@@ -1,0 +1,99 @@
+# MerMaid 백엔드 (docs/controller/DATA_LOGGING.md §9-3). AWS 구성과 같은 모양을 로컬에서 띄운다:
+#   api (로그 서버) ─▶ db (PostgreSQL 16, AWS에서는 RDS)
+#                   └▶ s3 (S3 호환 SeaweedFS, AWS에서는 S3 버킷, 버전 관리 켬)
+#   worker (학습·데이터 작업, 필요할 때만: docker compose run --rm worker …)
+#
+#   cp .env.example .env   # MERMAID_API_KEY, POSTGRES_PASSWORD, S3_SECRET_KEY 채우기
+#   docker compose up -d --build
+#   curl localhost:8080/api/health
+name: mermaid
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-mermaid}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-mermaid}
+  STORAGE_URL: s3://${S3_BUCKET:-mermaid}
+  AWS_ENDPOINT_URL: http://s3:8333
+  AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-mermaid}
+  AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+  AWS_REGION: us-east-1
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mermaid}
+      POSTGRES_USER: ${POSTGRES_USER:-mermaid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  s3:  # S3 호환 저장소 (SeaweedFS). 조건부 쓰기·메타데이터·버전 관리를 S3와 같게 지원한다
+    image: chrislusf/seaweedfs:4.50
+    command: server -s3 -dir=/data
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-mermaid}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+    volumes:
+      - objects:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  s3-init:  # 버킷 만들고 버전 관리 켜기 (한 번 돌고 끝남, 이미 있으면 그대로)
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["python", "-m", "server.storage", "init"]
+    environment:
+      <<: *backend-env
+    depends_on:
+      s3:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      <<: *backend-env
+      MERMAID_API_KEY: ${MERMAID_API_KEY:?set MERMAID_API_KEY in .env}
+      MERMAID_MAX_UPLOAD_MB: ${MERMAID_MAX_UPLOAD_MB:-1024}
+    volumes:
+      - apidata:/data  # incoming/, S3 캐시 (지워도 됨)
+    ports:
+      - "${MERMAID_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: ml/Dockerfile
+    profiles: ["tools"]  # docker compose up 으로는 뜨지 않는다
+    environment:
+      <<: *backend-env
+    volumes:
+      - ./ml/data:/app/ml/data
+      - ./ml/out:/app/ml/out  # 버전 관리된 결과 (ml/out/runs/vNNN)는 호스트에 남는다
+    depends_on:
+      db:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  objects:
+  apidata:

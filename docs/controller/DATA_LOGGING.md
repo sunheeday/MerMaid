@@ -39,8 +39,8 @@
 
 [차 밖: Mac (v1) → 클라우드]
   server/tools/collect_logs.py ──ssh/scp──▶ 닫힌 주행 파일 ──POST /api/rides──▶ 로그 서버 (Python FastAPI, server/)
-                                                                         ├ server/data/rides/<ride_id>.sqlite (원본 보관)
-                                                                         └ server/data/mermaid.db (색인 · 주기 · 라벨 · 사건)
+                                                                         ├ 저장소 rides/<ride_id>.sqlite (원본 보관: 폴더 또는 S3)
+                                                                         └ 중앙 DB (색인 · 주기 · 라벨 · 사건: SQLite 또는 PostgreSQL)
   ml/realdata/build_real.py --source mermaid ──▶ ml/out/runs/vNNN/real_mermaid.npz ──▶ train.py
 ```
 
@@ -449,21 +449,38 @@ v2(범위 밖): 차에 Wi-Fi가 있으면 P8 업로더가 직접 POST. QNX에 HT
 
 ```
 server/
-  app.py            # FastAPI 라우트 (create_app: 시험은 폴더와 키를 넘겨 만든다)
-  db.py             # 중앙 DB 접근 (sqlite3 표준 라이브러리. PostgreSQL로 옮길 때 이 파일만 바꿈)
+  app.py            # FastAPI 라우트 (create_app: 시험은 폴더, 키, DB·저장소 URL을 넘겨 만든다)
+  db.py             # 중앙 DB (SQLAlchemy Core. DATABASE_URL 하나로 SQLite ↔ PostgreSQL)
+  storage.py        # 주행 파일 저장소 (STORAGE_URL 하나로 폴더 ↔ S3). pull, init 명령
+  reindex.py        # 저장소의 주행 파일로 중앙 DB 다시 채우기
   ridefile.py       # 주행 파일 읽기·검증 (표 정의는 protocol/ride_schema.sql. ml/personal/fit_calib.py도 이것을 씀)
-  requirements.txt  # fastapi, uvicorn, python-multipart, numpy, httpx
-  .env.example      # 환경 변수 목록 (실제 값은 .env, git 제외)
+  requirements.txt  # fastapi, uvicorn, python-multipart, numpy, httpx, sqlalchemy, psycopg, boto3
+  Dockerfile        # api 이미지 (저장소 루트에서 빌드)
   tools/            # collect_logs.py: 차 → 서버 업로드, --push-calib
   tests/            # pytest + TestClient. 시험용 주행 파일은 protocol/ride_schema.sql로 만든다
-  data/             # git 제외: incoming/ (받는 중), rides/ (읽기 전용 보관), mermaid.db
+  data/             # git 제외: incoming/ (받는 중), 기본 저장소 rides/ (읽기 전용), 기본 mermaid.db, cache/ (S3 캐시)
+compose.yaml        # api + PostgreSQL + S3 호환 저장소 + worker (§9-3)
+.env.example        # 환경 변수 목록 (실제 값은 .env, git 제외)
+ml/Dockerfile       # worker 이미지 (학습·데이터 작업)
 ```
 
-실행 (저장소 루트에서): `MERMAID_API_KEY=… uvicorn server.app:app --host 0.0.0.0 --port 8080`
-환경 변수: `MERMAID_DATA`(기본 `server/data`), `MERMAID_MAX_UPLOAD_MB`(기본 1024).
-시험: `python3 -m pytest server/tests`, 끝까지는 ctest `log_sim`의 D 단계 (P7이 만든 진짜 파일 → collect_logs → uvicorn).
+실행 (저장소 루트에서): `MERMAID_API_KEY=… uvicorn server.app:app --host 0.0.0.0 --port 8080`, 또는 `docker compose up -d --build` (§9-3).
 
-### 9-1. 중앙 DB (`server/data/mermaid.db`)
+| 환경 변수 | 기본 | 뜻 |
+|---|---|---|
+| `MERMAID_API_KEY` | (필수) | 모든 `/api` 요청의 `X-API-Key` |
+| `MERMAID_DATA` | `server/data` | 로컬 작업 폴더: `incoming/`, 아래 두 값이 비었을 때의 저장소와 SQLite, S3 캐시 |
+| `DATABASE_URL` | `sqlite:///MERMAID_DATA/mermaid.db` | 중앙 DB. 예: `postgresql+psycopg://user:pw@host:5432/mermaid` |
+| `STORAGE_URL` | `file://MERMAID_DATA` | 주행 파일 저장소. 예: `s3://bucket/prefix` (자격 증명은 `AWS_*` 또는 IAM 역할, S3 호환 서버는 `AWS_ENDPOINT_URL`) |
+| `MERMAID_CACHE` | `MERMAID_DATA/cache` | S3에서 받은 주행 파일 캐시 (주행 파일은 바뀌지 않으므로 언제 지워도 됨) |
+| `MERMAID_MAX_UPLOAD_MB` | 1024 | 업로드 최대 크기 |
+
+시험: `python3 -m pytest server/tests` (폴더 + SQLite), 끝까지는 ctest `log_sim`의 D 단계 (P7이 만든 진짜 파일 → collect_logs → uvicorn).
+같은 API 시험을 PostgreSQL + S3로도 돌리려면 `MERMAID_TEST_DATABASE_URL`, `MERMAID_TEST_STORAGE_URL`(그리고 `AWS_*`)을 정한다 (§9-3).
+
+### 9-1. 중앙 DB (`DATABASE_URL`, 기본 `server/data/mermaid.db`)
+
+표 정의는 `server/db.py` (SQLAlchemy Core). 시작할 때 없으면 만든다. 아래는 같은 내용을 SQL로 쓴 것:
 
 ```sql
 CREATE TABLE ride (
@@ -479,11 +496,14 @@ CREATE TABLE cycle (ride_id TEXT, seq INTEGER, t REAL, phone TEXT,
                     PRIMARY KEY (ride_id, seq, phone));
 CREATE TABLE decision (ride_id TEXT, seq INTEGER, t REAL, device TEXT, on_ INTEGER, tier INTEGER, changed INTEGER,
                        PRIMARY KEY (ride_id, seq, device));
-CREATE TABLE label (ride_id TEXT, t REAL, phone TEXT, misc INTEGER);
-CREATE TABLE event (ride_id TEXT, t REAL, sender TEXT, kind TEXT, value TEXT);
+CREATE TABLE label (id INTEGER PRIMARY KEY, ride_id TEXT, t REAL, phone TEXT, misc INTEGER);
+CREATE TABLE event (id INTEGER PRIMARY KEY, ride_id TEXT, t REAL, sender TEXT, kind TEXT, value TEXT);  -- id: 같은 t 안의 순서
 ```
 
-원본 샘플과 77칸 입력은 중앙 DB에 복사하지 않는다. 주행 파일(`server/data/rides/<ride_id>.sqlite`, 읽기 전용)에 그대로 두고 필요할 때 읽는다.
+원본 샘플과 77칸 입력은 중앙 DB에 복사하지 않는다. 주행 파일(저장소 `rides/<ride_id>.sqlite`, 읽기 전용)에 그대로 두고 필요할 때 읽는다.
+그래서 **주행 파일이 원본이고 중앙 DB는 색인**이다. DB를 잃거나 표 모양을 바꾸거나 SQLite → PostgreSQL로 옮길 때는
+새 DB를 가리키고 `python -m server.reindex`로 다시 채운다 (이미 있는 주행은 건너뜀. `received_at`은 다시 채운 시각이 된다).
+예전 모양의 표가 남아 있으면 서버가 시작하지 않고 reindex하라고 알린다.
 
 ### 9-2. API v1 (모든 요청에 `X-API-Key` 헤더)
 
@@ -500,10 +520,50 @@ CREATE TABLE event (ride_id TEXT, t REAL, sender TEXT, kind TEXT, value TEXT);
 
 **업로드 검증:** 파일 이름 = `meta.ride_id` (`<device>-<session:05d>-<ride:03d>` 규칙, 경로 문자 거부), `schema_version` 1~2,
 `PRAGMA integrity_check == ok`, 필수 표 존재(2는 8개, 1은 `gps` 없이 7개), `meta.closed_reason` 있음(닫힌 파일만), sha256 일치, 크기 ≤ `MERMAID_MAX_UPLOAD_MB`.
-통과하면 `rides/`로 옮겨 읽기 전용으로 두고, 중앙 DB 표들을 한 트랜잭션으로 채운다(실패하면 옮긴 파일을 지운다).
-같은 ride_id를 동시에 올려도 잠금으로 하나만 받는다.
+통과하면 저장소 `rides/<ride_id>.sqlite`에 쓰고(폴더는 읽기 전용, S3는 메타데이터에 sha256), 중앙 DB 표들을 한 트랜잭션으로 채운다
+(색인이 실패하면 쓴 파일을 지운다). 저장소 쓰기는 **같은 키가 없을 때만** 한다(폴더: 하드 링크, S3: `If-None-Match: *`).
+그래서 서버가 여러 개여도 같은 ride_id는 먼저 쓴 것만 남는다. 저장소에는 있는데 색인이 없으면(색인 전에 멈춤) 같은 파일을
+다시 올릴 때 색인만 넣고, 내용이 다르면 409. `gps` 표는 중앙 DB에 복사하지 않고 주행 파일에만 둔다.
 
 인증: v1은 로컬 네트워크 전용 + API 키 하나. 밖으로 열 때(클라우드) HTTPS와 기기별 키를 다시 정한다.
+
+### 9-3. Docker와 AWS
+
+`compose.yaml`은 AWS 구성과 같은 모양을 로컬에서 띄운다. 코드는 같고 `DATABASE_URL`, `STORAGE_URL`만 다르다.
+
+| compose 서비스 | 하는 일 | AWS에서 |
+|---|---|---|
+| `api` | 로그 서버 (`server/Dockerfile`, 프로세스 하나, 8080) | ECS Fargate 서비스 + ALB(HTTPS) |
+| `db` | PostgreSQL 16 | RDS PostgreSQL (단일 AZ, 자동 백업과 특정 시점 복구) |
+| `s3` + `s3-init` | S3 호환 저장소(SeaweedFS), 버킷 만들고 버전 관리 켬 | S3 버킷 (버전 관리, 오래된 주행은 저렴한 보관 등급으로) |
+| `worker` | 학습·데이터 작업 (`ml/Dockerfile`, `profiles: [tools]`라 `up`으로는 안 뜸) | EventBridge 일정 → ECS 작업 |
+
+```bash
+cp .env.example .env          # MERMAID_API_KEY, POSTGRES_PASSWORD, S3_SECRET_KEY 채우기
+docker compose up -d --build
+curl localhost:8080/api/health
+docker compose exec api python -m server.reindex --dry-run
+docker compose run --rm worker python -m server.storage pull --dest ml/data/raw/mermaid_rides
+docker compose run --rm worker python3 ml/realdata/build_real.py --source mermaid --root ml/data/raw/mermaid_rides
+```
+
+PostgreSQL + S3로 API 시험 돌리기 (빈 DB와 버킷 하나, 시험마다 표를 지우고 새 prefix를 쓴다):
+
+```bash
+docker run -d --name mm-pg -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=pgtest -e POSTGRES_DB=mermaid_test postgres:16-alpine
+docker run -d --name mm-s3 -p 127.0.0.1:58333:8333 -e AWS_ACCESS_KEY_ID=testkey -e AWS_SECRET_ACCESS_KEY=testsecret chrislusf/seaweedfs:4.50 server -s3 -dir=/data
+export AWS_ENDPOINT_URL=http://127.0.0.1:58333 AWS_ACCESS_KEY_ID=testkey AWS_SECRET_ACCESS_KEY=testsecret AWS_REGION=us-east-1
+STORAGE_URL=s3://mermaid-test python -m server.storage init
+MERMAID_TEST_DATABASE_URL=postgresql+psycopg://postgres:pgtest@127.0.0.1:55432/mermaid_test \
+MERMAID_TEST_STORAGE_URL=s3://mermaid-test python3 -m pytest server/tests
+```
+
+- DB와 S3는 compose 안에서만 열린다(호스트에는 api 포트만). worker의 결과는 호스트 `ml/out/runs/vNNN`에 남는다.
+- MinIO 공식 이미지는 2025년 말부터 Docker Hub와 quay.io에서 받을 수 없어 SeaweedFS를 쓴다. 3.97은 버전 관리 버킷의 목록이
+  틀리게 나와서(키 앞부분이 두 번 붙음) 4.50으로 고정했다.
+- 복제(Multi-AZ, 읽기 복제본)와 캐시 서버(Redis)는 지금 규모에서는 넣지 않는다. 읽기 부하가 작고, 서버가 잠깐 멈춰도
+  차가 `.uploaded` 표시 전까지 주행 파일을 갖고 있다가 다시 올린다. 잃지 않기 위한 복제는 파이 → 서버 → S3(버전 관리)로 이미 된다.
+- 표 모양 바꾸기(마이그레이션)는 아직 도구 없이 reindex로 한다. 바꾸는 일이 잦아지면 Alembic을 넣는다.
 
 ## 10. 학습 데이터로 내보내기
 
