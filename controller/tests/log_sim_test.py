@@ -205,7 +205,8 @@ def main():
             check(q(f, "SELECT count(*) FROM decision") == 6, f"decision: 2 cycles x 3 devices ({q(f, 'SELECT count(*) FROM decision')})")
             check(q(f, "SELECT count(*) FROM decision WHERE device='airflow-01' AND on_=1 AND tier=1") >= 1,
                   "airflow on at p2 = 0.95")
-            check(q(f, "SELECT length(x) FROM infer LIMIT 1") == 77 * 8, "x is 77 doubles")
+            nf = json.load(open(os.path.join(REPO, "protocol", "feature_order.json")))["n_features"]
+            check(q(f, "SELECT length(x) FROM infer LIMIT 1") == nf * 8, f"x is {nf} doubles")
             check(meta(f, "source") == "live" and meta(f, "closed_reason") == "ride_end", "meta source, closed_reason")
             check(meta(f, "model_version") == "fake", "model version from LOG_INFER")
             bias = json.loads(meta(f, "imu_bias_dps") or "null")

@@ -82,6 +82,7 @@ P1은 **재생 모드**(`ml/data/trips/*.bin`을 100 Hz로 흘림)와 **LIVE 모
 | C18 | G1 svc_conflict, G8 허용도 | 피처로 사용 | v1에서 `enabled=false` (항상 NaN) | SVC 식이 정의되지 않음. 허용도는 실제 사용 기록이 있어야 의미가 있어 합성 데이터로 학습 불가 | `protocol/feature_order.json` |
 | C19 | 설정 JSON 숫자 읽기 | – | `json_min.hpp`가 직접 파싱 | QNX `strtod`가 일부 소수를 1~2 ULP 다르게 읽어 Mac과 Pi 결과가 달라짐 | `controller/common/json_min.hpp` |
 | C20 | P2 기준 구현 언어 | Python (`ml/features`) | C++ 하나, Python은 `featurize` 실행 파일을 부름 | 학습과 보드가 같은 코드를 써서 피처 불일치를 없앰 | `controller/common/features.cpp` |
+| C21 | 피처 구성 | PRD §11의 77개 (CAN, 내비, 공조, 좌석, 소음 포함) | **52개** (feature_order v5). 출처도 라벨 경로도 없는 25개 삭제 (3.4) | 차에 들어올 값이 없고, 합성 라벨로는 우리가 넣은 규칙만 되배움. 회생 단조 제약(PRD §4.2)도 함께 빠짐 | `protocol/feature_order.json` |
 
 ## 3. 공식과 유도
 
@@ -172,17 +173,21 @@ msdv_inc_5m = msdv(t) − msdv(t − 300 s)          # 30주기 전 값과의 �
 | oman_score, oman_delta_2m, sensitization (29~31) | score, score − 12주기 전 score, S | – | PRD §P2 |
 | svc_conflict (32) | **비활성 (항상 NaN)** | – | [TODO] T-01 |
 | G2 속도 (33~39) | 평균, 표준편차, 최고, 정차 비율(속도 < 0.1 m/s 샘플 비율) | 0.1 m/s | 항목 PRD §11 [추측], 0.1은 자체 결정 |
-| G3a 페달 (40~44) | 페달 RMS, 페달 변화율 RMS, 주행 모드, 크루즈 (마지막 값) | – | 항목 PRD §11 [추측], 식 자체 결정 |
-| G3b 회생·배터리 (45~53) | 회생 감속 RMS, 회생 단계, 원페달, 회생 비율 = Σ회생 감속 / Σmax(−dv/dt, 0), SOC, 배터리 출력 평균·표준편차, 모터 토크 변화율 RMS | – | 항목 PRD §11 [추측], 식 자체 결정 |
-| G4 경로 (54~58) | 다음 회전까지 거리·각도, 10초 앞 예측 가속도, 앞 곡률 (마지막 값) | – | PRD §11 [추측] |
-| G5 공조, G6 좌석, G7 소음 (59~67) | 마지막 샘플 값 | – | PRD §11 [추측] |
-| ride_time (68) | 주행 첫 샘플부터 경과 시간 | s | PRD §11 |
-| reexposure, time_since_rest (69~70) | 휴식 뒤 다시 움직이면 1, 그때부터 지난 시간 | – | PRD §P1, §P2 |
+| G5 cabin_temp, fan_level, G6 seat_row (40~42) | 마지막 샘플 값 | – | PRD §11 [추측]. 라벨 효과는 `sim_effects.json` (3.7) |
+| ride_time (43) | 주행 첫 샘플부터 경과 시간 | s | PRD §11 |
+| reexposure, time_since_rest (44~45) | 휴식 뒤 다시 움직이면 1, 그때부터 지난 시간 | – | PRD §P1, §P2 |
 | 휴식 판정 | 차속이 있으면 정지, 없으면 h < 0.05 m/s²가 **180초 연속** | 180 s, 0.05 | PRD §P1 |
-| tol_display, tol_phone (71~72) | 기기 허용도 tol (3.9). **비활성 (항상 NaN)** | – | [TODO] T-02 |
-| mssq, sensitivity, ev_experience, vehicle_type (73~76) | 승객 프로필 (3.5) | – | PRD §P3, §11 |
+| tol_display, tol_phone (46~47) | 기기 허용도 tol (3.9). **비활성 (항상 NaN)** | – | [TODO] T-02 |
+| mssq, sensitivity, ev_experience, vehicle_type (48~51) | 승객 프로필 (3.5) | – | PRD §P3, §11 |
 
-**단조 제약 (+1)**: rms_x_5m, rms_y_5m, msdv, oman_score, sensitization, regen_decel_rms_1m, regen_decel_rms_5m, ride_time, sensitivity (9개, PRD §4.2).
+**단조 제약 (+1)**: rms_x_5m, rms_y_5m, msdv, oman_score, sensitization, ride_time, sensitivity (7개, PRD §4.2). PRD의 회생 강도 단조 제약(regen_decel_rms_1m/5m)은 v5에서 회생 피처를 지우며 함께 빠졌습니다 (C21).
+
+**v5에서 지운 피처 25개 (C21)**: G3a 페달·주행 모드·크루즈 5개, G3b 회생·SOC·배터리·토크 9개, G4 내비 5개, G7 소음 2개, set_temp, ac_on, seatback_angle, window_open.
+기준은 두 가지입니다. (1) 차(파이 + IMU + 폰 앱)에 값이 들어올 출처가 없고, (2) 시뮬레이터 라벨에 닿는 경로도 없다.
+페달·회생·배터리·토크는 구동력에서 계산되어 IMU 가속도와 같은 정보를 반복하고, 나머지는 라벨에 효과가 없습니다(소음은 문헌상 근거 없음, ×1.0).
+`pred_ax/ay_10s`는 실제 10초 뒤 가속도에 잡음만 더한 값이라 정답을 미리 보여 주는 칸이었습니다.
+문헌이 방향을 주는 `seat_row`(뒷좌석 ×1.1~1.5), `cabin_temp`(35 ℃에서 최대 ×1.05~1.2), `fan_level`(×0.85~1.0)은 남겼습니다.
+원시 칸(`trip_format.json`)과 시뮬레이터의 신호 생성은 그대로 둡니다 (P6 MOTION이 `pred_ax/ay_10s` 칸을 씀).
 
 **[TODO]** 이벤트 기준 1.5 / −0.75 / 2.0은 승차감 연구(He 등 2013, Nguyen 등 2019)의 값과 같습니다. PRD가 이 값을 가져왔는지 원문 확인과, 멀미 예측용 기준을 실차 라벨로 다시 정하는 일이 남았습니다 (T-07).
 

@@ -67,7 +67,8 @@ def make_ride(path: Path, ride_id: str | None = None, n_samples: int = 2100, hol
         chunk.append(s)
         prev = s
     flush()
-    x = struct.pack("<77d", *([0.5] * 77))
+    nf = json.loads((REPO / "protocol" / "feature_order.json").read_text())["n_features"]
+    x = struct.pack(f"<{nf}d", *([0.5] * nf))
     for c in range(cycles):
         t = 9.99 + 10 * c
         for ph in phones:

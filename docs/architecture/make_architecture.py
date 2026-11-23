@@ -56,7 +56,7 @@ def overview():
     # 개발 PC
     s.append(box(20, 40, 330, 340, "lane-pc", "개발 PC (Mac)", [("Python 3.12 + C++ · 오프라인, 한 번", "s")], title_cls="lt", dy0=30, step=17, pad=20))
     items = [("TU Delft 적합 (S1)", "K0 = 51.4"), ("시뮬레이터 (S3) → v006", "탑승 1,920회 · 100 Hz"),
-             ("피처 featurize (S2, C++)", "10초마다 71개"), ("학습 (S4) → v007", "LightGBM ×5 · 문턱"),
+             ("피처 featurize (S2, C++)", "10초마다 46개"), ("학습 (S4) → v007", "LightGBM ×5 · 문턱"),
              ("실차 · 사람 MISC 검증", "BATON · comma · TU Delft")]
     for i, (a, b) in enumerate(items):
         y = 98 + i * 50
@@ -118,7 +118,7 @@ COLS = [
      ["trip 100 Hz × 32열", "MISC(t), score(t)", "v006/trips/ride_000*.bin"]),
     ("S2 피처 (C++)", ["constants.json (Wf·이벤트)", "feature_order.json (v3)"],
      ("featurize", ["FeatureExtractor = P2 코드", "1,000샘플마다 한 행"]),
-     ["features.bin [t, 71개]"]),
+     ["features.bin [t, 46개]"]),
     ("데이터셋 조립", ["← sim.py 라벨 · 승객", "feature_order.json (v3)"],
      ("build_dataset.py", ["G8 NaN + G10 승객 4개", "y_k: 다음 5분 최대 ≥ k"]),
      ["v006/dataset.npz", "v006/rides.json", "v006/dataset_report.json", "v006/run.json"]),
@@ -214,7 +214,7 @@ def validation():
 def runtime():
     s = [DEFS]
     # 설정 (위)
-    s.append(box(250, 40, 440, 70, "cfgbox", "protocol/*.json → gen_cpp.py → protocol_gen.hpp", ["컴파일 때 고정: 32열 Row, 77개 순서, Oman · Wf · 이벤트 · 휴식 상수, 기본 프로필"], title_cls="tm", step=18, rx=8))
+    s.append(box(250, 40, 440, 70, "cfgbox", "protocol/*.json → gen_cpp.py → protocol_gen.hpp", ["컴파일 때 고정: 32열 Row, 52개 순서, Oman · Wf · 이벤트 · 휴식 상수, 기본 프로필"], title_cls="tm", step=18, rx=8))
     s.append(box(770, 40, 180, 70, "cfgbox", "runs/v007/models/", ["model_2~6.txt (CURRENT)", "models.json (sha256)"], title_cls="tm", step=16, rx=8))
     s.append(box(1030, 40, 200, 70, "cfgbox", "controller/config/", ["policy.json · thresholds.json", "--rf (P5 명부) 또는 --phone, --hud"], title_cls="tm", step=16, rx=8))
     for x in (340, 600):
@@ -225,7 +225,7 @@ def runtime():
     s.append(box(20, 200, 150, 160, "proc-todo", "입력", ["trip.bin 재생 (구현)", "100 Hz × 32열", "", "MPU-6050 · CAN", "실시간 (미구현)"], title_cls="t2", dy0=24, step=17, rx=10))
     P = [
         (250, "P1 acq · 우선순위 40", ["trip.bin → 100 Hz", "clock_nanosleep 절대 시각", "주행 안 seq 번호", "RIDE_START / RIDE_END", "LIVE 모드 미구현"]),
-        (510, "P2 feat · 30", ["Wf · Oman · 이벤트 · 휴식", "창 10 s / 1 m / 5 m / 누적", "1,000샘플마다 71개", "seq 빠짐 셈", "RIDE_START에 초기화"]),
+        (510, "P2 feat · 30", ["Wf · Oman · 이벤트 · 휴식", "창 10 s / 1 m / 5 m / 누적", "1,000샘플마다 46개", "seq 빠짐 셈", "RIDE_START에 초기화"]),
         (770, "P3 infer · 20", ["lib_lightgbm 4.6.0", "모델 5개 (로드 95 ms)", "폰마다 77개 행 (최대 9)", "단조 보정 min(p_k, p_k−1)", "--vehicle-type"]),
         (1030, "P4 policy · 15", ["Tier 1·2·3 문턱 + tol", "hold · off · 쿨다운 · 비활성", "프로필은 설문 그대로 저장", "바뀐 상태만 원자 저장", "시각 = 주행 시각"]),
     ]
@@ -295,12 +295,12 @@ def cycle():
     s.append(label(220, 125, "깨어남 늦음 중앙값 953 µs (QNX 1 ms 틱) · P2 회신 최대 2.5 ms", "lb2"))
     s.append('<rect x="324" y="140" width="12" height="44" class="act"/>')
     s.append(label(345, 160, "1,000번째 샘플: 창 갱신", "lb", "start"))
-    s.append(label(345, 174, "→ 차량 피처 71개 (VehicleVec)", "lb", "start"))
-    msg("P2", "P3", 214, "VEH { seq, t, t_emit_ns, x[71] }")
+    s.append(label(345, 174, "→ 차량 피처 46개 (VehicleVec)", "lb", "start"))
+    msg("P2", "P3", 214, "VEH { seq, t, t_emit_ns, x[46] }")
     msg("P3", "P4", 254, "PROFILES 요청")
     msg("P4", "P3", 290, "ProfilesReply { n, tol_display, e[9]: id, mssq, sens, ev, tol }", dashed=True)
     s.append('<rect x="554" y="304" width="12" height="56" class="act"/>')
-    s.append(label(545, 320, "n행 × 77개 조립 (폰 없으면 기본 프로필)", "lb", "end"))
+    s.append(label(545, 320, "n행 × 52개 조립 (폰 없으면 기본 프로필)", "lb", "end"))
     s.append(label(545, 334, "LightGBM 5개 → 단조 보정", "lb", "end"))
     s.append(label(545, 348, "폰 9대 기준 중앙값 0.85 ms, 최대 0.90 ms", "lb2", "end"))
     msg("P3", "P4", 386, "RISK { seq, t, t_emit_ns, t_infer_ns, n, id[n], p[n][5] }")
@@ -312,13 +312,12 @@ def cycle():
     return f'<svg viewBox="0 0 1100 565" role="img" aria-label="10초 한 주기">{"".join(s)}</svg>'
 
 
-# ------------------------------------------------------------------ 5. 77개 벡터 배치
+# ------------------------------------------------------------------ 5. 52개 벡터 배치
 def vector():
-    groups = [("G1", 33, "IMU 동역학 · Oman", "pi"), ("G2", 7, "속도", "pi"), ("G3a", 5, "페달", "pi"), ("G3b", 9, "EV", "pi"),
-              ("G4", 5, "경로", "pi"), ("G5", 4, "공조", "pi"), ("G6", 3, "좌석", "pi"), ("G7", 2, "소음", "pi"),
+    groups = [("G1", 33, "IMU 동역학 · Oman", "pi"), ("G2", 7, "속도", "pi"), ("G5", 2, "공조", "pi"), ("G6", 1, "좌석", "pi"),
               ("G9", 3, "시간", "pi"), ("G8", 2, "허용도", "off"), ("G10", 4, "승객", "pc")]
     s = []
-    W = 1160 / 77
+    W = 1160 / 52
     x, idx = 20, 0
     for g, n, d, c in groups:
         w = n * W
@@ -330,13 +329,13 @@ def vector():
         s.append(f'<text x="{x + w / 2 - 1:.1f}" y="118" class="lb" text-anchor="middle">{E(d) if w > 50 else ""}</text>')
         x += w
         idx += n
-    s.append(f'<text x="1180" y="100" class="lb2" text-anchor="end">76</text>')
-    s.append(f'<path d="M20,30 L{20 + 71 * W - 2:.1f},30" class="brace-pi"/>')
-    s.append(label(20 + 71 * W / 2, 22, "P2가 만듦: 차량 피처 71개 (인덱스 0~70)", "lb"))
-    s.append(f'<path d="M{20 + 71 * W:.1f},30 L1180,30" class="brace-pc"/>')
-    s.append(label(20 + 74 * W, 22, "P3가 붙임 (71~76)", "lb"))
-    s.append(label(20, 140, "G6 3개 · G7 2개 · G9 3개는 칸이 좁아 이름을 생략. G8(허용도 2개)은 꺼져 있어 항상 NaN (피처 순서 v1·v3), svc_conflict(32)도 NaN.", "cap", "start"))
-    return f'<svg viewBox="0 0 1200 150" role="img" aria-label="77개 벡터">{"".join(s)}</svg>'
+    s.append(f'<text x="1180" y="100" class="lb2" text-anchor="end">51</text>')
+    s.append(f'<path d="M20,30 L{20 + 46 * W - 2:.1f},30" class="brace-pi"/>')
+    s.append(label(20 + 46 * W / 2, 22, "P2가 만듦: 차량 피처 46개 (인덱스 0~45)", "lb"))
+    s.append(f'<path d="M{20 + 46 * W:.1f},30 L1180,30" class="brace-pc"/>')
+    s.append(label(20 + 49 * W, 22, "P3가 붙임 (46~51)", "lb"))
+    s.append(label(20, 140, "G5 2개 · G6 1개는 칸이 좁아 이름을 생략. G8(허용도 2개)은 꺼져 있어 항상 NaN, svc_conflict(32)도 NaN. 피처 순서 v5에서 CAN·내비·소음 등 25개를 지움.", "cap", "start"))
+    return f'<svg viewBox="0 0 1200 150" role="img" aria-label="52개 벡터">{"".join(s)}</svg>'
 
 
 CSS = """
@@ -492,7 +491,7 @@ def R(key, short=None):
 OFFLINE_ROWS = [
     ["S0 계약", OK + "<br>" + C("python3 protocol/check.py"),
      ul(C("protocol/constants.json"), C("feature_order.json") + " (version 3)", C("trip_format.json"), C("messages.schema.json"), C("uuids.json")),
-     ul("메시지 예시 7개를 스키마로 검증, 잘못된 메시지 8개 거부", "피처 77개(켬 74, NaN 고정 3) 확인", C("gen_cpp.py") + "가 JSON을 C++ 상수로 바꿈 (이벤트 기준, 되돌림 폭 " + C("kEventRearmMargin") + " 포함)",
+     ul("메시지 예시 7개를 스키마로 검증, 잘못된 메시지 8개 거부", "피처 52개(켬 49, NaN 고정 3) 확인", C("gen_cpp.py") + "가 JSON을 C++ 상수로 바꿈 (이벤트 기준, 되돌림 폭 " + C("kEventRearmMargin") + " 포함)",
         C("thresholds.json") + "의 feature_order_version이 빌드와 같은지 확인"),
      ul(C("controller/common/protocol_gen.hpp") + " (Python과 C++가 같은 값)")],
     ["S1 Oman 적합", OK + "<br>" + C("python3 ml/verify/oman_tudelft.py ml/data/raw/ATDOMS.mat"),
@@ -504,12 +503,12 @@ OFFLINE_ROWS = [
      ul("경로 480개 (15~40분, 구간 8종, 고속도로 8%) → v² 앞뒤 훑기 → 0.3 Hz 저크 제한", "운전자 가속 0.7~2.0, 감속 0.5~1.6 m/s², 정차 5~120 s", "IMU = 운동학 + g·sinθ + 노면 굴곡 + 차로 유지 흔들림 + 2~15 Hz 진동 + 잡음", "CAN 신호: 페달, 회생, SOC, 배터리, 경로 예측, 공조, 좌석, 소음", "승객 120명: MSSQ ~ N(12.9, 9.9²), true_sens = sens·e^N(0, 0.65²)", "라벨: K = K0·true_sens·m, 운동학 가속도로 Oman, 1분 단위 잡음 0.5, 반올림"),
      ul("탑승마다 trip (100 Hz × 32열, " + C("trip_format.json") + ")", "탑승마다 MISC(t), score(t), 승객 설정", C("ml/out/runs/v006/trips/ride_0000~0007.bin") + " (재생용 8개, 약 55 MB씩)")],
     ["S2 피처", OK + "<br>" + C("build/featurize trip.bin features.bin [--oman-k K]"),
-     ul("trip.bin: float64 [version, 32, 100] 머리말 + 100 Hz 행", C("protocol_gen.hpp") + " (Wf 계수, 이벤트 기준과 되돌림 폭, 휴식, Oman 상수, 77개 순서)"),
+     ul("trip.bin: float64 [version, 32, 100] 머리말 + 100 Hz 행", C("protocol_gen.hpp") + " (Wf 계수, 이벤트 기준과 되돌림 폭, 휴식, Oman 상수, 52개 순서)"),
      ul("C++ " + C("FeatureExtractor") + " (P2와 같은 코드)", "Wf 쌍선형 4구간 → RMS, jerk, MSDV. 필터는 첫 샘플 정상상태로 시작 (T-22)", "0.63 Hz LP → Oman, 이벤트는 기준을 넘는 순간 세고 0.25 m/s² 되돌아와야 다시 셈 (T-07)", "창 10 s / 1 m / 5 m / 누적, 1,000샘플마다 출력"),
-     ul("features.bin: float64 [feature_version, 72] 머리말 + 10초마다 [t, 차량 피처 71개]")],
+     ul("features.bin: float64 [feature_version, 47] 머리말 + 10초마다 [t, 차량 피처 46개]")],
     ["데이터셋 조립", OK + " (S3 안에서)",
-     ul("features.bin (71개)", "sim.py의 승객 (MSSQ, sens, EV 경험), 차량 유형, MISC(t)"),
-     ul("71개 + G8 2개 (NaN) + G10 4개 = 77개", "y_k = 다음 10초 행부터 300초 안 최대 MISC ≥ k (k = 2..6)", "미래 5분이 다 있는 행만 남김", "8개 프로세스 병렬, 약 7분"),
+     ul("features.bin (46개)", "sim.py의 승객 (MSSQ, sens, EV 경험), 차량 유형, MISC(t)"),
+     ul("46개 + G8 2개 (NaN) + G10 4개 = 52개", "y_k = 다음 10초 행부터 300초 안 최대 MISC ≥ k (k = 2..6)", "미래 5분이 다 있는 행만 남김", "8개 프로세스 병렬, 약 7분"),
      ul(C("ml/out/runs/v006/dataset.npz") + ": X (286,788×77), y (×5), t, misc, score, future_max, ride_id, trip_id, person_id, k, feature_names, feature_version (103 MB)", C("rides.json") + ": 탑승 1,920회 설정", C("dataset_report.json") + ": 라벨 비율 0.910 / 0.555 / 0.209 / 0.059 / 0.012, K 중앙값 55.2", C("run.json") + ": 종류, git 커밋, feature_order 3, 설명")],
     ["S4 학습", OK + "<br>" + C("python3 ml/train/train.py [--data vNNN] --note \"…\""),
      ul(C("dataset.npz") + " (기본: 가장 최근 데이터셋 버전)", C("feature_order.json") + ": 단조 +1 9개, 그룹 드롭아웃 비율, droppable", C("ml/train/common.py") + ": LightGBM 파라미터 (잎 7, 잎당 1,000행, L2 10, 학습률 0.03, 최소 100회)", C("controller/config/policy.json") + ": 재생용 hold, off"),
@@ -688,7 +687,7 @@ RUNTIME_ROWS = [
      "186,518개 보냄 · 실패 0 · 늦음 중앙값 953 µs, 최대 993 µs"],
     ["P2 feat<br>" + OK, C("p2_feat [--once] [--prio 30]"),
      ul("← P1 SAMPLE, RIDE_*"),
-     ul("→ P3 VEH {seq, t, t_emit_ns, x[71]} 10초마다, 제한 1 s", "→ P3 RIDE_* 그대로", "→ P6 MOTION 10 Hz (" + C("--motion") + ")"),
+     ul("→ P3 VEH {seq, t, t_emit_ns, x[46]} 10초마다, 제한 1 s", "→ P3 RIDE_* 그대로", "→ P6 MOTION 10 Hz (" + C("--motion") + ")"),
      "stdout JSON: received, seq_gaps, veh_sent, veh_fail, push_us_max",
      "받음 186,518 · 빠짐 0 · VEH 186 · 받기 처리 최대 2.5 ms"],
     ["P3 infer<br>" + OK, C("p3_infer --models DIR [--vehicle-type 0|1] [--once] [--prio 20]"),
@@ -715,7 +714,7 @@ FORMAT_ROWS = [
     [C("ml/out/runs/vNNN/run.json"), "JSON", "version, kind (dataset / models / real-…), created, git {commit, dirty}, feature_order_version, note, inputs {dataset: …}, params", "모든 생성 스크립트"],
     [C("ml/out/runs/CURRENT"), "한 줄 텍스트", "배포 중인 모델 버전 (지금 v007)", C("runs.py use") + " → run_pipeline.sh, 리포트 기본값"],
     [C("vNNN/trips/ride_XXXX.bin"), "float64 LE. 머리말 [version=1, n_columns=32, 100] + 100 Hz 행", "t, ax, ay, az (중력 포함, +9.81), gx, gy, gz, speed, accel_pedal, brake_pedal, drive_mode, cruise_on, regen_decel, regen_level, one_pedal, soc, batt_power, motor_torque, dist_next_turn, angle_next_turn, pred_ax_10s, pred_ay_10s, curvature_ahead, cabin_temp, set_temp, fan_level, ac_on, seat_row, seatback_angle, window_open, noise_level, noise_lowfreq_level. 신호가 없으면 그 열 전체 NaN", "S3, build_real → P1, featurize"],
-    ["features.bin", "float64. 머리말 [feature_version, 72] + 10초마다 [t, 71개]", "차량 피처 0~70 (G1~G7, G9). feature_version = 3", "featurize → build_dataset, build_real, tudelft_replay"],
+    ["features.bin", "float64. 머리말 [feature_version, 47] + 10초마다 [t, 46개]", "차량 피처 0~45 (G1, G2, G5, G6, G9). feature_version = 5", "featurize → build_dataset, build_real, tudelft_replay"],
     [C("v006/dataset.npz"), "NumPy (allow_pickle=False로 읽음)", "X 286,788×77, y 286,788×5 (k=2..6), t, misc, score, future_max, ride_id, trip_id, person_id, k, feature_names, feature_version", "S3 → S4, compare, CSV"],
     [C("v008/real_baton.npz"), "NumPy", "dataset.npz와 같은 칸 + tag_das (운전 보조 켜짐 여부, 사람 운전 행만 고를 때)", "build_real → compare, calibrate"],
     [C("v007/models/model_k.txt"), "LightGBM 4.6.0 텍스트 모델", "objective binary, 77 입력, 단조 제약 9개. models.json에 트리 수, sha256", "S4 → P3, AC-01, compare, tudelft_replay"],
@@ -730,7 +729,7 @@ FORMAT_ROWS = [
 MSG_ROWS = [
     ["SAMPLE 0x8001", "P1 → P2", "100 Hz", "seq (u64), Row (double × 32)", "회신 없음 (빈 회신으로 풀어 줌)"],
     ["RIDE_START 0x8002 / RIDE_END 0x8003", "P1 → P2 → P3 → P4", "주행마다", "samples (u64, END에 보낸 개수)", "각 단계 상태 초기화 / 요약 출력"],
-    ["VEH 0x8004", "P2 → P3", "10초", "seq, t (s), t_emit_ns, x (double × 71)", "–"],
+    ["VEH 0x8004", "P2 → P3", "10초", "seq, t (s), t_emit_ns, x (double × 46)", "–"],
     ["PROFILES 0x8005", "P3 → P4", "10초", "요청은 머리말만", "ProfilesReply {n, tol_display, e[9]: id[64], mssq, sens, ev, tol}"],
     ["RISK 0x8006", "P3 → P4", "10초", "seq, t, t_emit_ns, t_infer_ns, n, id[9][64], p[9][5]", "–"],
 ]
@@ -771,7 +770,7 @@ def page():
 <nav>
 <a href="#overview">1. 전체 그림</a><a href="#offline">2. 시뮬레이션 → 학습</a><a href="#validation">3. 검증 · 보정</a><a href="#stages">4. 단계별 입출력</a>
 <a href="#versions">5. 결과 버전</a><a href="#upgrades">6. 고도화 이력</a><a href="#formulas">7. 식과 근거</a><a href="#runtime">8. Pi 런타임</a>
-<a href="#cycle">9. 10초 한 주기</a><a href="#vector">10. 77개 벡터</a><a href="#formats">11. 파일 형식</a><a href="#params">12. 파라미터 흐름</a><a href="#todo">13. 기기 연결</a><a href="#refs">참고 문헌</a>
+<a href="#cycle">9. 10초 한 주기</a><a href="#vector">10. 52개 벡터</a><a href="#formats">11. 파일 형식</a><a href="#params">12. 파라미터 흐름</a><a href="#todo">13. 기기 연결</a><a href="#refs">참고 문헌</a>
 </nav>
 <div class="legend">
 <span><i class="sw" style="background:var(--pc-soft);border-color:var(--pc)"></i>개발 PC 처리</span>
@@ -829,8 +828,8 @@ def page():
 <p>P2가 1,000번째 샘플을 받는 순간부터 P4가 결정을 쓰기까지의 순서입니다. 숫자는 Pi에서 잰 값입니다.</p>
 <div class="fig small">{cycle()}</div>
 
-<h2 id="vector">10. 모델 입력 77개 벡터</h2>
-<p>P2가 차량 피처 71개를 만들고, P3가 폰마다 허용도(G8)와 승객 프로필(G10)을 붙입니다. 학습 데이터(<code>dataset.npz</code>의 X)도 같은 순서입니다. 피처 하나하나의 정의는 <a href="SPEC.md#4-피처-77개-현황">SPEC.md 4장</a>.</p>
+<h2 id="vector">10. 모델 입력 52개 벡터</h2>
+<p>P2가 차량 피처 46개를 만들고, P3가 폰마다 허용도(G8)와 승객 프로필(G10)을 붙입니다. 학습 데이터(<code>dataset.npz</code>의 X)도 같은 순서입니다. 피처 하나하나의 정의는 <a href="SPEC.md#4-피처-52개-현황">SPEC.md 4장</a>.</p>
 <div class="fig small">{vector()}</div>
 
 <h2 id="formats">11. 파일 형식</h2>

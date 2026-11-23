@@ -4,9 +4,9 @@
 namespace mm::proto {
 
 // ---- feature_order.json ----
-constexpr int kFeatureVersion = 3;
-constexpr int kNumFeatures = 77;
-constexpr int kNumVehicle = 71;
+constexpr int kFeatureVersion = 5;
+constexpr int kNumFeatures = 52;
+constexpr int kNumVehicle = 46;
 enum Feat : int {
     F_RMS_X_10S = 0,
     F_RMS_X_1M = 1,
@@ -48,43 +48,18 @@ enum Feat : int {
     F_SPEED_STD_5M = 37,
     F_STOP_RATIO_5M = 38,
     F_SPEED_MAX_5M = 39,
-    F_ACCEL_PEDAL_RMS_1M = 40,
-    F_BRAKE_PEDAL_RMS_1M = 41,
-    F_PEDAL_RATE_RMS_1M = 42,
-    F_DRIVE_MODE = 43,
-    F_CRUISE_ON = 44,
-    F_REGEN_DECEL_RMS_1M = 45,
-    F_REGEN_DECEL_RMS_5M = 46,
-    F_REGEN_LEVEL = 47,
-    F_ONE_PEDAL = 48,
-    F_REGEN_SHARE_5M = 49,
-    F_SOC = 50,
-    F_BATT_POWER_MEAN_1M = 51,
-    F_BATT_POWER_STD_1M = 52,
-    F_MOTOR_TORQUE_RATE_RMS_1M = 53,
-    F_DIST_NEXT_TURN = 54,
-    F_ANGLE_NEXT_TURN = 55,
-    F_PRED_AX_10S = 56,
-    F_PRED_AY_10S = 57,
-    F_CURVATURE_AHEAD = 58,
-    F_CABIN_TEMP = 59,
-    F_SET_TEMP = 60,
-    F_FAN_LEVEL = 61,
-    F_AC_ON = 62,
-    F_SEAT_ROW = 63,
-    F_SEATBACK_ANGLE = 64,
-    F_WINDOW_OPEN = 65,
-    F_NOISE_LEVEL = 66,
-    F_NOISE_LOWFREQ_LEVEL = 67,
-    F_RIDE_TIME = 68,
-    F_REEXPOSURE = 69,
-    F_TIME_SINCE_REST = 70,
-    F_TOL_DISPLAY = 71,
-    F_TOL_PHONE = 72,
-    F_MSSQ = 73,
-    F_SENSITIVITY = 74,
-    F_EV_EXPERIENCE = 75,
-    F_VEHICLE_TYPE = 76,
+    F_CABIN_TEMP = 40,
+    F_FAN_LEVEL = 41,
+    F_SEAT_ROW = 42,
+    F_RIDE_TIME = 43,
+    F_REEXPOSURE = 44,
+    F_TIME_SINCE_REST = 45,
+    F_TOL_DISPLAY = 46,
+    F_TOL_PHONE = 47,
+    F_MSSQ = 48,
+    F_SENSITIVITY = 49,
+    F_EV_EXPERIENCE = 50,
+    F_VEHICLE_TYPE = 51,
 };
 constexpr const char* kFeatureNames[kNumFeatures] = {
     "rms_x_10s",
@@ -127,34 +102,9 @@ constexpr const char* kFeatureNames[kNumFeatures] = {
     "speed_std_5m",
     "stop_ratio_5m",
     "speed_max_5m",
-    "accel_pedal_rms_1m",
-    "brake_pedal_rms_1m",
-    "pedal_rate_rms_1m",
-    "drive_mode",
-    "cruise_on",
-    "regen_decel_rms_1m",
-    "regen_decel_rms_5m",
-    "regen_level",
-    "one_pedal",
-    "regen_share_5m",
-    "soc",
-    "batt_power_mean_1m",
-    "batt_power_std_1m",
-    "motor_torque_rate_rms_1m",
-    "dist_next_turn",
-    "angle_next_turn",
-    "pred_ax_10s",
-    "pred_ay_10s",
-    "curvature_ahead",
     "cabin_temp",
-    "set_temp",
     "fan_level",
-    "ac_on",
     "seat_row",
-    "seatback_angle",
-    "window_open",
-    "noise_level",
-    "noise_lowfreq_level",
     "ride_time",
     "reexposure",
     "time_since_rest",
@@ -166,7 +116,7 @@ constexpr const char* kFeatureNames[kNumFeatures] = {
     "vehicle_type",
 };
 constexpr bool kFeatureEnabled[kNumFeatures] = {
-    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, true, true
+    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, true, true
 };
 
 // ---- trip_format.json ----

@@ -114,7 +114,7 @@ def markdown(r):
     f2 = lambda v: "—" if v is None or not np.isfinite(v) else f"{v:.2f}"
     L = [f"### {r['source']} {r['subset']} vs 시뮬레이터 (탑승 {r['t_max_s']:.0f}초까지 맞춤)", "",
          f"실차 {r['real_rows']}행 (탑승 {r['real_rides']}회), 시뮬레이터 {r['sim_rows_matched']}행. "
-         f"피처 77개 중 채워진 것: 실차 {r['coverage']['real_features_present']}, 시뮬레이터 {r['coverage']['sim_features_present']}.", "",
+         f"피처 {r['coverage']['of']}개 중 채워진 것: 실차 {r['coverage']['real_features_present']}, 시뮬레이터 {r['coverage']['sim_features_present']}.", "",
          "| 피처 | 실차 p10 / p50 / p90 | 시뮬 p10 / p50 / p90 | KS |", "|---|---|---|---|"]
     for f, v in r["features"].items():
         L.append(f"| {f} | {' / '.join(map(f2, v['real']))} | {' / '.join(map(f2, v['sim']))} | {v['ks']:.2f} |")

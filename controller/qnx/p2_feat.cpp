@@ -1,4 +1,4 @@
-// P2 피처: P1의 100 Hz 샘플 → 10초마다 차량 피처 71개를 P3로 (Mac featurize와 같은 FeatureExtractor).
+// P2 피처: P1의 100 Hz 샘플 → 10초마다 차량 피처 46개를 P3로 (Mac featurize와 같은 FeatureExtractor).
 //   p2_feat [--once] [--motion] [--prio P]
 // 샘플은 받자마자 회신해 P1을 풀어 준다. 주행 경계(RIDE_START/END)는 같은 순서로 P3에 넘긴다.
 // --motion: 10샘플(100 ms, constants.json mot_period_ms)마다 P6(mermaid_p6)에 MOTION을 보낸다.

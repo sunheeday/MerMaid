@@ -54,7 +54,7 @@ def test_replay_hold_and_off():
 
 def test_group_dropout_never_touches_protected_columns():
     rng = np.random.default_rng(0)
-    X = rng.normal(size=(2000, 77))
+    X = rng.normal(size=(2000, len(C.NAMES)))
     ride = np.repeat(np.arange(100), 20)
     Xd = C.group_dropout(X, ride, rng)
     assert not np.isnan(Xd[:, C.NEVER]).any()
@@ -63,8 +63,8 @@ def test_group_dropout_never_touches_protected_columns():
         frac = np.isnan(Xd[:, cols]).all(axis=1).mean()
         assert abs(frac - C.FO["groups"][g]["dropout"]) < 0.15, g
     # 같은 탑승 안에서는 그룹이 같이 지워진다
-    g3b = np.isnan(Xd[:, C.DROPPABLE["G3b"]]).all(axis=1).reshape(100, 20)
-    assert np.all(g3b.all(axis=1) | ((~g3b).sum(axis=1) >= 15))
+    g5 = np.isnan(Xd[:, C.DROPPABLE["G5"]]).all(axis=1).reshape(100, 20)
+    assert np.all(g5.all(axis=1) | ((~g5).sum(axis=1) >= 15))
 
 
 def test_monotone_fix():

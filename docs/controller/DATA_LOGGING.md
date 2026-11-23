@@ -19,7 +19,7 @@
 - **로그는 제어를 절대 막지 않는다.** P7이 없거나 느리거나 죽어도 P1~P6의 동작과 주기 시간은 같다 (§6-1 시험으로 확인).
 - 제어 경로에서 디스크 I/O를 하지 않는다. SD 카드 쓰기는 P7의 낮은 우선순위 스레드만 한다.
 - 차 안은 네트워크 없이 완결된다. 서버로 옮기는 일은 주행이 끝난 뒤에 따로 한다.
-- 보드가 실제로 본 값(추론 입력 77칸)과 다시 계산할 수 있는 원본(IMU 100 Hz)을 둘 다 남긴다.
+- 보드가 실제로 본 값(추론 입력 52칸)과 다시 계산할 수 있는 원본(IMU 100 Hz)을 둘 다 남긴다.
 
 **이번 범위가 아닌 것:** 차량 CAN(G2~G7 신호), 차에서 서버로 직접 업로드(v2), Claude 루프 구현, 대시보드 화면.
 
@@ -74,7 +74,7 @@ P7도 다른 프로세스와 같은 `controller/` CMake 빌드, `ipc.hpp`, 보�
 
 ### 3-2. 지금(로그 없음) 디스크에 남는 것
 
-`cycles.csv`(10초마다 확률 p2~p6와 기기 ON/OFF, 실행마다 `"w"`로 덮어씀), `state/tolerance/*.json`, `state/profiles/*.json`, 실행 요약 `p*.out`뿐이다. 원본 샘플과 피처 77칸은 남지 않는다. 메모리 사용량은 몇 시간을 돌려도 늘지 않는다(P1 `late_us`는 100만 개, 4 MB에서 멈춤. LIVE에서는 이 벡터를 쓰지 않고 통계만 낸다).
+`cycles.csv`(10초마다 확률 p2~p6와 기기 ON/OFF, 실행마다 `"w"`로 덮어씀), `state/tolerance/*.json`, `state/profiles/*.json`, 실행 요약 `p*.out`뿐이다. 원본 샘플과 피처 52칸은 남지 않는다. 메모리 사용량은 몇 시간을 돌려도 늘지 않는다(P1 `late_us`는 100만 개, 4 MB에서 멈춤. LIVE에서는 이 벡터를 쓰지 않고 통계만 낸다).
 
 ## 4. P1 LIVE (MPU-6050)
 
@@ -241,7 +241,7 @@ struct LogInfer {
     char model[16];                         // ml/runs CURRENT 버전 (예: "v007")
     uint32_t n;                             // 행 수 (폰 수, 없으면 "default" 1행)
     char id[kMaxPhones][kIdLen];
-    double x[kMaxPhones][proto::kNumFeatures];   // P3에 들어간 77칸 그대로 (NaN 포함)
+    double x[kMaxPhones][proto::kNumFeatures];   // P3에 들어간 52칸 그대로 (NaN 포함)
     Risk p[kMaxPhones];                     // p2..p6, 개인 보정 전 (모델 출력 그대로)
     double cal_a[kMaxPhones], cal_b[kMaxPhones];  // 적용한 개인 보정 (§12, 없으면 1, 0)
 };
@@ -305,6 +305,7 @@ struct LogSym {
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 -- schema_version, ride_id, device_id, session, ride_no, source ('live'|'replay'),
 -- columns (JSON: samples.data의 칸 이름, LIVE = ["ax","ay","az","gx","gy","gz"]),
+-- feature_version (infer.x 칸의 순서: protocol/feature_order.json version, v5부터 52칸),
 -- imu_mount (JSON R), imu_bias_dps (JSON), accel_range_g, gyro_range_dps,
 -- model_version (첫 LOG_INFER), thresholds·policy_json (설정 파일 전체), git_commit (빌드할 때 git describe),
 -- sample_rate_hz, mono_start_ns, mono_end_ns, wall_start (2024년 이후 시계일 때만), p1_samples (RIDE_END의 보낸 수),
@@ -322,7 +323,7 @@ CREATE TABLE samples (            -- 1초(100샘플) 묶음
 CREATE TABLE infer (
   seq INTEGER NOT NULL, t REAL NOT NULL, mono_ns INTEGER NOT NULL,
   phone TEXT NOT NULL,
-  x  BLOB NOT NULL,               -- float64 LE × 77 (feature_order 순서, NaN 포함)
+  x  BLOB NOT NULL,               -- float64 LE × n_features (meta.feature_version의 feature_order 순서, NaN 포함)
   p2 REAL, p3 REAL, p4 REAL, p5 REAL, p6 REAL,   -- 개인 보정 전 (재학습은 이 값으로)
   cal_a REAL NOT NULL DEFAULT 1, cal_b REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (seq, phone)
@@ -346,9 +347,9 @@ CREATE INDEX label_phone ON label(phone, t);
 | 표 | 시간당 |
 |---|---|
 | samples (6칸 × 4바이트 × 100 Hz) | 8.6 MB |
-| infer (폰 9대 최대, 77 × 8바이트 + 확률) | 2.3 MB |
+| infer (폰 9대 최대, 52 × 8바이트 + 확률) | 1.6 MB |
 | 나머지 | < 0.1 MB |
-| **합계** | **약 11 MB** (32 GB SD면 수천 시간) |
+| **합계** | **약 10 MB** (32 GB SD면 수천 시간) |
 
 - 60초마다 `statvfs`로 남은 공간을 본다.
   - `--min-free-mb`(1 GB) 아래: `.uploaded`가 있는 가장 오래된 주행부터 지운다.
@@ -442,7 +443,7 @@ CREATE TABLE label (id INTEGER PRIMARY KEY, ride_id TEXT, t REAL, phone TEXT, mi
 CREATE TABLE event (id INTEGER PRIMARY KEY, ride_id TEXT, t REAL, sender TEXT, kind TEXT, value TEXT);  -- id: 같은 t 안의 순서
 ```
 
-원본 샘플과 77칸 입력은 중앙 DB에 복사하지 않는다. 주행 파일(저장소 `rides/<ride_id>.sqlite`, 읽기 전용)에 그대로 두고 필요할 때 읽는다.
+원본 샘플과 모델 입력(infer.x)은 중앙 DB에 복사하지 않는다. 주행 파일(저장소 `rides/<ride_id>.sqlite`, 읽기 전용)에 그대로 두고 필요할 때 읽는다.
 그래서 **주행 파일이 원본이고 중앙 DB는 색인**이다. DB를 잃거나 표 모양을 바꾸거나 SQLite → PostgreSQL로 옮길 때는
 새 DB를 가리키고 `python -m server.reindex`로 다시 채운다 (이미 있는 주행은 건너뜀. `received_at`은 다시 채운 시각이 된다).
 예전 모양의 표가 남아 있으면 서버가 시작하지 않고 reindex하라고 알린다.
@@ -486,8 +487,10 @@ docker compose up -d --build
 curl localhost:8080/api/health
 docker compose exec api python -m server.reindex --dry-run
 docker compose run --rm worker python -m server.storage pull --dest ml/data/raw/mermaid_rides
-docker compose run --rm worker python3 ml/realdata/build_real.py --source mermaid --root ml/data/raw/mermaid_rides
+docker compose run --rm worker python3 ml/personal/fit_calib.py --root ml/data/raw/mermaid_rides
 ```
+
+(`build_real.py --source mermaid`는 §10, 6단계에서 생기면 같은 방식으로 `--root ml/data/raw/mermaid_rides`를 준다.)
 
 PostgreSQL + S3로 API 시험 돌리기 (빈 DB와 버킷 하나, 시험마다 표를 지우고 새 prefix를 쓴다):
 

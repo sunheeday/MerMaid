@@ -4,8 +4,8 @@
 
 입력은 배포 중인 모델(ml/runs.py CURRENT)의 학습 데이터셋 버전. 출력은 그 버전 폴더의 csv/ (git 제외):
   rides.csv              탑승 1,920회의 설정 (승객, 좌석, 회생제동, 설문/실제 민감도, 최고 MISC)
-  dataset_10s.csv        학습 데이터 전체: 10초마다 한 행, 정답(MISC, Oman 점수, 앞으로 5분 최고)과 피처 77개
-  features.csv           피처 77개 설명과 비어 있는(NaN) 비율, 비어 있는 이유
+  dataset_10s.csv        학습 데이터 전체: 10초마다 한 행, 정답(MISC, Oman 점수, 앞으로 5분 최고)과 피처 전부 (feature_order.json)
+  features.csv           피처 설명과 비어 있는(NaN) 비율, 비어 있는 이유
   trips_100hz/ride_XXXX.csv  탑승 8회의 100 Hz 센서 원본 (그 버전의 trips/*.bin)
 빈 칸은 값이 없음(NaN)이라는 뜻입니다.
 """
@@ -33,11 +33,7 @@ WHY = {
     "time_since_rest": "휴식(180초 연속 정차) 뒤 지난 시간. 시뮬레이터 정차는 5~45초라 휴식이 한 번도 없어 항상 비어 있음",
     "reexposure": "휴식 뒤 다시 출발했는지. 휴식이 없어서 항상 0",
     "event_irregularity_5m": "5분 안 급가속·급제동·급회전 간격의 변동. 이벤트가 2개 미만이면 비어 있음",
-    "dist_next_turn": "경로의 마지막 회전을 지난 뒤에는 다음 회전이 없어 비어 있음",
-    "angle_next_turn": "dist_next_turn과 같은 이유",
-    "regen_share_5m": "EV 전용 (아래 G3b와 같음). 감속이 없던 5분도 비어 있음",
 }
-G3B = "EV 전용 CAN 신호. 내연기관 차량 탑승(약 40%)에는 없어서 비어 있음"
 
 
 def main():
@@ -63,7 +59,7 @@ def main():
         col = X[:, i]
         nan = float(np.isnan(col).mean())
         const = nan < 1 and np.nanstd(col) == 0
-        why = WHY.get(f["name"], G3B if f["group"] == "G3b" and nan > 0 else "")
+        why = WHY.get(f["name"], "")
         rows.append({"index": i, "name": f["name"], "group": f["group"], "group_desc": FO["groups"][f["group"]]["desc"],
                      "unit": f.get("unit", ""), "window": f.get("window", ""), "enabled": f["enabled"],
                      "empty_share": round(nan, 4), "always_same_value": bool(const), "why_empty": why})

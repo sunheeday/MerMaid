@@ -33,7 +33,7 @@ TARGETS = {"1": ("detection_rate", ">=", 0.85),             # 송풍: 85% 이상
            "2": ("false_activations_per_hour", "<=", 0.50),  # 디스플레이: 시간당 오경보 0.5회 이하인 가장 낮은 문턱
            "3": ("false_activations_per_hour", "<=", 0.25)}  # 폰: 0.25회 이하
 GRID = np.round(np.arange(0.05, 0.9501, 0.01), 2)
-OPTIONAL = ["G2", "G3a", "G3b", "G4", "G5", "G6", "G7", "G10"]
+OPTIONAL = [g for g in C.GROUPS if C.FO["groups"][g]["dropout"] > 0 and g != "G8"]  # 드롭아웃이 있는 그룹 (G8은 항상 NaN)
 EVAL_K = [3, 4]  # Tier 입력. 강건성은 이 둘만 본다
 DEFAULT = json.loads((C.REPO / "protocol" / "constants.json").read_text())["mssq"]["default_profile"]
 

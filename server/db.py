@@ -1,6 +1,6 @@
 """중앙 DB (docs/controller/DATA_LOGGING.md §9-1). 색인과 10초 기록만 둔다.
 
-원본 샘플과 77칸 입력은 주행 파일(저장소 rides/<ride_id>.sqlite)에 그대로 남는다. 그래서 이 DB는 주행 파일에서 언제든
+원본 샘플과 모델 입력(infer.x)은 주행 파일(저장소 rides/<ride_id>.sqlite)에 그대로 남는다. 그래서 이 DB는 주행 파일에서 언제든
 다시 만들 수 있다 (python -m server.reindex).
 
 SQLAlchemy Core. 연결은 DATABASE_URL 하나로 정한다:

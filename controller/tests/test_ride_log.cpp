@@ -264,10 +264,11 @@ static void test_normal_ride() {
     CHECK(q1(f, "SELECT p6 FROM infer WHERE seq=0 AND phone='phone-b'") == "NULL", "NaN prob stored as NULL");
     CHECK(q1(f, "SELECT p2 FROM infer WHERE seq=0 AND phone='phone-a'") == "0.9", "p2");
     std::vector<char> x = blob(f, "SELECT x FROM infer WHERE seq=0 AND phone='phone-b'");
-    CHECK(x.size() == proto::kNumFeatures * sizeof(double), "x blob 77 doubles");
+    CHECK(x.size() == proto::kNumFeatures * sizeof(double), "x blob kNumFeatures doubles");
     if (x.size() == proto::kNumFeatures * sizeof(double)) {
         const double* v = reinterpret_cast<const double*>(x.data());
-        CHECK(v[0] == 100.5 && std::isnan(v[3]) && v[76] == 176.5, "x values kept incl. NaN");
+        constexpr int last = proto::kNumFeatures - 1;
+        CHECK(v[0] == 100.5 && std::isnan(v[3]) && v[last] == 100 + last + 0.5, "x values kept incl. NaN");
     }
     CHECK(q1(f, "SELECT count(*) FROM decision") == "2", "decision rows");
     CHECK(q1(f, "SELECT on_ || tier || changed FROM decision WHERE device='airflow-01'") == "111", "decision values");

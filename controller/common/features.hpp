@@ -1,4 +1,4 @@
-// P2 피처 추출: 100 Hz 샘플(trip_format.json 한 행) → 10초마다 차량 피처 71개.
+// P2 피처 추출: 100 Hz 샘플(trip_format.json 한 행) → 10초마다 차량 피처 46개 (protocol_gen.hpp의 kNumVehicle).
 // 표준 C++17만 사용. Mac의 tools/featurize와 Pi의 P2가 이 코드를 그대로 쓴다.
 // 피처 정의: controller/common/FEATURES.md
 #pragma once
@@ -59,7 +59,7 @@ private:
     Oman oman_;
 
     // 100 Hz 채널 (최대 5분)
-    enum Ch { AWX, AWY, AWZ, JX, JY, GZ, RAX, RAZ, SPEED, APED, BPED, PRATE, REGEN, DECEL, BPOW, TRATE, NCH };
+    enum Ch { AWX, AWY, AWZ, JX, JY, GZ, RAX, RAZ, SPEED, NCH };
     std::array<Ring, NCH> ch_;
 
     Row last_{};

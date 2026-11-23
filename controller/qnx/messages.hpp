@@ -14,7 +14,7 @@ enum Type : uint16_t {
     SAMPLE = 0x8001,     // P1 -> P2, 100 Hz
     RIDE_START = 0x8002, // P1 -> P2, P4
     RIDE_END = 0x8003,   // P1 -> P2, P4
-    VEH = 0x8004,        // P2 -> P3, 10초마다 차량 피처 71개
+    VEH = 0x8004,        // P2 -> P3, 10초마다 차량 피처 46개
     PROFILES = 0x8005,   // P3 -> P4, 등록된 폰과 프로필 요청 (회신: ProfilesReply)
     RISK = 0x8006,       // P3 -> P4, 폰마다 P(>=2..6)
 };

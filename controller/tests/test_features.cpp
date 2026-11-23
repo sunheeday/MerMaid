@@ -148,7 +148,7 @@ static void test_event_hysteresis() {
 static void test_missing_groups_are_nan() {
     FeatureExtractor fx;
     auto v = run(fx, 30, [](double t) { return imu_row(t, std::sin(t), std::cos(t)); });
-    for (int i = F_SPEED_MEAN_10S; i <= F_NOISE_LOWFREQ_LEVEL; i++)
+    for (int i = F_SPEED_MEAN_10S; i <= F_SEAT_ROW; i++)
         CHECK(std::isnan(v[i]), "%s should be NaN without vehicle signals", kFeatureNames[i]);
     CHECK(std::isnan(v[F_SVC_CONFLICT]), "svc disabled");
     for (int i = F_RMS_X_10S; i <= F_SENSITIZATION; i++)

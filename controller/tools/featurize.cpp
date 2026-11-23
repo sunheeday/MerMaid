@@ -1,6 +1,6 @@
 // trip.bin → features.bin. 학습(Mac)과 P2(Pi)가 같은 FeatureExtractor를 쓰게 하는 명령행 도구.
 //   featurize <trip.bin> <features.bin> [--oman-k K]
-// 출력: float64 [feature_version, n_columns] 뒤에 10초마다 한 행 [t, 차량 피처 71개]
+// 출력: float64 [feature_version, n_columns] 뒤에 10초마다 한 행 [t, 차량 피처 46개]
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

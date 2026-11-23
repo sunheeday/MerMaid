@@ -114,22 +114,12 @@ bool FeatureExtractor::push(const Row& r) {
     else if (in_turn_ && ay_abs < kHardTurnAbsY - kEventRearmMargin) in_turn_ = false;
     while (!events_.empty() && events_.front().t <= t_ - 300.0) events_.pop_front();
 
-    // 차량 신호 파생값
     const double v = r[C_SPEED];
-    const double dv = (has_prev_ && !std::isnan(v)) ? (v - last_[C_SPEED]) / dt_ : (std::isnan(v) ? NaN : 0.0);
-    const double ped = r[C_ACCEL_PEDAL] - r[C_BRAKE_PEDAL];
-    const double prate = has_prev_ ? (ped - (last_[C_ACCEL_PEDAL] - last_[C_BRAKE_PEDAL])) / dt_ : (std::isnan(ped) ? NaN : 0.0);
-    const double trate = has_prev_ ? (r[C_MOTOR_TORQUE] - last_[C_MOTOR_TORQUE]) / dt_
-                                   : (std::isnan(r[C_MOTOR_TORQUE]) ? NaN : 0.0);
 
     ch_[AWX].push(wx); ch_[AWY].push(wy); ch_[AWZ].push(wz);
     ch_[JX].push(jx); ch_[JY].push(jy); ch_[GZ].push(r[C_GZ]);
     ch_[RAX].push(r[C_AX]); ch_[RAZ].push(r[C_AZ]);
     ch_[SPEED].push(v);
-    ch_[APED].push(r[C_ACCEL_PEDAL]); ch_[BPED].push(r[C_BRAKE_PEDAL]); ch_[PRATE].push(prate);
-    ch_[REGEN].push(r[C_REGEN_DECEL]);
-    ch_[DECEL].push(std::isnan(dv) ? NaN : std::max(-dv, 0.0));
-    ch_[BPOW].push(r[C_BATT_POWER]); ch_[TRATE].push(trate);
 
     // 휴식: 차속이 있으면 정차, 없으면 수평 가중 가속도가 작은 상태가 3분
     const bool still = std::isnan(v) ? (h < kRestStillAccel) : (v < kStopSpeed);
@@ -210,44 +200,10 @@ void FeatureExtractor::emit() {
         o[F_STOP_RATIO_5M] = m ? double(stop) / m : NaN;
         o[F_SPEED_MAX_5M] = maxv(ch_[SPEED], W5M);
     }
-    // ---- G3a ----
-    if (!std::isnan(r[C_ACCEL_PEDAL])) {
-        o[F_ACCEL_PEDAL_RMS_1M] = rms(ch_[APED], W1M);
-        o[F_BRAKE_PEDAL_RMS_1M] = rms(ch_[BPED], W1M);
-        o[F_PEDAL_RATE_RMS_1M] = rms(ch_[PRATE], W1M);
-    }
-    o[F_DRIVE_MODE] = r[C_DRIVE_MODE];
-    o[F_CRUISE_ON] = r[C_CRUISE_ON];
-    // ---- G3b ----
-    if (!std::isnan(r[C_REGEN_DECEL])) {
-        o[F_REGEN_DECEL_RMS_1M] = rms(ch_[REGEN], W1M);
-        o[F_REGEN_DECEL_RMS_5M] = rms(ch_[REGEN], W5M);
-        const auto rg = stats(ch_[REGEN], W5M), de = stats(ch_[DECEL], W5M);
-        if (de.n && de.sum > 1e-6) o[F_REGEN_SHARE_5M] = std::min(1.0, rg.sum / de.sum);
-    }
-    o[F_REGEN_LEVEL] = r[C_REGEN_LEVEL];
-    o[F_ONE_PEDAL] = r[C_ONE_PEDAL];
-    o[F_SOC] = r[C_SOC];
-    if (!std::isnan(r[C_BATT_POWER])) {
-        o[F_BATT_POWER_MEAN_1M] = mean(ch_[BPOW], W1M);
-        o[F_BATT_POWER_STD_1M] = stdev(ch_[BPOW], W1M);
-    }
-    if (!std::isnan(r[C_MOTOR_TORQUE])) o[F_MOTOR_TORQUE_RATE_RMS_1M] = rms(ch_[TRATE], W1M);
-    // ---- G4 ~ G7: 현재 값 ----
-    o[F_DIST_NEXT_TURN] = r[C_DIST_NEXT_TURN];
-    o[F_ANGLE_NEXT_TURN] = r[C_ANGLE_NEXT_TURN];
-    o[F_PRED_AX_10S] = r[C_PRED_AX_10S];
-    o[F_PRED_AY_10S] = r[C_PRED_AY_10S];
-    o[F_CURVATURE_AHEAD] = r[C_CURVATURE_AHEAD];
+    // ---- G5, G6: 현재 값 ----
     o[F_CABIN_TEMP] = r[C_CABIN_TEMP];
-    o[F_SET_TEMP] = r[C_SET_TEMP];
     o[F_FAN_LEVEL] = r[C_FAN_LEVEL];
-    o[F_AC_ON] = r[C_AC_ON];
     o[F_SEAT_ROW] = r[C_SEAT_ROW];
-    o[F_SEATBACK_ANGLE] = r[C_SEATBACK_ANGLE];
-    o[F_WINDOW_OPEN] = r[C_WINDOW_OPEN];
-    o[F_NOISE_LEVEL] = r[C_NOISE_LEVEL];
-    o[F_NOISE_LOWFREQ_LEVEL] = r[C_NOISE_LOWFREQ_LEVEL];
     // ---- G9 ----
     o[F_RIDE_TIME] = t_ - t0_;
     o[F_REEXPOSURE] = reexp_ ? 1.0 : 0.0;

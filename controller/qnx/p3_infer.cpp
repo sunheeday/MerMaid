@@ -1,4 +1,4 @@
-// P3 추론: 차량 피처 71개 + 폰마다 승객 피처 → 77개 벡터 → LightGBM 5개 → RISK를 P4로.
+// P3 추론: 차량 피처 46개 + 폰마다 승객 피처 → 52개 벡터 → LightGBM 5개 → RISK를 P4로.
 //   p3_infer --models DIR [--vehicle-type 0|1] [--once] [--prio P]
 // 주기마다 P4에 등록된 폰과 프로필을 묻는다 (PROFILES). 폰이 없으면 기본 프로필(PRD §P3:
 // MSSQ 12.90, 민감도 1.0, constants.json default_profile) "default" 한 행만 추론한다 (공용 기기
@@ -6,7 +6,7 @@
 // feature_order에서 enabled=false인 칸(v1: svc_conflict, G8 허용도)은 학습 때처럼 NaN.
 // 개인 보정: PROFILES 회신의 cal_a, cal_b로 p' = σ(a·logit(p) + b)를 RISK에 적용한다 (calib.hpp, DATA_LOGGING §12-5).
 // 기본 프로필과 a=1, b=0은 그대로. LOG_INFER에는 보정 전 확률과 적용한 a, b를 남긴다 (보정을 다시 맞출 때 입력).
-// RISK를 보낸 뒤 P7에 LOG_INFER (77칸 입력과 확률, 2 ms 시간 초과). P7이 없거나 느려도 log_fail만 센다.
+// RISK를 보낸 뒤 P7에 LOG_INFER (52칸 입력과 확률, 2 ms 시간 초과). P7이 없거나 느려도 log_fail만 센다.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>

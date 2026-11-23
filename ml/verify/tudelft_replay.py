@@ -148,12 +148,7 @@ def main():
             path = pathlib.Path(td) / "trip.bin"
             tripio.write_trip(path, make_trip(s["acc"], v0, rng))
             t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
-            X = np.full((len(t), 77), np.nan)
-            X[:, :71] = Xv
-            X[:, 73], X[:, 74], X[:, 76] = s["mssq"], float(oman.sensitivity(s["mssq"])), 0.0
-            for i, f in enumerate(tripio.FEATURES["features"]):
-                if not f["enabled"]:
-                    X[:, i] = np.nan
+            X = tripio.full_vector(Xv, s["mssq"], float(oman.sensitivity(s["mssq"])), np.nan, 0.0)
             Pm = monotone_fix(np.column_stack([models[k].predict(X) for k in KS]))
             tr, yr = s["tr"], s["yr"]
             win = lambda tt: yr[(tr > tt) & (tr <= tt + 300)]
