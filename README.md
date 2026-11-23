@@ -337,9 +337,10 @@ Training runs on a development PC (Python, LightGBM). The trained model files ar
 │   ├── tests/               # unit tests and C++ vs Python golden tests
 │   └── data/                # raw datasets and trip files, not committed (see ml/data/README.md)
 │
-└── server/                  # log server (FastAPI + SQLite)
+└── server/                  # log server (FastAPI; SQLite or PostgreSQL, folder or S3)
     ├── app.py, db.py, ridefile.py
-    ├── .env.example         # settings (API key, data folder, upload limit)
+    ├── storage.py, reindex.py  # ride file storage (file:// or s3://), rebuild the index from ride files
+    ├── Dockerfile           # api image; compose.yaml and .env.example at the repo root
     ├── tools/               # collect_logs.py: car -> server upload, calibration push
     └── tests/
 ```

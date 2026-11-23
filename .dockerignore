@@ -1,0 +1,15 @@
+# 빌드 맥락은 저장소 루트. 이미지에 필요한 폴더만 넣는다 (데이터·결과·빌드 산출물 제외)
+*
+!server/
+!protocol/
+!controller/
+!ml/
+ml/data/
+ml/out/
+ml/verify/out/
+server/data/
+**/__pycache__/
+**/.pytest_cache/
+**/*.py[cod]
+**/.env
+**/build/

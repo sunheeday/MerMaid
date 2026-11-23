@@ -25,8 +25,12 @@ def test_upload_new_then_same_then_conflict(client, tmp_path):
     assert body["n_samples"] == 2100 and body["n_hold"] == 2 and body["n_cycles"] == 2 and body["n_labels"] == 1
     assert body["duration_s"] == pytest.approx(21.0) and body["phones"] == ["phone-a"]
     assert body["health"]["hold_samples"] == 2 and body["model_version"] == "v007"
-    stored = client.app.state.data / "rides" / "pi01-00001-001.sqlite"
-    assert stored.read_bytes() == f.read_bytes() and not (stored.stat().st_mode & 0o222), "kept read-only, unchanged"
+    st = client.app.state.storage
+    assert st.keys() == ["rides/pi01-00001-001.sqlite"]
+    stored = st.local_path("rides/pi01-00001-001.sqlite")
+    assert stored.read_bytes() == f.read_bytes(), "kept unchanged"
+    if st.url.startswith("file:"):
+        assert not (stored.stat().st_mode & 0o222), "kept read-only"
     assert list((client.app.state.data / "incoming").iterdir()) == [], "no leftovers in incoming"
 
     r = upload(client, f)
@@ -60,7 +64,7 @@ def test_upload_rejected(client, tmp_path, case):
     r = upload(client, f, **kw)
     assert r.status_code == 422, (case, r.status_code, r.text)
     assert client.get("/api/rides", headers=H).json() == []
-    assert list((client.app.state.data / "rides").iterdir()) == []
+    assert client.app.state.storage.keys() == []
     assert list((client.app.state.data / "incoming").iterdir()) == []
 
 
