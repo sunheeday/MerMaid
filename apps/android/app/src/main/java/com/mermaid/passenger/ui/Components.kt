@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -74,9 +75,13 @@ fun GhostButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit
 }
 
 @Composable
-fun SmallButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, shape = RoundedCornerShape(12.dp), modifier = modifier.height(40.dp)) {
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+fun SmallButton(text: String, modifier: Modifier = Modifier, tight: Boolean = false, onClick: () -> Unit) {
+    // tight: 한 줄에 세 개 이상 놓을 때. 모양·높이는 같고 좌우 여백과 글자만 조금 줄여 글자가 잘리지 않게 한다
+    OutlinedButton(
+        onClick = onClick, shape = RoundedCornerShape(12.dp), modifier = modifier.height(40.dp),
+        contentPadding = if (tight) PaddingValues(horizontal = 6.dp) else ButtonDefaults.ContentPadding,
+    ) {
+        Text(text, fontSize = if (tight) 13.sp else 14.sp, fontWeight = FontWeight.Bold, maxLines = if (tight) 1 else Int.MAX_VALUE, softWrap = !tight)
     }
 }
 

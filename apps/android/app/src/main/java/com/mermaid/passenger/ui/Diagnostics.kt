@@ -1,6 +1,11 @@
 package com.mermaid.passenger.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.location.LocationManager
 import android.os.SystemClock
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,9 +48,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mermaid.passenger.BuildConfig
 import com.mermaid.passenger.data.Cmd
+import com.mermaid.passenger.data.GpsStats
 import com.mermaid.passenger.data.LinkState
+import com.mermaid.passenger.data.Prefs
 import com.mermaid.passenger.data.Repo
+import com.mermaid.passenger.service.GpsFeed
 import com.mermaid.passenger.service.LinkService
+import com.mermaid.passenger.service.fmtHz
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -57,6 +66,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     val live by Repo.live.collectAsState()
     val st by Repo.stats.collectAsState()
     val log by Repo.log.collectAsState()
+    val gps by Repo.gps.collectAsState()
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) { while (true) { delay(200); now = SystemClock.elapsedRealtime() } }
     val listState = rememberLazyListState()
@@ -95,12 +105,15 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     Kv("HB 보냄/받음", "${st.hbTx} / ${st.hbRx ?: "-"}")
                     Kv("TX / RX", "${st.tx} / ${st.rx}")
                     Kv("SCR", "on=${st.scrOn} · att=${st.scrAtt}")
+                    Kv("RISK 받음", st.riskRx.toString())
                 }
             }
         }
+        GpsCard(gps, now)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SmallButton("다시 연결", Modifier.weight(1f)) { Repo.send(Cmd.Reconnect) }
-            SmallButton("로그 지우기", Modifier.weight(1f)) { Repo.log.value = emptyList() }
+            SmallButton("다시 연결", Modifier.weight(1f), tight = true) { Repo.send(Cmd.Reconnect) }
+            SmallButton("로그 복사", Modifier.weight(1f), tight = true) { copyLog(ctx) }
+            SmallButton("로그 지우기", Modifier.weight(1f), tight = true) { Repo.log.value = emptyList() }
         }
         if (BuildConfig.DEBUG) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SmallButton("데모 모드", Modifier.weight(1f)) { LinkService.start(ctx, LinkService.ACTION_DEMO) }
@@ -116,13 +129,59 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     color = when (l.dir) { '→' -> Color(0xFF1660B0); '←' -> Color(0xFF1F7A52); '!' -> MM.Bad; else -> MaterialTheme.colorScheme.onSurfaceVariant })
             }
         }
-        Muted("로그는 이 폰에만 저장되고 밖으로 보내지 않아요. 최근 300줄 · MOT·HB는 개수만.")
+        Muted("로그는 이 폰에만 저장돼요 (복사는 직접 누를 때만). 최근 300줄 · MOT·HB·GPS는 개수만, RISK는 연결마다 첫 줄만.")
         Spacer(Modifier.height(4.dp))
     }
 }
 
+/**
+ * GPS 상태: 권한 · 수신 여부 · 실제 수신 주기(이 폰이 GPS를 얼마나 자주 주는지) · 마지막 속도·정확도.
+ * 대시보드에서도 쓴다
+ */
 @Composable
-private fun Kv(k: String, v: String, color: Color? = null) {
+fun GpsCard(gps: GpsStats, now: Long) {
+    val ctx = LocalContext.current
+    val locOn = remember(now / 2000) { ctx.getSystemService(LocationManager::class.java)?.isLocationEnabled != false }
+    val age = if (gps.lastAt > 0) (now - gps.lastAt) / 1000f else null
+    val stale = gps.running && (age == null || age > 3f)
+    MMCard {
+        Row2 {
+            Text("GPS", style = MaterialTheme.typography.titleMedium)
+            Text(if (gps.running) (if (stale) "수신 없음" else "수신 중") else "꺼짐", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                color = when { !gps.running -> MaterialTheme.colorScheme.onSurfaceVariant; stale -> MM.Wait; else -> MM.Ok })
+        }
+        Spacer(Modifier.height(6.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            val perm = GpsFeed.permLabel(ctx)
+            Kv("권한", perm + if (!locOn) " · 폰 위치 꺼짐" else "", if (perm != "정확한 위치 허용" || !locOn) MM.Wait else null)
+            Kv("상태", gps.state)
+            Kv("수신 주기", if (!gps.running) "—" else "${fmtHz(gps.hz)} (최근 10초) · 평균 ${fmtHz(gps.avgHz(now))}")
+            Kv("마지막", if (age == null) "—" else listOfNotNull(
+                gps.spd?.let { String.format(Locale.US, "%.1f km/h", it * 3.6) } ?: "속도 없음",
+                gps.acc?.let { String.format(Locale.US, "±%.0f m", it) },
+                String.format(Locale.US, "%.1fs 전", age),
+            ).joinToString(" · "), if (stale) MM.Wait else null)
+            Kv("받음 / 보냄", "${gps.fixes} / ${gps.sent}" + if (gps.noSpeed > 0) " (속도 없음 ${gps.noSpeed})" else "")
+        }
+    }
+}
+
+/** 로그 전체를 화면에 보이는 형식 그대로 클립보드에. 첫 줄은 기기 ID 앞 8자리 · 앱 버전 · 연결 상태 */
+fun copyLog(ctx: Context) {
+    val lines = Repo.log.value
+    if (lines.isEmpty()) { Toast.makeText(ctx, "복사할 로그가 없어요", Toast.LENGTH_SHORT).show(); return }
+    val live = Repo.live.value
+    val state = when (live.link) { LinkState.CONNECTED -> "연결됨"; LinkState.LOST -> "신호 없음"; LinkState.CONNECTING -> "연결 중"; else -> "대기" }
+    val via = listOf(live.kind, Repo.stats.value.name).filter { it.isNotEmpty() }.distinct().joinToString(" ")
+    val header = "MerMaid RF 로그 · 기기 ${Prefs.settings.value.devId.take(8)} · 앱 ${BuildConfig.VERSION_NAME} · $state" +
+        if (via.isEmpty()) "" else " ($via)"
+    val body = lines.joinToString("\n") { "${it.time} ${it.dir} ${it.text}" }
+    ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("MerMaid RF 로그", "$header\n$body\n"))
+    Toast.makeText(ctx, "로그 ${lines.size}줄 복사됨", Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+fun Kv(k: String, v: String, color: Color? = null) {
     Row2 {
         Text(k, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(v, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = color ?: MaterialTheme.colorScheme.onSurface)
