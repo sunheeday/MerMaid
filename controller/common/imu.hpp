@@ -32,6 +32,7 @@ constexpr uint8_t WHO_AM_I = 0x75;
 }  // namespace reg
 
 constexpr uint8_t kWhoAmI = 0x68;
+constexpr uint8_t kWhoAmIClone = 0x72;  // 보드에 달린 호환 칩. 레지스터 맵과 FIFO 동작이 같음 (bringup/README.md, 2026-11-21 LIVE 주행)
 constexpr uint8_t kPwrReset = 0x80;         // PWR_MGMT_1: 전체 리셋
 constexpr uint8_t kPwrClkGyroX = 0x01;      // PWR_MGMT_1: 슬립 해제, 클럭 = 자이로 X PLL
 constexpr uint8_t kSmplrtDiv100Hz = 9;      // 1 kHz / (1 + 9) = 100 Hz (DLPF를 켜면 내부 1 kHz)

@@ -138,7 +138,11 @@ def main():
                     stats[name] = json.loads(line)
         s2, s4 = stats.get("p2_feat", {}), stats.get("p4_policy", {})
         check(s2.get("seq_gaps") == 0 and s2.get("received") == SECONDS * 100, f"P2 got every sample ({s2})")
-        check(s2.get("mot_sent", 0) >= SECONDS * 10 - 1 and s2.get("mot_fail") == 0, "P2 sent MOTION at 10 Hz")
+        made = s2.get("mot_sent", 0) + s2.get("mot_skip", 0)
+        check(made >= SECONDS * 10 - 1 and s2.get("mot_fail") == 0, "P2 made a MOTION every 100 ms of ride time, none failed")
+        wall = SECONDS / SPEED  # 빠른 재생: 실제 시계로 반 주기(50 ms)보다 촘촘한 것은 건너뛴다 → 초당 20줄 이하
+        check(0 < s2.get("mot_sent", 0) <= wall * 20 + 5 and (SPEED <= 2 or s2.get("mot_skip", 0) > 0),
+              f"fast replay does not flood the link (sent {s2.get('mot_sent')}, skipped {s2.get('mot_skip')} in {wall:.0f} s)")
         check(s4.get("cycles") == SECONDS // 10 and s4.get("risk_gaps") == 0, f"P4 cycles ({s4})")
         check(s4.get("rf_phones") == 1 and s4.get("rf_hud") == 1, "P4 ends with phone-a and the HUD")
         check(s4.get("sync_fail") == 0 and s4.get("tier_cmd_fail") == 0, "no DEV_SYNC or TIER_CMD failures")

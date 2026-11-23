@@ -7,7 +7,8 @@
 - UART(/dev/ser3): 가상 터미널(pty). 이 스크립트가 ESP32 자리에서 줄을 쓰고 읽는다
 - 확인: HB 1초, HELLO 5초 DROP, P5가 늦게 떠도 등록, 프로필 회신, SCR/OVR → P4, Tier 3 + MOT 10 Hz,
   남의 폰 OVR 거부, HUD 등록과 Tier 2, 기기 5초 무응답 DROP, 재연결 상태 재전송, P4가 죽으면 안전 OFF와 복구,
-  P5만 다시 시작(OUT_RESYNC → 명부·Tier 3 복구), P6만 다시 시작(시작 DROP → 기기 재연결 → 복구)
+  P5만 다시 시작(OUT_RESYNC → 명부·Tier 3 복구), P6만 다시 시작(시작 DROP → 기기 재연결 → 복구),
+  P6 시작 전에 이미 붙어 있던 폰(시작 DROP이 안 먹혀 CONNECT 없이 HB만 옴 → 1초 뒤 DROP 다시, 그 연결에 DROP, #16)
 QNX 자체(커널 스케줄링, /dev/ser3 드라이버)는 확인하지 못한다. 그건 Pi에서.
 """
 import json
@@ -323,7 +324,7 @@ def main():
         s5 = p5.size()
         p6 = start("p6_comm", "--dev", br.path)
         check(br.wait(r"^8\|DROP$", m, 3) is not None, "new P6 sends 0~8|DROP")
-        check(br.count(r"^2\|DROP$", m) == 1 and br.count(r"^4\|DROP$", m) == 1, "HUD and phone-b are dropped")
+        check(br.count(r"^2\|DROP$", m) >= 1 and br.count(r"^4\|DROP$", m) >= 1, "HUD and phone-b are dropped")
         check(p5.wait_log(r"bye all \(P6 restarted\)", s5, 3), "P5 empties its registry (DEV_BYE ALL)")
         br.hb_conns.clear()  # 브리지가 끊음 → DISCONNECT → 기기가 다시 붙음 (번호는 바뀔 수 있음)
         br.send("2|DISCONNECT")
@@ -342,7 +343,37 @@ def main():
         br.send('0|{"t":"SCR","on":true,"att":false}')
         check(stub.wait_log(r"SCR phone-b on=1 att=0", s4, 3), "phone-b messages reach P4 again")
 
-        print("[13] 프로세스가 살아 있음 (교착·종료 없음)")
+        print("[13] P6 시작 전에 이미 붙어 있던 폰: 브리지가 시작 DROP을 놓침 → CONNECT 없이 HB만 (#16)")
+        # 이 흉내 브리지는 DROP을 받아도 끊지 않는다 = 실제 브리지가 시작 DROP을 놓친 경우와 같다
+        p6.kill()
+        br.hb_conns = {0, 1}  # phone-b(0)·HUD(1)가 계속 HB를 보낸다
+        m = br.mark()
+        s5 = p5.size()
+        t0 = time.monotonic()
+        p6 = start("p6_comm", "--dev", br.path)
+        check(br.wait(r"^8\|DROP$", m, 3) is not None, "new P6 sends 0~8|DROP")
+        check(p6.wait_log(r"start: drop again .*0", 0, 3), "start DROP again after 1 s (conns still unknown)")
+        check(p6.wait_log(r"line from unknown connection 0", 0, 3), "HB from an unknown conn -> DROP that conn")
+        time.sleep(max(0.0, t0 + 7.0 - time.monotonic()))
+        n0 = br.count(r"^0\|DROP$", m)
+        check(3 <= n0 <= 4, f"conn 0 dropped at start, 1 s retry, then at most once per 5 s ({n0} in 7 s)")
+        check(br.count(r'^0\|\{"t":"INT"', m) == 0, "nothing sent to the unknown phone (not registered)")
+        # 브리지가 이번에는 끊음 → 기기가 다시 붙어 CONNECT·HELLO → 등록, 상태 복구
+        br.hb_conns.clear()
+        br.send("0|DISCONNECT")
+        br.send("1|DISCONNECT")
+        time.sleep(0.3)
+        m = br.mark()
+        s = stub.size()
+        br.hello(0, "app", PHONE_B)
+        br.hello(1, "hud", "hud-01")
+        check(br.wait(INT.format(c=0, t=3, on="true"), m, 4) is not None, "phone-b registered again, Tier 3 on back")
+        check(stub.wait_log(r"registry: 2 device\(s\)", s, 4), "P4 stand-in sees both again")
+        m2 = br.mark()
+        time.sleep(6.0)
+        check(br.count(r"^[01]\|DROP$", m2) == 0, "no more DROP once registered")
+
+        print("[14] 프로세스가 살아 있음 (교착·종료 없음)")
         for name, p in procs.items():
             check(p.p.poll() is None, f"{name} still running")
     finally:

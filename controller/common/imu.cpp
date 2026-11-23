@@ -129,7 +129,7 @@ bool init(Bus& bus, const std::function<void(int)>& sleep_ms, std::string& err) 
         err = "WHO_AM_I read failed";
         return false;
     }
-    if (id != kWhoAmI) {
+    if (id != kWhoAmI && id != kWhoAmIClone) {
         char buf[64];
         std::snprintf(buf, sizeof buf, "WHO_AM_I = 0x%02x (expected 0x68)", id);
         err = buf;

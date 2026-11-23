@@ -66,6 +66,8 @@ static std::vector<std::string> show(const Outs& outs) {
             std::snprintf(b, sizeof b, "PROF %d %.2f %.2f", p->conn, p->mssq, p->sens);
         else if (const auto* d = std::get_if<msg::OutDrop>(&o))
             std::snprintf(b, sizeof b, "DROP %d", d->conn);
+        else if (const auto* r = std::get_if<msg::OutRisk>(&o))
+            std::snprintf(b, sizeof b, "RISK %d %s %.2f %.2f", r->conn, r->device, r->p[0], r->p[4]);
         else
             std::snprintf(b, sizeof b, "RESYNC");
         v.push_back(b);
@@ -157,6 +159,8 @@ static void sync_reply() {
 
 static void safety_off() {
     DevMgr m(nullptr);
+    std::vector<std::string> ev;  // 주행 로그 사건: "KIND value"
+    m.set_event_sink([&](const LogEvent& e) { ev.push_back(std::string(msg::ctx_kind_name(e.kind)) + " " + e.value); });
     m.resync_delivered();  // OUT_RESYNC는 resync()에서 따로
     CHECK(m.on_tick(0).empty(), "clock starts");
     m.on_hello(hello(0, kA));
@@ -169,12 +173,21 @@ static void safety_off() {
     CHECK(m.on_tick(30999).empty() && !m.safe_off(), "29.999 s without DEV_SYNC is fine");
     EXPECT(m.on_tick(31000), "INT 0 1 0", "INT 0 2 0", "INT 0 3 0", "STR 0 0", "INT 1 1 0", "INT 1 2 0", "STR 1 0");
     CHECK(m.safe_off() && !m.is_on("airflow-01") && !m.is_on(kA), "everything off");
+    CHECK(ev.size() == 1 && ev[0] == "SAFE_OFF {\"no_sync_s\":30,\"conns\":2}", "safe off logged: %s", ev.empty() ? "-" : ev[0].c_str());
     CHECK(m.on_tick(40000).empty(), "safe off only once");
-    CHECK(m.on_tier_cmd(cmd(kA, 3, true)).empty() && !m.is_on(kA), "ON refused while safe off");
+    CHECK(m.on_tier_cmd(cmd(kA, 3, true)).empty() && !m.is_on(kA), "ON held while safe off");
     CHECK(!m.on_tier_cmd(cmd(kA, 3, false)).empty(), "OFF still passes");
+    CHECK(m.on_tick(40500).empty(), "an OFF after the held ON drops it");
 
+    // P4가 다시 뜬 첫 주기: TIER_CMD ON이 DEV_SYNC보다 먼저 온다 → 잡아 두었다가 풀린 뒤 다음 박자에 적용
+    CHECK(m.on_tier_cmd(cmd("airflow-01", 1, true)).empty() && !m.is_on("airflow-01"), "ON held, not applied yet");
+    CHECK(m.on_tick(40800).empty(), "still safe off: nothing applied");
     m.on_sync(msg::DevSync{}, 41000);
     CHECK(!m.safe_off(), "DEV_SYNC clears safe off");
+    EXPECT(m.on_tick(41100), "INT 0 1 1", "INT 1 1 1");
+    CHECK(m.is_on("airflow-01") && m.on_tick(42000).empty(), "held ON applied once");
+    CHECK(ev.size() == 3 && ev[1] == "SAFE_CLEAR {\"held\":1}" && ev[2] == "HELD_ON {\"device\":\"airflow-01\",\"tier\":1}",
+          "clear and held ON logged, nothing else: %zu events", ev.size());
     EXPECT(m.on_tier_cmd(cmd(kA, 3, true)), "INT 0 3 1", "STR 0 1");
 }
 
@@ -230,6 +243,38 @@ static void bye_all() {
     EXPECT(m.on_hello(hello(4, kA)), "INT 4 1 0", "INT 4 2 1", "INT 4 3 1", "STR 4 1");
 }
 
+// 위험 확률 (#19): 폰 ID → 그 폰의 연결로 OUT_RISK. default·HUD·공용 기기·없는 폰은 버리고 센다. 안전 OFF 중에도 보냄
+static msg::RiskFwd risk(const std::string& dev, double p0, double p4) {
+    msg::RiskFwd m;
+    msg::copy_id(m.device, dev);
+    m.p[0] = p0;
+    m.p[1] = 0.8;
+    m.p[2] = 0.5;
+    m.p[3] = 0.2;
+    m.p[4] = p4;
+    return m;
+}
+static void risk_forward() {
+    DevMgr m(nullptr, nullptr, 30000);
+    m.resync_delivered();
+    m.on_tick(0);
+    m.on_hello(hello(3, kA));
+    m.on_hello(hello(1, "hud-01", msg::Role::Hud));
+    EXPECT(m.on_risk(risk(kA, 0.99, 0.01)), "RISK 3 phone-a 0.99 0.01");
+    CHECK(m.on_risk(risk("default", 0.5, 0.1)).empty(), "default row not sent");
+    CHECK(m.on_risk(risk("hud-01", 0.5, 0.1)).empty(), "not to the HUD");
+    CHECK(m.on_risk(risk("display-01", 0.5, 0.1)).empty(), "not to shared devices");
+    CHECK(m.on_risk(risk(kB, 0.5, 0.1)).empty(), "phone not connected");
+    CHECK(m.risk_unrouted() == 4, "unrouted counted: %llu", (unsigned long long)m.risk_unrouted());
+    m.on_hello(hello(5, kA));  // 다른 번호로 다시 붙음
+    EXPECT(m.on_risk(risk(kA, 0.7, 0.0)), "RISK 5 phone-a 0.70 0.00");
+    m.on_tick(31000);  // DEV_SYNC 없음 → 안전 OFF. 표시용 RISK는 그래도 보낸다
+    CHECK(m.safe_off(), "safe off");
+    EXPECT(m.on_risk(risk(kA, 0.6, 0.0)), "RISK 5 phone-a 0.60 0.00");
+    m.on_bye(bye(5));
+    CHECK(m.on_risk(risk(kA, 0.6, 0.0)).empty(), "gone after BYE");
+}
+
 int main() {
     hello_sends_state_and_profile();
     tier_commands();
@@ -240,6 +285,7 @@ int main() {
     resync();
     restart_recovers_state();
     bye_all();
+    risk_forward();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;
