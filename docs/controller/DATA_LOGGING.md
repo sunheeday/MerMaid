@@ -140,6 +140,19 @@ a = R · a_s,  g = R · g_s                     [차량 축: x 앞, y 왼쪽, z 
 
 보정 2초는 RIDE_START 전이라 주행 샘플에 들어가지 않는다.
 
+**자동 수평 맞춤 (선택, `p1_acq --auto-level`, `run_live.sh`에서 `AUTO_LEVEL=1`, 기본 꺼짐)**
+
+센서가 차에 기울어 붙으면 정지 중에도 중력이 x·y로 새어 모델이 "계속 가속·쏠림"으로 본다. 켜면 위 3번의 정지 2초를 함께 써서 바로잡는다.
+
+1. 정지 2초의 평균 가속도(센서 축)를 `imu_mount.json`의 R로 차량 축에 옮긴 값 m을 구한다.
+2. m을 +z로 보내는 최단 회전 L을 만든다 (로드리게스: `v = m̂ × ẑ`, `L = I + [v]× + [v]×²/(1 + m̂·ẑ)`). 회전축이 수평이라 요(앞 방향)는 바꾸지 않는다.
+3. 이번 P1 실행 동안 `R ← L · R`로 가속도·자이로를 변환한다. 축 방향(센서가 90도 돌아간 것 등)은 중력으로 알 수 없으므로 `imu_mount.json`에 둔다.
+4. 적용하지 않는 경우: 30초 안에 정지를 못 얻음, m이 +z에서 10°(`--auto-level-max-deg`)보다 벗어남(경사로·장착 이상). 이때는 `imu_mount.json`의 R 그대로.
+5. P1 프로세스의 **첫 보정에서만** 잰다. 주행 중 오류로 재시작할 때는 차가 경사로에 서 있을 수 있어 다시 재지 않고 처음 값을 쓴다.
+6. 기록: `p1.err`에 `auto-level applied: tilt … (pitch …, roll …)`과 쓴 R, RIDE_START 주행 정보(`S_LEVEL`, `S_MOUNT_R`) → 주행 파일 meta `auto_level`, `imu_mount_applied`.
+
+한계: 시작 자리의 바닥 기울기도 장착 기울기로 들어간다(바닥 1° = 1° 오차). 바닥이 일정한 곳에서 출발하지 않는다면 주행 전에 한 번 재서 `imu_mount.json`에 넣는 방식(`ml/realdata/imu_calib/make_mount.py`)이 더 정확하다.
+
 ### 4-5. Row 채우기와 빠진 샘플
 
 - `row[C_T] = seq / 100`, `row[C_AX..C_GZ] =` 변환값, **나머지 25칸은 NaN**(주행 전체 NaN, `trip_format.json` 규칙).
