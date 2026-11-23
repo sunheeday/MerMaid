@@ -30,7 +30,7 @@ struct LogInfer {
     char model[16] = {};   // 모델 버전 (ml/runs 폴더 이름, 예: "v007")
     uint32_t n = 0;        // 행 수 (폰 수, 없으면 "default" 1행)
     char id[kMaxPhones][kIdLen] = {};
-    double x[kMaxPhones][proto::kNumFeatures] = {};  // P3에 들어간 77칸 그대로 (NaN 포함)
+    double x[kMaxPhones][proto::kNumFeatures] = {};  // P3에 들어간 52칸 그대로 (NaN 포함)
     Risk p[kMaxPhones] = {};                         // p2..p6, 개인 보정 전
     double cal_a[kMaxPhones] = {};                   // 적용한 개인 보정 (§12, 없으면 1, 0)
     double cal_b[kMaxPhones] = {};

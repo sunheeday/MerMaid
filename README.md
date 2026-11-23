@@ -166,7 +166,7 @@ flowchart LR
     REAL["Real-drive converters<br/>comma2k19 · BATON · TU Delft"]:::done
     CAL["calibrate.py<br/>KS score"]:::done
     TRAIN["featurize → train.py"]:::done
-    RUNS[("runs/vNNN<br/>deployed v007")]:::done
+    RUNS[("runs/vNNN<br/>deployed v018")]:::done
     LLM["Claude loop"]:::plan
   end
 
@@ -188,7 +188,7 @@ Green: working · amber: partly built · gray dashed: planned (see [docs/control
 
 ### B. Feature Extraction
 
-Features are grouped by where they come from: 77 values in 10 groups. The IMU and system clock are always available, and the rest (vehicle speed, CAN, navigation, climate, and so on) are added as far as the vehicle provides them. A missing signal is passed as NaN. Motion is measured over short and long windows, alongside values accumulated over the ride such as MSDV and the Oman model's estimated sickness score.
+Features are grouped by where they come from: 52 values in 7 groups. The IMU and system clock are always available, and the rest (vehicle speed, cabin temperature and fan, seat row, passenger profile) are added as far as the vehicle and app provide them. Signals that have no source on the car and no path to the label (CAN pedals and EV signals, navigation, cabin noise) were removed in feature_order v5. A missing signal is passed as NaN. Motion is measured over short and long windows, alongside values accumulated over the ride such as MSDV and the Oman model's estimated sickness score.
 
 ### C. Risk Models
 
@@ -306,7 +306,7 @@ Training runs on a development PC (Python, LightGBM). The trained model files ar
 │   ├── uuids.json           # BLE service / characteristic UUIDs
 │   ├── constants.json       # Oman, Wf, event, rest and MSSQ constants
 │   ├── trip_format.json     # columns of the 100 Hz trip.bin
-│   ├── feature_order.json   # 77 features: order, group, unit, window, monotone, enabled
+│   ├── feature_order.json   # 52 features: order, group, unit, window, monotone, enabled
 │   ├── gen_cpp.py           # JSON + SQL → controller/common/protocol_gen.hpp
 │   └── check.py             # validates the files above
 │

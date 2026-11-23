@@ -1,7 +1,7 @@
 """protocol/ 검증: python3 protocol/check.py (S0 완료 확인)
 
 1. PROTOCOL.md의 예시 메시지가 messages.schema.json을 통과하고, 잘못된 메시지는 거부되는지
-2. feature_order.json이 77개, 인덱스 연속, 그룹 개수와 범위가 맞는지
+2. feature_order.json의 피처 수(n_features), 인덱스 연속, 그룹 개수와 범위가 맞는지
 3. UUID, 설정 파일의 버전과 값이 서로 맞는지
 4. ride_schema.sql이 SQLite에서 실행되고 표 8개가 있는지, protocol_gen.hpp가 JSON·SQL과 같은지
 """
@@ -61,14 +61,15 @@ for bad in [
 # 2. 피처 순서
 fo = load(ROOT / "feature_order.json")
 feats = fo["features"]
-check(fo["n_features"] == len(feats) == 77, f"피처 {len(feats)}개 (77개여야 함)")
+check(fo["n_features"] == len(feats), f"피처 {len(feats)}개 (n_features {fo['n_features']}와 다름)")
 check([f["index"] for f in feats] == list(range(len(feats))), "인덱스가 0부터 연속이 아님")
 check(len({f["name"] for f in feats}) == len(feats), "피처 이름 중복")
 for g, info in fo["groups"].items():
     idx = [f["index"] for f in feats if f["group"] == g]
     check(len(idx) == info["count"], f"{g}: {len(idx)}개 (표에는 {info['count']}개)")
     check(idx == list(range(idx[0], idx[0] + len(idx))) if idx else False, f"{g}: 인덱스가 연속이 아님")
-check(sum(i["count"] for i in fo["groups"].values()) == 77, "그룹 개수 합이 77이 아님")
+check(sum(i["count"] for i in fo["groups"].values()) == len(feats), "그룹 개수 합이 피처 수와 다름")
+check(fo["passenger_range"] == [fo["vehicle_range"][1] + 1, len(feats) - 1], "passenger_range가 차량 구간 바로 뒤부터 끝까지가 아님")
 for g in ("G1", "G9"):
     check(fo["groups"][g]["dropout"] == 0, f"{g}는 드롭아웃 0이어야 함")
 lo, hi = fo["vehicle_range"]

@@ -379,6 +379,7 @@ void Logger::open_ride(const ring::Item& it, uint32_t col_mask, uint64_t now) {
     fl.meta("ride_no", std::to_string(ride_no_));
     fl.meta("source", col_mask == 0x7Fu ? "live" : "replay");
     fl.meta("columns", columns);
+    fl.meta("feature_version", std::to_string(proto::kFeatureVersion));  // infer.x 칸의 순서 (protocol/feature_order.json)
     fl.meta("sample_rate_hz", num_json(proto::kSampleRateHz));
     fl.meta("mono_start_ns", std::to_string(it.mono_ns));
     if (joined) fl.meta("joined_at_seq", std::to_string(it.seq));

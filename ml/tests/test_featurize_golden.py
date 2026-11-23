@@ -48,7 +48,7 @@ def close(actual, expected):
 
 def test_row_timing(result):
     rows, tf, X = result
-    assert X.shape == (120, 71)
+    assert X.shape == (120, trip.NV)
     assert np.allclose(tf, rows[999::1000, 0])
 
 

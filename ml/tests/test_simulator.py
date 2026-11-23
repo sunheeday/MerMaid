@@ -92,6 +92,7 @@ def test_dataset_is_deterministic(tmp_path):
     for ra, rb in zip(a, b):
         assert np.array_equal(ra["X"], rb["X"], equal_nan=True) and np.array_equal(ra["y"], rb["y"])
     X = a[0]["X"]
-    assert X.shape[1] == 77
-    assert np.isnan(X[:, 71:73]).all()  # G8 v1 비활성
-    assert X[0, 73] == pax[0]["mssq"] and X[0, 74] == pax[0]["sens"]
+    F = trip.FIDX
+    assert X.shape[1] == trip.NF
+    assert np.isnan(X[:, [F["tol_display"], F["tol_phone"]]]).all()  # G8 비활성
+    assert X[0, F["mssq"]] == pax[0]["mssq"] and X[0, F["sensitivity"]] == pax[0]["sens"]

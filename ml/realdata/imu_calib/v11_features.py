@@ -35,7 +35,7 @@ def _default_repo():
 
 REPO = os.environ.get("MERMAID_REPO") or _default_repo()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from model_rerun import featurize  # noqa: E402  저장소 featurize 를 그대로 쓴다
+from model_rerun import NAMES, featurize  # noqa: E402  저장소 featurize 를 그대로 쓴다 (NAMES: 그 출력의 배치)
 
 IMU_FEATURES = ["rms_x_10s", "rms_x_1m", "rms_x_5m", "rms_y_10s", "rms_y_1m", "rms_y_5m",
                 "rms_z_10s", "rms_z_1m", "rms_z_5m", "decel_rms_x_1m", "decel_rms_x_5m",
@@ -52,13 +52,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("ride")
     ap.add_argument("outdir")
-    ap.add_argument("--dataset", help="dataset.npz (기본: 저장소 ml/out/runs 중 첫 dataset.npz)")
+    ap.add_argument("--dataset", help="dataset.npz (기본: 저장소 ml/out/runs 중 가장 최근 dataset.npz)")
     ap.add_argument("--drive-from", type=float, default=0.0, help="이 시각[초]부터를 주행으로 본다")
     ap.add_argument("--until", type=float, help="이 시각[초]까지만 쓴다")
     ap.add_argument("--extra", action="append", default=[], metavar="이름=폴더")
     a = ap.parse_args()
 
-    ds_path = a.dataset or sorted(glob.glob(os.path.join(REPO, "ml", "out", "runs", "*", "dataset.npz")))[0]
+    ds_path = a.dataset or sorted(glob.glob(os.path.join(REPO, "ml", "out", "runs", "*", "dataset.npz")))[-1]
     ds = np.load(ds_path)
     names = [str(n) for n in ds["feature_names"]]
     col = {n: i for i, n in enumerate(names)}
@@ -88,7 +88,7 @@ def main():
     lines += [hdr, "|" + "---|" * (2 + len(R))]
     out = {}
     for f in IMU_FEATURES:
-        j = col[f]
+        j, jv = col[f], NAMES.index(f)  # 학습 데이터 배치, 지금 featurize 배치 (버전이 다를 수 있다)
         s = S[:, j]
         s = s[np.isfinite(s)]
         if len(s) == 0:
@@ -97,7 +97,7 @@ def main():
         row = f"| {f} | {p1:.3g} / {p50:.3g} / {p99:.3g} |"
         out[f] = {"sim_p1_p50_p99": [p1, p50, p99]}
         for n, V in R.items():
-            r = V[:, j]
+            r = V[:, jv]
             r = r[np.isfinite(r)]
             if len(r) == 0:
                 row += " 없음 |"
@@ -120,18 +120,18 @@ def main():
     colors = ["#888", "#c0392b", "#1f6fb2", "#27ae60", "#8e44ad"]
     fig, axs = plt.subplots(2, 4, figsize=(16, 7))
     for ax, f in zip(axs.flat, PLOT_FEATURES):
-        j = col[f]
+        j, jv = col[f], NAMES.index(f)  # 학습 데이터 배치, 지금 featurize 배치 (버전이 다를 수 있다)
         s = S[:, j]
         s = s[np.isfinite(s)]
         lo, hi = np.percentile(s, [0.5, 99.5])
         for V in R.values():
-            r = V[:, j][np.isfinite(V[:, j])]
+            r = V[:, jv][np.isfinite(V[:, jv])]
             if len(r):
                 lo, hi = min(lo, np.percentile(r, 1)), max(hi, np.percentile(r, 99))
         bins = np.linspace(lo, hi, 50)
         ax.hist(s, bins=bins, density=True, color="#ddd", label="학습 데이터")
         for c, (n, V) in zip(colors, R.items()):
-            r = V[:, j][np.isfinite(V[:, j])]
+            r = V[:, jv][np.isfinite(V[:, jv])]
             if len(r):
                 ax.hist(np.clip(r, lo, hi), bins=bins, density=True, histtype="step", lw=1.4, color=c, label=n)
         ax.set_title(f, fontsize=10)

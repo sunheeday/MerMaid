@@ -11,8 +11,10 @@
     B 맥 재현   Pi가 본 것과 같은 입력(센서 축 그대로)으로 맥에서 계산. A와 같으면 계산 경로가 맞다는 뜻
                (모델도 A 피처 → A 확률이 그대로 나오는지 확인한다)
 
---models 기본값: 저장소 ml/out/runs 에서 모델이 있는 가장 최근 버전.
-차량 외 피처(승객 프로필, 허용도 등 71~76번)는 A의 값을 그대로 쓴다.
+--models 기본값: 저장소 ml/out/runs 에서 지금 feature_order로 학습한 모델이 있는 가장 최근 버전.
+차량 외 피처(승객 프로필, 허용도 등)는 A의 값을 그대로 쓴다.
+피처 배치: 비교는 지금 저장소의 feature_order(featurize가 내는 배치)로 한다. Pi 기록이 예전 배치(v3, 77칸)이면
+이름으로 옮겨 담는다 (feature_order_v3.json). 이때 A의 확률은 Pi 기록값이 아니라 옮긴 A 피처를 이 모델에 넣은 값이다.
 저장소 위치는 환경 변수 MERMAID_REPO 로 바꿀 수 있다 (기본: 이 파일이 들어 있는 저장소).
 """
 import argparse
@@ -36,6 +38,42 @@ sys.path.insert(0, os.path.join(REPO, "ml"))
 import trip as T  # noqa: E402  저장소의 trip.bin 읽기·쓰기
 
 K = [2, 3, 4, 5, 6]
+FO = json.load(open(os.path.join(REPO, "protocol", "feature_order.json")))
+NAMES = [f["name"] for f in FO["features"]]
+NV = FO["vehicle_range"][1] + 1   # 차량 피처 수 (featurize가 채우는 칸)
+OLD_ORDERS = {3: os.path.join(os.path.dirname(os.path.abspath(__file__)), "feature_order_v3.json")}
+
+
+def pi_version(meta, width):
+    """Pi 기록 x의 피처 배치 버전: meta feature_version (v5부터) → thresholds의 버전 → 폭으로 짐작"""
+    if "feature_version" in meta:
+        return int(meta["feature_version"])
+    if "thresholds" in meta:
+        return int(json.loads(meta["thresholds"])["feature_order_version"])
+    return FO["version"] if width == FO["n_features"] else 3
+
+
+def to_current(X, version):
+    """Pi 기록 x (그 버전의 배치) → 지금 배치. 없어진 피처는 버리고, 새로 생긴 피처는 NaN. (X, Pi에 있던 칸 표시)"""
+    if version == FO["version"]:
+        return X, np.ones(X.shape[1], bool)
+    if version not in OLD_ORDERS:
+        raise SystemExit(f"Pi 기록의 피처 배치 v{version}를 모름 (알고 있는 것: v{FO['version']}, "
+                         + ", ".join(f"v{v}" for v in OLD_ORDERS) + ")")
+    old = [f["name"] for f in json.load(open(OLD_ORDERS[version]))["features"]]
+    if X.shape[1] != len(old):
+        raise SystemExit(f"Pi 기록 x 폭 {X.shape[1]}가 v{version} 배치 {len(old)}칸과 다름")
+    out = np.full((len(X), len(NAMES)), np.nan)
+    have = np.array([n in old for n in NAMES])
+    out[:, have] = X[:, [old.index(n) for n in np.array(NAMES)[have]]]
+    return out, have
+
+
+def model_width(models_dir):
+    for line in open(os.path.join(models_dir, "model_6.txt")):
+        if line.startswith("max_feature_idx="):
+            return int(line.split("=")[1]) + 1
+    raise SystemExit(f"{models_dir}/model_6.txt: max_feature_idx 줄 없음")
 
 
 def load_pi(db):
@@ -50,7 +88,7 @@ def load_pi(db):
 
 
 def featurize(samples):
-    """samples: [t, ax, ay, az, gx, gy, gz, ...] 100 Hz → (피처 시각, 피처 71개)"""
+    """samples: [t, ax, ay, az, gx, gy, gz, ...] 100 Hz → (피처 시각, 차량 피처 NV개)"""
     rows = T.empty(len(samples))
     for i, name in enumerate(["ax", "ay", "az", "gx", "gy", "gz"]):
         rows[:, T.COL[name]] = samples[:, 1 + i]
@@ -106,18 +144,29 @@ def main():
     args = ap.parse_args()
     if args.models is None:
         found = sorted(glob.glob(os.path.join(REPO, "ml", "out", "runs", "v[0-9][0-9][0-9]", "models", "model_6.txt")))
-        args.models = os.path.dirname(found[-1]) if found else None
+        found = [os.path.dirname(f) for f in found if model_width(os.path.dirname(f)) == len(NAMES)]  # 지금 배치용만
+        args.models = found[-1] if found else None
     print("모델:", args.models or "없음 (피처까지만 비교)")
     os.makedirs(args.outdir, exist_ok=True)
 
     db = glob.glob(os.path.join(args.ride, "logs", "rides", "*.sqlite"))[0]
     t_pi, X_pi, P_pi, meta = load_pi(db)
-    P_rec, X_rec = P_pi.copy(), X_pi.copy()          # Pi가 실제로 기록한 값 (모델 확인용)
+    P_rec, X_rec = P_pi.copy(), X_pi.copy()          # Pi가 실제로 기록한 값 (모델 확인용, Pi 배치 그대로)
+    ver = pi_version(meta, X_pi.shape[1])
+    same = ver == FO["version"]
+    X_pi, have = to_current(X_pi, ver)
+    print(f"Pi 기록 피처 배치 v{ver} ({X_rec.shape[1]}칸) → 지금 배치 v{FO['version']} ({len(NAMES)}칸)")
+    if args.models and model_width(args.models) != len(NAMES):
+        raise SystemExit(f"모델 {args.models}는 피처 {model_width(args.models)}칸용인데 지금 배치는 {len(NAMES)}칸이다. "
+                         f"지금 feature_order로 학습한 모델을 --models로 주거나, 그 버전의 저장소에서 돌린다")
+    if args.models and not same:  # Pi 확률은 다른 배치의 모델에서 나왔다. A 확률은 옮긴 A 피처로 다시 낸다
+        P_pi = predict(args.models, X_pi)
     if args.mssq is not None:
         sys.path.insert(0, os.path.join(REPO, "ml"))
         import oman
-        phone = ~np.isnan(X_pi[:, 73]) & (np.abs(X_pi[:, 73] - 12.9) > 1e-9)   # 기본 프로필(12.9) 주기는 그대로
-        X_pi[phone, 73], X_pi[phone, 74] = args.mssq, float(oman.sensitivity(args.mssq))
+        im, isn = NAMES.index("mssq"), NAMES.index("sensitivity")
+        phone = ~np.isnan(X_pi[:, im]) & (np.abs(X_pi[:, im] - 12.9) > 1e-9)   # 기본 프로필(12.9) 주기는 그대로
+        X_pi[phone, im], X_pi[phone, isn] = args.mssq, float(oman.sensitivity(args.mssq))
         P_pi = predict(args.models, X_pi)
         print(f"MSSQ {args.mssq:g}, 민감도 {oman.sensitivity(args.mssq):.3f}로 바꿈: 폰 주기 {phone.sum()}/{len(phone)}")
     if args.until:
@@ -149,28 +198,31 @@ def main():
         tf, V = featurize(s)
         Xc = X_pi.copy()
         if real_clock(name):  # 실제 시계로 같은 순간에 가장 가까운 주기 (주기 10초라 ±5초 안)
-            Xc[:, :71] = align(t_pi * stretch, tf, V, tol=5.0)
+            Xc[:, :NV] = align(t_pi * stretch, tf, V, tol=5.0)
         else:
-            Xc[:, :71] = align(t_pi, tf, V)
-        Xc[np.isnan(X_pi)] = np.nan  # Pi에서 꺼져 있던 칸은 똑같이 비운다
+            Xc[:, :NV] = align(t_pi, tf, V)
+        Xc[np.isnan(X_pi) & have] = np.nan  # Pi에서 꺼져 있던 칸은 똑같이 비운다
         X[name] = Xc
-        assert not np.isnan(Xc[:, :71][:, ~np.isnan(X_pi[:, :71]).all(axis=0)]).all(axis=1).any(), f"{name}: 짝을 못 찾은 주기 있음"
+        assert not np.isnan(Xc[:, :NV][:, ~np.isnan(X_pi[:, :NV]).all(axis=0)]).all(axis=1).any(), f"{name}: 짝을 못 찾은 주기 있음"
         print(f"{name}: 피처 {len(tf)}행")
 
-    names = json.load(open(os.path.join(REPO, "protocol", "feature_order.json")))["features"]
-    names = [f["name"] for f in names]
+    names = NAMES
     lines = ["# 보정 전후 모델 입력·출력 비교 (V12)", "",
-             f"주행: `{args.ride}`  모델: {meta.get('model_version')}  주기 {len(t_pi)}개(10초마다)", ""]
+             f"주행: `{args.ride}`  Pi 모델: {meta.get('model_version')}  다시 계산한 모델: `{args.models}`  "
+             f"주기 {len(t_pi)}개(10초마다)", "",
+             f"피처 배치: Pi 기록 v{ver} ({X_rec.shape[1]}칸), 비교 v{FO['version']} ({len(NAMES)}칸)"
+             + ("" if same else ". Pi 기록을 이름으로 옮겨 담았다" + (", A 확률은 옮긴 A 피처를 위 모델에 넣은 값" if args.models else ""))
+             + ".", ""]
     if args.mssq is not None:
         lines += [f"**승객 설문값 MSSQ를 {args.mssq:g}로 바꿔 계산한 결과** (실제 주행은 33). "
                   "A는 Pi 피처에 이 값을 넣어 다시 계산한 것이고, 'B와 A 확률 차이'도 이 기준이다.", ""]
 
     # 1) 계산 경로 확인: B가 A와 같은가
-    d = np.abs(X["B 맥 재현(센서 축)"][:, :71] - X_pi[:, :71])
-    rel = d / np.maximum(np.abs(X_pi[:, :71]), 1e-3)  # 0 근처 값의 반올림 차이는 크게 보이지 않게
+    d = np.abs(X["B 맥 재현(센서 축)"][:, :NV] - X_pi[:, :NV])
+    rel = d / np.maximum(np.abs(X_pi[:, :NV]), 1e-3)  # 0 근처 값의 반올림 차이는 크게 보이지 않게
     worst = np.nanmax(np.where(np.isnan(rel), -1, rel), axis=0)
     lines += ["## 1. 계산 경로 확인 (A Pi 기록 vs B 맥 재현, 같은 입력)", "",
-              f"- 차량 피처 71개 중 상대 차이 1% 이하: {(worst <= 0.01).sum()}개 (비어 있는 칸 제외)",
+              f"- 차량 피처 {NV}개 중 상대 차이 1% 이하: {(worst <= 0.01).sum()}개 (비어 있는 칸 제외)",
               "- 차이가 큰 피처: " + ", ".join(f"{names[i]} {worst[i]*100:.1f}%" for i in np.argsort(-worst)[:6]), ""]
 
     # 2) 피처 변화: 출발 전 정지와 주행 중
@@ -186,12 +238,16 @@ def main():
     out = {"t": t_pi.tolist(), "features": {k: v.tolist() for k, v in X.items()}}
     if args.models:
         th = json.loads(meta["thresholds"])["base_th"]
+        own = os.path.join(args.models, "..", "thresholds.json")  # 배치가 다르면 Pi 문턱은 다른 모델의 것
+        if not same and os.path.exists(own):
+            th = json.load(open(own))["base_th"]
         pol = json.loads(meta["policy_json"])["tiers"]
         P = {"A Pi 기록": P_pi}
         P.update({k: predict(args.models, v) for k, v in X.items() if k != "A Pi 기록"})
-        lines += ["## 3. 위험 확률", "",
-                  f"- 모델 확인: A 피처를 이 모델에 넣은 값과 Pi 기록 확률의 최대 차이 "
-                  f"{np.abs(predict(args.models, X_rec) - P_rec).max():.2e} (1e-6 이하면 Pi와 같은 모델)",
+        check = (f"- 모델 확인: A 피처를 이 모델에 넣은 값과 Pi 기록 확률의 최대 차이 "
+                 f"{np.abs(predict(args.models, X_rec) - P_rec).max():.2e} (1e-6 이하면 Pi와 같은 모델)" if same else
+                 f"- 모델 확인: 건너뜀 (Pi는 v{ver} 배치의 {meta.get('model_version')} 모델, 여기는 v{FO['version']} 배치 모델)")
+        lines += ["## 3. 위험 확률", "", check,
                   f"- 계산 경로 확인: B와 A 확률의 최대 차이 {np.abs(P['B 맥 재현(센서 축)'] - P_pi).max():.2e}", ""]
         for kk in (3, 4):
             lines += [f"P(멀미 점수 ≥ {kk}) (Tier {'1' if kk == 3 else '2·3'} 입력)", "",

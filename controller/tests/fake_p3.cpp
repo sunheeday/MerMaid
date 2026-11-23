@@ -1,7 +1,7 @@
 // fake_p3: P3 대역 (LightGBM 없이). Mac 시험(pipeline_rf_sim)과 Pi 시연(bringup/demo_phone.sh)용. 진짜 P3처럼 mermaid_p3 이름으로 VEH를 받고,
 // 주기마다 P4에 PROFILES를 물은 뒤 정해진 확률로 RISK를 보낸다. 주행 경계는 그대로 넘긴다.
 //   fake_p3 [--p P2,P3,P4,P5,P6] [--once]
-// 진짜 P3처럼 P7에 LOG_INFER도 보낸다 (x = 차량 피처 71칸 + 승객 칸 NaN, 모델 "fake"). 실패 수는 stdout 마지막 줄 log_fail.
+// 진짜 P3처럼 P7에 LOG_INFER도 보낸다 (x = 차량 피처 46칸 + 승객 칸 NaN, 모델 "fake"). 실패 수는 stdout 마지막 줄 log_fail.
 // stdout: 주기마다 "PROFILES <n> <id>:<mssq>:<sens>:<ev>:<cal_a>:<cal_b> ..." (P4가 RF 명부를 P3에 넘기는지 확인용)
 #include <cmath>
 #include <cstdio>

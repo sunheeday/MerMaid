@@ -21,11 +21,12 @@ import numpy as np
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "ml" / "train"))
 sys.path.insert(0, str(REPO / "ml" / "verify"))
+sys.path.insert(0, str(REPO / "ml"))
 import common as C  # noqa: E402
+import trip as tripio  # noqa: E402
 import policy  # noqa: E402
 from model_parity import boosters, predict  # noqa: E402
 
-ENABLED = np.array([f["enabled"] for f in C.FEATS])
 DEFAULT = json.loads((REPO / "protocol" / "constants.json").read_text())["mssq"]["default_profile"]
 
 
@@ -36,7 +37,7 @@ def g10(ride_ids):
     out = []
     for r in ride_ids:
         row = d["X"][d["ride_id"] == r][0]
-        out.append([float(f"{v:.15g}") for v in row[73:77]])  # mssq, sens, ev, vehicle_type
+        out.append([float(f"{row[tripio.FIDX[n]]:.15g}") for n in ("mssq", "sensitivity", "ev_experience", "vehicle_type")])
     return out
 
 
@@ -62,10 +63,7 @@ def check(trip, cycles_csv, ride_ids):
     bs = boosters()
     P = []
     for m, s, e, vt in g:
-        X = np.full((len(t), 77), np.nan)
-        X[:, :71] = V
-        X[:, 73:77] = m, s, e, vt
-        X[:, ~ENABLED] = np.nan
+        X = tripio.full_vector(V, m, s, e, vt)
         P.append(predict(bs, X))
     P = np.stack(P)  # phone, cycle, k
 

@@ -3,7 +3,7 @@
     python3 ml/simulator/build_dataset.py [--note TEXT] [--trips 480] [--passengers 120] [--seed 0] [--keep-trips 8] [--jobs 8]
 
 경로마다 승객 4명이 다른 좌석, 회생 설정, 공조로 탄다(도메인 랜덤화). 탑승마다:
-trip.bin 작성 → C++ featurize(차량 피처 71개) → G8(v1 NaN), G10(승객) 붙이기 → Oman 라벨.
+trip.bin 작성 → C++ featurize(차량 피처, vehicle_range) → G8(NaN), G10(승객) 붙이기 → Oman 라벨.
 출력: 새 버전 폴더 ml/out/runs/vNNN/ (ml/runs.py): dataset.npz, dataset_report.json, rides.json,
       trips/ride_XXXX.bin (재생용, 앞 --keep-trips개). --out을 주면 그 경로 (이미 있으면 거부, 덮어쓰지 않음)
 """
@@ -24,22 +24,15 @@ import runs  # noqa: E402
 import sim  # noqa: E402
 import trip as tripio  # noqa: E402
 
-FEAT = tripio.FEATURES["features"]
-NV = 71
 
 
 def ride_record(ride_id, trip_id, pax, vtype, ride, motion, rows, mult, t, Xv, rng):
-    """차량 피처(Xv) + 승객 피처 → 77개 X, Oman 라벨. 실차 변환(ml/realdata)도 같은 함수를 쓴다."""
+    """차량 피처(Xv) + 승객 피처 → 모델 입력 X (tripio.full_vector), Oman 라벨. 실차 변환(ml/realdata)도 같은 함수를 쓴다."""
     emit = np.arange(999, len(rows), 1000)
     assert len(emit) == len(t)
     K = sim.oman.OMAN["K0"] * pax["true_sens"] * mult
     score, misc, fut, y, valid = sim.label(motion, K, rng, emit)
-    X = np.full((len(t), 77), np.nan)
-    X[:, :NV] = Xv
-    X[:, 73], X[:, 74], X[:, 75], X[:, 76] = pax["mssq"], pax["sens"], pax["ev_experience"], vtype
-    for i, f in enumerate(FEAT):  # enabled=false (G8, SVC)는 NaN
-        if not f["enabled"]:
-            X[:, i] = np.nan
+    X = tripio.full_vector(Xv, pax["mssq"], pax["sens"], pax["ev_experience"], vtype)
     v = valid
     return {
         "ride_id": ride_id, "trip_id": trip_id, "person_id": pax["pid"],
@@ -110,7 +103,7 @@ def main():
     data = {"X": cat("X"), "y": cat("y"), "t": cat("t"), "misc": cat("misc"), "score": cat("score"),
             "future_max": cat("future_max"), "ride_id": rep("ride_id"), "trip_id": rep("trip_id"),
             "person_id": rep("person_id"), "k": np.array(sim.CFG["label"]["k"]),
-            "feature_names": np.array([f["name"] for f in FEAT]),
+            "feature_names": np.array([f["name"] for f in tripio.FEATURES["features"]]),
             "feature_version": np.array(tripio.FEATURES["version"])}
     np.savez_compressed(a.out, **data)
 

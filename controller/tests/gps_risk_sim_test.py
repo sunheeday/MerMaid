@@ -30,7 +30,9 @@ BUILD = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "build")
 PHONE_A, PHONE_B = "phone-a", "phone-b"
 RIDE_S = 32
 GPS_STOP_S = 22
-F_SPEED_MEAN_10S, F_SPEED_MAX_5M = 33, 39  # protocol/feature_order.json
+_FO = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "protocol", "feature_order.json")))
+_FI = {f["name"]: f["index"] for f in _FO["features"]}
+F_SPEED_MEAN_10S, F_SPEED_MAX_5M, NF = _FI["speed_mean_10s"], _FI["speed_max_5m"], _FO["n_features"]
 
 
 def main():
@@ -118,7 +120,7 @@ def main():
         inf = rows(f, "SELECT seq, t, phone, x FROM infer ORDER BY seq, phone")
         by_seq = {}
         for seq, t, ph, x in inf:
-            v = struct.unpack("<77d", x)
+            v = struct.unpack(f"<{NF}d", x)
             by_seq.setdefault(seq, []).append((t, ph, v))
         print("  infer:", {s: [(round(t, 1), ph, round(v[F_SPEED_MEAN_10S], 2)) for t, ph, v in r] for s, r in by_seq.items()})
         check(len(by_seq) == 3, f"3 inference cycles ({len(by_seq)})")

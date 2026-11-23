@@ -10,6 +10,9 @@ FORMAT = json.loads((REPO / "protocol" / "trip_format.json").read_text())
 FEATURES = json.loads((REPO / "protocol" / "feature_order.json").read_text())
 COLUMNS = [c["name"] for c in FORMAT["columns"]]
 COL = {n: i for i, n in enumerate(COLUMNS)}
+FIDX = {f["name"]: f["index"] for f in FEATURES["features"]}  # 피처 이름 → 모델 입력 칸
+NF = FEATURES["n_features"]                  # 모델 입력 칸 수
+NV = FEATURES["vehicle_range"][1] + 1        # 차량 피처 수 (featurize와 P2가 만드는 앞쪽 칸)
 FS = 100.0
 FEATURIZE = REPO / "build" / "featurize"
 
@@ -30,7 +33,7 @@ def write_trip(path, rows):
 
 
 def read_features(path):
-    """→ (t, X[:, 71]). 차량 피처만 들어 있다."""
+    """→ (t, X[:, NV]). 차량 피처만 들어 있다."""
     raw = np.fromfile(path, dtype="<f8")
     version, ncol = raw[:2]
     assert int(version) == FEATURES["version"], "feature_order version mismatch"
@@ -47,3 +50,15 @@ def featurize(trip_path, out_path, oman_k=None):
         cmd += ["--oman-k", repr(float(oman_k))]
     subprocess.run(cmd, check=True, capture_output=True)
     return read_features(out_path)
+
+
+def full_vector(Xv, mssq, sens, ev, vehicle_type):
+    """차량 피처(n x NV) + 승객 피처 → 모델 입력 (n x NF). P3와 같이 G8(허용도)은 NaN, enabled=false 칸은 NaN"""
+    X = np.full((len(Xv), NF), np.nan)
+    X[:, :NV] = Xv
+    X[:, FIDX["mssq"]], X[:, FIDX["sensitivity"]] = mssq, sens
+    X[:, FIDX["ev_experience"]], X[:, FIDX["vehicle_type"]] = ev, vehicle_type
+    for f in FEATURES["features"]:
+        if not f["enabled"]:
+            X[:, f["index"]] = np.nan
+    return X

@@ -7,7 +7,7 @@ QNX 컨트롤러, ESP32-S3 브리지, Android 앱, HUD 시뮬레이터가 공유
 | `messages.schema.json` | 메시지 M00~M10의 JSON Schema |
 | `uuids.json` | BLE 광고 이름, 서비스와 characteristic UUID |
 | `constants.json` | 공용 상수: Oman, 이벤트, 휴식, MSSQ 규준, 고정 기기 ID |
-| `feature_order.json` | 피처 77개의 순서, 그룹, 단위, 창, 단조 방향, enabled |
+| `feature_order.json` | 피처 52개의 순서, 그룹, 단위, 창, 단조 방향, enabled (v5) |
 | `check.py` | 위 파일 검증: `python3 protocol/check.py` |
 
 ## 1. UART (Raspberry Pi ↔ ESP32-S3)
@@ -85,7 +85,7 @@ QNX 컨트롤러, ESP32-S3 브리지, Android 앱, HUD 시뮬레이터가 공유
 
 ## 5. 피처 벡터
 
-- 77칸 고정, float64. 인덱스 0~70은 차량 피처(한 번 계산), 71~76은 승객별(G8 + G10, 폰마다 바꿔 끼움)
+- 52칸 고정(`n_features`), float64. 인덱스 0~45는 차량 피처(한 번 계산, `vehicle_range`), 46~51은 승객별(G8 + G10, 폰마다 바꿔 끼움, `passenger_range`)
 - 없는 그룹이나 `enabled=false` 피처는 0이 아니라 NaN
 - 모델 파일에는 학습에 쓴 `feature_order.json`의 `version`을 기록하고, P3는 다르면 시작을 거부합니다.
 - 가속도 축: x 전후(앞 +), y 좌우, z 상하. 피처 가속도는 ISO 2631-1 Wf 가중 후 값, Oman 입력은 가중 전 값(`constants.json`)
