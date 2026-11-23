@@ -1,0 +1,17 @@
+{
+ "input": "calibrated/samples_100hz.npy",
+ "method": "mean",
+ "window_s": 30.0,
+ "gps_lag_s": 0.8,
+ "gps_covered_s": [
+  174.5,
+  1600.5
+ ],
+ "removed_ay_median_moving": 0.3155110738641287,
+ "removed_ay_p10_p90_moving": [
+  -0.006606021280837484,
+  0.44722585282482247
+ ],
+ "removed_ay_median_stopped": 0.3238231430521405,
+ "note": "ay에서 (ay − v·gz)의 느린 부분을 뺌. ax, az, 자이로는 calibrated 와 같음"
+}

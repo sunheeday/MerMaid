@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "log_messages.hpp"
 #include "policy.hpp"
 #include "rf_messages.hpp"
 
@@ -19,21 +20,35 @@ namespace mm::devmgr {
 
 constexpr int64_t kSafetyTimeoutMs = 30000;  // policy.json safety_timeout_s
 
-using Out = std::variant<msg::OutInt, msg::OutStream, msg::OutProf, msg::OutDrop, msg::OutResync>;
+using Out = std::variant<msg::OutInt, msg::OutStream, msg::OutProf, msg::OutDrop, msg::OutResync, msg::OutRisk>;
 using Outs = std::vector<Out>;
+
+// 주행 로그(P7)에 남길 사건: 안전 OFF 진입(SAFE_OFF)·해제(SAFE_CLEAR), 잡아 둔 ON 적용(HELD_ON).
+// 보내는 일은 프로세스가 한다 (docs/controller/DATA_LOGGING.md §6-2). ctx 표의 sender는 "p5"
+struct LogEvent {
+    msg::CtxKind kind;
+    std::string value;  // JSON
+};
 
 class DevMgr {
 public:
     using LogFn = std::function<void(const std::string&)>;
+    using EventFn = std::function<void(const LogEvent&)>;
     // 저장된 프로필 읽기 (P4가 쓴 state/profiles/<ID>.json). 없으면 false. P5는 읽기만 한다
     using ProfileFn = std::function<bool(const std::string& phone, Profile& out)>;
 
     DevMgr(ProfileFn load_profile, LogFn log = nullptr, int64_t safety_ms = kSafetyTimeoutMs)
         : load_profile_(std::move(load_profile)), log_(std::move(log)), safety_ms_(safety_ms) {}
 
+    // 로그 사건을 받을 곳. on_*() 안에서 불린다 (멈추지 않는 일만: 목록에 넣기)
+    void set_event_sink(EventFn f) { event_ = std::move(f); }
+
     Outs on_hello(const msg::DevHello& m);    // P6: 기기 등록
     Outs on_bye(const msg::DevBye& m);        // P6: 기기 해제
     Outs on_tier_cmd(const msg::TierCmd& m);  // P4: 기기 하나 ON/OFF
+    // P4: 폰 하나의 위험 확률 (#19) → 그 폰이 연결돼 있으면 OUT_RISK. "default"·HUD·공용 기기·없는 폰은 버리고 센다
+    Outs on_risk(const msg::RiskFwd& m);
+    uint64_t risk_unrouted() const { return risk_unrouted_; }
     msg::DevSyncReply on_sync(const msg::DevSync& m, int64_t now_ms);  // P4: 10초마다, 회신 = 명부
     // 1초마다: P6에 OUT_RESYNC가 전달될 때까지 다시 보냄 + DEV_SYNC가 30초 없으면 전부 OFF
     Outs on_tick(int64_t now_ms);
@@ -55,6 +70,9 @@ private:
     void log(const std::string& s) const {
         if (log_) log_(s);
     }
+    void event(msg::CtxKind kind, const std::string& value) const {
+        if (event_) event_(LogEvent{kind, value});
+    }
     void send_state(uint8_t conn, Outs& out) const;  // 그 연결에 지금 상태 전부
     static void push_int(Outs& out, uint8_t conn, int tier, bool on);
     static void push_stream(Outs& out, uint8_t conn, bool on);
@@ -70,9 +88,12 @@ private:
     std::map<std::string, bool> dots_;   // Tier 3, 폰 ID별. 끊겨도 기억 (재연결 때 다시 보냄). 없으면 모름
     int64_t last_sync_ = -1;             // -1: 아직 시계 시작 전
     bool safe_off_ = false;
+    std::map<std::string, msg::TierCmd> held_;  // 안전 OFF 중에 온 ON 명령 (기기별 마지막). 풀리면 적용
     ProfileFn load_profile_;
     LogFn log_;
+    EventFn event_;
     int64_t safety_ms_;
+    uint64_t risk_unrouted_ = 0;
 };
 
 }  // namespace mm::devmgr

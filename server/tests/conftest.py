@@ -24,7 +24,7 @@ COLUMNS = ["ax", "ay", "az", "gx", "gy", "gz"]
 
 def make_ride(path: Path, ride_id: str | None = None, n_samples: int = 2100, hold=(120, 121),
               cycles: int = 2, phones=("phone-a",), labels=((5.0, "phone-a", 3),), closed: str | None = "ride_end",
-              schema_version: int = 1, gap_at: int | None = None) -> Path:
+              schema_version: int = 2, gap_at: int | None = None) -> Path:
     """P7과 같은 모양의 주행 파일. 샘플 값: ax = seq, az = 9.81, gz = NaN (seq 0만)"""
     ride_id = ride_id or path.name[: -len(".sqlite")]  # 기본: 파일 이름 = meta.ride_id (P7과 같게)
     if path.exists():

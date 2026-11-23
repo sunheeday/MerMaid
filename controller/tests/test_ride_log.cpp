@@ -180,10 +180,15 @@ static void test_normal_ride() {
     lg.on_msg(&scr, sizeof scr, now);
     msg::LogCtx hello = ctx_msg("phone-a", msg::CtxKind::HELLO, "{\"conn\":1}", now - 4 * S);
     lg.on_msg(&hello, sizeof hello, now);
-    CHECK(lg.stats().outside_ride == 1, "HELLO outside a ride is counted, SCR kept as state");
+    CHECK(lg.stats().outside_ride == 0, "HELLO before a ride is kept for the next ride file, SCR kept as state");
 
     lg.on_item(start_item(now), 0x7F, now);
     CHECK(lg.ride_open(), "ride open after RIDE_START");
+    // 주행 안/밖은 사건 시각으로: 주행 전에 생긴 사건이 늦게 닿아도 t NULL, 첫 샘플 전에 닿은 주행 중 사건은 t가 있다
+    msg::LogCtx late_pre = ctx_msg("phone-a", msg::CtxKind::CONNECT, "{\"conn\":1}", now - 50 * 1000000ULL);
+    lg.on_msg(&late_pre, sizeof late_pre, now);
+    msg::LogCtx early = ctx_msg("p5", msg::CtxKind::SAFE_CLEAR, "{\"held\":0}", now + 2 * 1000000ULL);
+    lg.on_msg(&early, sizeof early, now);
     const uint64_t m0 = now + 10 * 1000000ULL;
     for (uint64_t i = 0; i < 250; i++) lg.on_item(sample(i, m0 + i * 10000000ULL, (i == 120 || i == 121) ? 1u : 0u), 0x7F, now);
     lg.tick(now + 1 * S);
@@ -201,11 +206,44 @@ static void test_normal_ride() {
     lg.on_msg(&dec, sizeof dec, now);
     msg::LogCtx ovr = ctx_msg("phone-a", msg::CtxKind::OVR, "{\"device\":\"airflow-01\",\"on\":0}", m0 + 150 * 10000000ULL);
     lg.on_msg(&ovr, sizeof ovr, now);
+    // Pi → 폰으로 나간 것, 거부된 것, P5의 안전 OFF도 같은 표에 (kind 이름 그대로)
+    msg::LogCtx tx = ctx_msg("phone-a", msg::CtxKind::INT, "{\"conn\":1,\"tier\":3,\"on\":1}", m0 + 160 * 10000000ULL);
+    lg.on_msg(&tx, sizeof tx, now);
+    msg::LogCtx rej = ctx_msg("phone-a", msg::CtxKind::REJECT, "{\"conn\":1,\"reason\":\"x\",\"raw\":\"y\"}", m0 + 170 * 10000000ULL);
+    lg.on_msg(&rej, sizeof rej, now);
+    msg::LogCtx so = ctx_msg("p5", msg::CtxKind::SAFE_OFF, "{\"no_sync_s\":30,\"conns\":1}", m0 + 180 * 10000000ULL);
+    lg.on_msg(&so, sizeof so, now);
+    // 보내는 쪽이 회신을 못 받아 같은 사건을 다시 보냄 (시각과 내용이 같다) → 한 번만 적는다
+    lg.on_msg(&tx, sizeof tx, now);
+    lg.on_msg(&so, sizeof so, now);
+    msg::LogCtx tx2 = tx;  // 시각이 다르면 다른 사건
+    tx2.mono_ns += 1;
+    lg.on_msg(&tx2, sizeof tx2, now);
     msg::LogSym sym;
     sym.mono_ns = m0 + 200 * 10000000ULL;
     msg::copy_id(sym.phone, "phone-a");
     sym.misc = 4;
     lg.on_msg(&sym, sizeof sym, now);
+    lg.on_msg(&sym, sizeof sym, now);  // 다시 보낸 같은 점수
+    CHECK(lg.stats().dup_msgs == 3 && lg.stats().label_rows == 1, "resent events are written once (dup %llu)",
+          (unsigned long long)lg.stats().dup_msgs);
+    // M09 GPS (#18): gps 표. 다시 보낸 것은 한 번만, 없는 칸(brg·alt)은 NULL
+    msg::LogGps gps;
+    gps.mono_ns = m0 + 210 * 10000000ULL;
+    msg::copy_id(gps.phone, "phone-a");
+    gps.spd = 12.34;
+    gps.brg = 87.5;
+    gps.acc = 3.2;
+    gps.alt = std::nan("");
+    lg.on_msg(&gps, sizeof gps, now);
+    lg.on_msg(&gps, sizeof gps, now);
+    msg::LogGps gps2 = gps;
+    gps2.mono_ns += 100 * 1000000ULL;
+    gps2.brg = std::nan("");
+    gps2.alt = 45.1;
+    lg.on_msg(&gps2, sizeof gps2, now);
+    CHECK(lg.stats().gps_rows == 2 && lg.stats().dup_msgs == 4, "gps rows %llu, dup %llu",
+          (unsigned long long)lg.stats().gps_rows, (unsigned long long)lg.stats().dup_msgs);
     msg::LogSym bad = sym;
     bad.misc = 11;
     lg.on_msg(&bad, sizeof bad, now);
@@ -224,7 +262,7 @@ static void test_normal_ride() {
     lg.tick(now + 5 * S + 1);
     CHECK(!lg.ride_open(), "closed after grace");
     lg.on_msg(&late, sizeof late, now + 6 * S);
-    CHECK(lg.stats().outside_ride == 2, "infer after close is outside");
+    CHECK(lg.stats().outside_ride == 1, "infer after close is outside");
 
     const std::string f = dir + "/rides/pi01-00001-001.sqlite";
     CHECK(closed.size() == 1 && closed[0] == f + "|ride_end", "on_closed: %s", closed.empty() ? "-" : closed[0].c_str());
@@ -234,7 +272,7 @@ static void test_normal_ride() {
     CHECK(!exists(op + "-wal") && !exists(op + "-shm"), "no WAL pieces left under the open name");
     CHECK(q1(f, "PRAGMA journal_mode") == "delete", "journal mode delete: %s", q1(f, "PRAGMA journal_mode").c_str());
     auto meta = [&](const char* k) { return q1(f, std::string("SELECT value FROM meta WHERE key='") + k + "'"); };
-    CHECK(meta("schema_version") == "1", "schema_version");
+    CHECK(meta("schema_version") == "2", "schema_version 2 (gps table, #18)");
     CHECK(meta("ride_id") == "pi01-00001-001", "ride_id %s", meta("ride_id").c_str());
     CHECK(meta("source") == "live", "source live");
     CHECK(meta("columns") == "[\"ax\", \"ay\", \"az\", \"gx\", \"gy\", \"gz\"]", "columns %s", meta("columns").c_str());
@@ -273,10 +311,22 @@ static void test_normal_ride() {
     CHECK(q1(f, "SELECT count(*) FROM decision") == "2", "decision rows");
     CHECK(q1(f, "SELECT on_ || tier || changed FROM decision WHERE device='airflow-01'") == "111", "decision values");
     CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='SCR' AND t IS NULL") == "1", "state before ride kept");
-    CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='HELLO'") == "0", "event outside ride not in file");
+    CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='HELLO' AND t IS NULL AND sender='phone-a'") == "1",
+          "event before the ride is in the file with t NULL");
+    CHECK(q1(f, "SELECT group_concat(kind) FROM (SELECT kind FROM ctx WHERE t IS NOT NULL ORDER BY mono_ns)") ==
+              "SAFE_CLEAR,OVR,INT,INT,REJECT,SAFE_OFF",
+          "new kinds by name: %s", q1(f, "SELECT group_concat(kind) FROM (SELECT kind FROM ctx ORDER BY mono_ns)").c_str());
+    CHECK(q1(f, "SELECT sender FROM ctx WHERE kind='SAFE_OFF'") == "p5", "P5 event sender");
+    CHECK(q1(f, "SELECT count(*) FROM ctx WHERE kind='CONNECT' AND t IS NULL") == "1", "pre-ride event that arrived late has t NULL");
+    CHECK(q1(f, "SELECT printf('%.3f', t) FROM ctx WHERE kind='SAFE_CLEAR'") == "0.002", "event before the first sample has a ride time: %s",
+          q1(f, "SELECT t FROM ctx WHERE kind='SAFE_CLEAR'").c_str());
     CHECK(q1(f, "SELECT printf('%.2f', t) FROM ctx WHERE kind='OVR'") == "1.50", "ctx t from mono_ns: %s",
           q1(f, "SELECT t FROM ctx WHERE kind='OVR'").c_str());
     CHECK(q1(f, "SELECT printf('%.2f', t) || ' ' || misc FROM label") == "2.00 4", "label");
+    CHECK(q1(f, "SELECT group_concat(printf('%.2f %s %.2f %.1f %s %s', t, phone, spd, acc, quote(brg), quote(alt)), ';') FROM "
+                "(SELECT * FROM gps ORDER BY mono_ns)") == "2.10 phone-a 12.34 3.2 87.5 NULL;2.20 phone-a 12.34 3.2 NULL 45.1",
+          "gps rows: %s",
+          q1(f, "SELECT group_concat(printf('%.2f %s %.2f %.1f %s %s', t, phone, spd, acc, quote(brg), quote(alt)), ';') FROM gps").c_str());
     CHECK(q1(f, "SELECT value FROM health WHERE key='hold_samples'") == "2.0", "hold health %s",
           q1(f, "SELECT value FROM health WHERE key='hold_samples'").c_str());
     CHECK(q1(f, "SELECT value FROM health WHERE key='ring_overrun'") == "0.0", "ring overrun health");
@@ -339,6 +389,34 @@ static void test_recovery() {
           "new session numbering and shutdown reason");
 }
 
+// 주행 밖에서 받은 기기 사건: 최근 kPreRideCtx개를 기억했다가 다음 주행 파일에 한 번만 적는다
+static void test_pre_ride_events() {
+    const std::string dir = fresh_dir("pre");
+    Logger lg(cfg_for(dir));
+    lg.start();
+    uint64_t now = 50 * S;
+    const int n = static_cast<int>(kPreRideCtx) + 6;
+    for (int i = 0; i < n; i++) {
+        const std::string v = "{\"conn\":" + std::to_string(i) + "}";
+        msg::LogCtx m = ctx_msg("conn0", msg::CtxKind::CONNECT, v.c_str(), now - static_cast<uint64_t>(n - i) * 1000000ULL);
+        lg.on_msg(&m, sizeof m, now);
+    }
+    CHECK(lg.stats().outside_ride == 6, "oldest pre-ride events dropped and counted: %llu",
+          (unsigned long long)lg.stats().outside_ride);
+    for (int ride = 1; ride <= 2; ride++) {
+        lg.on_item(start_item(now), 0x7F, now);
+        for (uint64_t i = 0; i < 10; i++) lg.on_item(sample(i, now + i * 10000000ULL, 0), 0x7F, now);
+        lg.on_item(end_item(10, now + 10 * 10000000ULL), 0x7F, now);
+        lg.tick(now + 3 * S);
+        now += 10 * S;
+    }
+    const std::string f1 = dir + "/rides/pi01-00001-001.sqlite", f2 = dir + "/rides/pi01-00001-002.sqlite";
+    CHECK(q1(f1, "SELECT count(*) FROM ctx WHERE kind='CONNECT' AND t IS NULL") == std::to_string(kPreRideCtx),
+          "first ride has the kept pre-ride events: %s", q1(f1, "SELECT count(*) FROM ctx").c_str());
+    CHECK(q1(f1, "SELECT value FROM ctx ORDER BY mono_ns LIMIT 1") == "{\"conn\":6}", "the newest ones were kept");
+    CHECK(q1(f2, "SELECT count(*) FROM ctx") == "0", "written once, not again in the next ride");
+}
+
 static void test_storage() {
     const std::string dir = fresh_dir("disk");
     double free_mb = 5000;
@@ -385,6 +463,7 @@ int main() {
     test_normal_ride();
     test_gap_restart_join();
     test_recovery();
+    test_pre_ride_events();
     test_storage();
     if (failures) {
         std::printf("%d failure(s)\n", failures);

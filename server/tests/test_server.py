@@ -41,10 +41,26 @@ def test_upload_new_then_same_then_conflict(client, tmp_path):
     assert client.get("/api/rides", headers=H).json()[0]["n_labels"] == 1, "first upload kept"
 
 
+def test_upload_schema_v1_without_gps(client, tmp_path):
+    """스키마 1 파일(gps 표 전, 2026-11-21 실차 주행 파일)도 받는다. 2에서 gps 표가 빠지면 거부"""
+    f = make_ride(tmp_path / "pi01-00001-001.sqlite", schema_version=1)
+    con = sqlite3.connect(f)
+    con.execute("DROP TABLE gps")
+    con.commit()
+    con.close()
+    assert upload(client, f).status_code == 201
+    g = make_ride(tmp_path / "pi01-00001-002.sqlite", schema_version=2)
+    con = sqlite3.connect(g)
+    con.execute("DROP TABLE gps")
+    con.commit()
+    con.close()
+    assert upload(client, g).status_code == 422
+
+
 @pytest.mark.parametrize("case", ["sha", "name", "name_mismatch", "not_closed", "schema", "missing_table", "garbage", "bad_sha"])
 def test_upload_rejected(client, tmp_path, case):
     f = make_ride(tmp_path / "pi01-00001-001.sqlite", closed=None if case == "not_closed" else "ride_end",
-                  schema_version=2 if case == "schema" else 1)
+                  schema_version=99 if case == "schema" else 2)
     kw = {}
     if case == "sha":
         kw["sha"] = "0" * 64

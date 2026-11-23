@@ -7,4 +7,14 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
+    <!-- 알림 속 멀미 점수 칸 (res/layout/notif_sym.xml) -->
+    <style name="SymCell">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">36dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_margin">2dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_sym_cell</item>
+        <item name="android:textAppearance">@style/TextAppearance.Compat.Notification.Title</item>
+    </style>
 </resources>

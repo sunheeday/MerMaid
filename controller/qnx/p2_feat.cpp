@@ -4,12 +4,19 @@
 // --motion: 10샘플(100 ms, constants.json mot_period_ms)마다 P6(mermaid_p6)에 MOTION을 보낸다.
 //   ax, ay = Wf 가중 가속도, pax, pay = trip 열 pred_ax_10s, pred_ay_10s (docs/controller/RF_MESSAGES.md §5).
 //   P6이 없거나 늦으면 20 ms 뒤 포기하고 센다 (피처 계산은 계속).
+// GPS 속도 (#18): P6이 앱의 M09 GPS를 받을 때마다 GPS_SPEED를 보낸다. 받자마자 회신하고 보관만 한다(common/gps_speed.hpp).
+//   샘플의 speed 칸이 NaN(LIVE)이면 보관한 값으로 채운다 (최근 2초 안 acc 최소, 3초 넘게 없으면 NaN).
+//   재생 trip에 speed가 있으면 그대로 둔다. P6 → P2와 P2 → P6(MOTION)의 교착 없음: docs/controller/RF_MESSAGES.md §2-2
+//   빠른 재생(p1_acq --speed 2 초과)이면 주행 시각 100 ms가 실제 50 ms보다 짧아진다. BLE는 10 Hz를 넘게 못 나르므로
+//   앞 MOTION에서 실제 시계로 반 주기(50 ms)가 안 지났으면 건너뛰고 센다 (mot_skip). 실시간 재생에서는 건너뛰지 않는다.
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 
+#include "gps_speed.hpp"
 #include "ipc.hpp"
 #include "messages.hpp"
 #include "rf_messages.hpp"
@@ -20,6 +27,7 @@ union Inbox {
     msg::Hdr h;
     msg::Sample s;
     msg::RideEdge e;
+    msg::GpsSpeed g;
     _pulse pulse;
     Inbox() {}
 };
@@ -38,25 +46,35 @@ int main(int argc, char** argv) {
         if (!p3.wait_open(30)) std::fprintf(stderr, "p2: %s not found yet, will retry\n", msg::kNameP3);
         ipc::Client p6(msg::kNameP6, 20 * 1000000ULL);
         const int mot_every = proto::kMotPeriodMs / 10;  // 100 Hz 샘플 수
-        uint64_t mot_sent = 0, mot_fail = 0;
+        const uint64_t mot_min_gap_ns = static_cast<uint64_t>(proto::kMotPeriodMs) * 1000000ULL / 2;
+        uint64_t mot_sent = 0, mot_fail = 0, mot_skip = 0, mot_last_ns = 0;
         ipc::Server srv(msg::kNameP2);  // P3에 연결된 뒤에 이름을 붙인다
         auto fx = std::make_unique<FeatureExtractor>();
         Inbox in;
         uint64_t expect = 0, received = 0, gaps = 0, veh = 0, veh_fail = 0;
         uint64_t push_max_ns = 0;
+        gps::SpeedHold gps_hold;  // 주행이 바뀌어도 유지 (GPS는 주행과 상관없이 온다)
+        uint64_t gps_rx = 0, gps_filled = 0;
         for (;;) {
             const int rcvid = srv.receive(&in, sizeof in);
             const uint16_t type = in.h.type;
             if (type == msg::SAMPLE) {
-                const msg::Sample s = in.s;
+                msg::Sample s = in.s;
                 ipc::Server::reply(rcvid);
+                if (std::isnan(s.row[proto::C_SPEED])) {
+                    s.row[proto::C_SPEED] = gps::fill_speed(s.row[proto::C_SPEED], gps_hold, ipc::now_ns());
+                    if (!std::isnan(s.row[proto::C_SPEED])) gps_filled++;
+                }
                 if (s.seq != expect) gaps += s.seq > expect ? s.seq - expect : 1;
                 expect = s.seq + 1;
                 received++;
                 const uint64_t t0 = ipc::now_ns();
                 const bool emit = fx->push(s.row);
                 push_max_ns = std::max(push_max_ns, ipc::now_ns() - t0);
-                if (motion && received % mot_every == 0) {
+                if (motion && received % mot_every == 0 && mot_last_ns && t0 - mot_last_ns < mot_min_gap_ns) {
+                    mot_skip++;
+                } else if (motion && received % mot_every == 0) {
+                    mot_last_ns = t0;
                     msg::Motion m;
                     m.t = s.row[proto::C_T];
                     m.ax = fx->weighted_ax();
@@ -74,12 +92,21 @@ int main(int argc, char** argv) {
                     v.t_emit_ns = ipc::now_ns();
                     if (!p3.send(&v, sizeof v)) veh_fail++;
                 }
+            } else if (type == msg::GPS_SPEED) {
+                const msg::GpsSpeed g = in.g;
+                ipc::Server::reply(rcvid);
+                char phone[msg::kIdLen];
+                std::memcpy(phone, g.phone, sizeof phone);
+                phone[msg::kIdLen - 1] = 0;
+                gps_hold.put(phone, g.mono_ns, g.spd, g.acc);
+                gps_rx++;
             } else if (type == msg::RIDE_START || type == msg::RIDE_END) {
                 const msg::RideEdge e = in.e;
                 ipc::Server::reply(rcvid);
                 if (type == msg::RIDE_START) {
                     fx = std::make_unique<FeatureExtractor>();
-                    expect = received = gaps = veh = veh_fail = push_max_ns = mot_sent = mot_fail = 0;
+                    expect = received = gaps = veh = veh_fail = push_max_ns = mot_sent = mot_fail = mot_skip = mot_last_ns = 0;
+                    gps_rx = gps_filled = 0;
                 }
                 if (!p3.send(&e, sizeof e)) std::fprintf(stderr, "p2: ride edge not delivered to p3\n");
                 if (type == msg::RIDE_END) {
@@ -88,8 +115,12 @@ int main(int argc, char** argv) {
                                 (unsigned long long)e.samples, (unsigned long long)received, (unsigned long long)gaps,
                                 (unsigned long long)veh, (unsigned long long)veh_fail, push_max_ns / 1e3);
                     if (motion)
-                        std::printf(", \"mot_sent\": %llu, \"mot_fail\": %llu", (unsigned long long)mot_sent,
-                                    (unsigned long long)mot_fail);
+                        std::printf(", \"mot_sent\": %llu, \"mot_fail\": %llu, \"mot_skip\": %llu",
+                                    (unsigned long long)mot_sent, (unsigned long long)mot_fail,
+                                    (unsigned long long)mot_skip);
+                    if (gps_rx)
+                        std::printf(", \"gps_rx\": %llu, \"gps_filled\": %llu", (unsigned long long)gps_rx,
+                                    (unsigned long long)gps_filled);
                     std::printf("}\n");
                     std::fflush(stdout);
                     if (once) return (gaps || veh_fail || received != e.samples) ? 1 : 0;

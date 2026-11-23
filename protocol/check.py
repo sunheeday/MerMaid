@@ -3,7 +3,7 @@
 1. PROTOCOL.md의 예시 메시지가 messages.schema.json을 통과하고, 잘못된 메시지는 거부되는지
 2. feature_order.json의 피처 수(n_features), 인덱스 연속, 그룹 개수와 범위가 맞는지
 3. UUID, 설정 파일의 버전과 값이 서로 맞는지
-4. ride_schema.sql이 SQLite에서 실행되고 표 7개가 있는지, protocol_gen.hpp가 JSON·SQL과 같은지
+4. ride_schema.sql이 SQLite에서 실행되고 표 8개가 있는지, protocol_gen.hpp가 JSON·SQL과 같은지
 """
 import json
 import pathlib
@@ -28,10 +28,10 @@ schema = load(ROOT / "messages.schema.json")
 Draft202012Validator.check_schema(schema)
 v = Draft202012Validator(schema)
 examples = [json.loads(l) for l in re.findall(r'^\{"t":.*\}$', (ROOT / "PROTOCOL.md").read_text(), re.M)]
-check(len(examples) == 7, f"PROTOCOL.md 예시 {len(examples)}개 (7개여야 함)")
+check(len(examples) == 10, f"PROTOCOL.md 예시 {len(examples)}개 (10개여야 함)")
 for m in examples:
     check(v.is_valid(m), f"예시가 스키마를 통과하지 못함: {m}")
-check({m["t"] for m in examples} == {"HELLO", "INT", "MOT", "SCR", "OVR", "PROF", "HB"}, "예시에 빠진 메시지 종류가 있음")
+check({m["t"] for m in examples} == {"HELLO", "INT", "MOT", "SCR", "OVR", "PROF", "HB", "SYM", "GPS", "RISK"}, "예시에 빠진 메시지 종류가 있음")
 for bad in [
     {"t": "HELLO", "role": "app", "dev": "x", "v": 2},
     {"t": "INT", "tier": 4, "on": True},
@@ -40,7 +40,21 @@ for bad in [
     {"t": "PROF", "mssq": 60, "sens": 1.0},
     {"t": "HB", "seq": -1},
     {"t": "MISC", "score": 3},
+    {"t": "SYM", "misc": 11},
+    {"t": "SYM", "misc": 3.5},
+    {"t": "SYM", "misc": "3"},
+    {"t": "SYM"},
     {"t": "OVR", "dev": "display-01", "on": False, "extra": 1},
+    {"t": "GPS", "spd": 12.0},
+    {"t": "GPS", "spd": -1, "acc": 3},
+    {"t": "GPS", "spd": 101, "acc": 3},
+    {"t": "GPS", "spd": 12, "acc": -0.1},
+    {"t": "GPS", "spd": 12, "acc": 3, "brg": 360},
+    {"t": "GPS", "spd": "12", "acc": 3},
+    {"t": "GPS", "spd": 12, "acc": 3, "lat": 37.5},
+    {"t": "RISK", "p": [0.9, 0.8, 0.5, 0.1]},
+    {"t": "RISK", "p": [0.9, 0.8, 0.5, 0.1, 1.2]},
+    {"t": "RISK", "p": [0.9, 0.8, 0.5, 0.1, None]},
 ]:
     check(not v.is_valid(bad), f"잘못된 메시지가 통과함: {bad}")
 
@@ -90,7 +104,7 @@ try:
     con = sqlite3.connect(":memory:")
     con.executescript(rs)
     tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    check(tables == {"meta", "samples", "infer", "decision", "ctx", "label", "health"}, f"ride_schema.sql 표가 다름: {sorted(tables)}")
+    check(tables == {"meta", "samples", "infer", "decision", "ctx", "label", "health", "gps"}, f"ride_schema.sql 표가 다름: {sorted(tables)}")
 except sqlite3.Error as e:
     check(False, f"ride_schema.sql이 SQLite에서 실행되지 않음: {e}")
 
@@ -102,4 +116,4 @@ if errors:
     print("\n".join("FAIL: " + e for e in errors))
     sys.exit(1)
 on = sum(f["enabled"] for f in feats)
-print(f"OK: 메시지 예시 {len(examples)}개 통과, 잘못된 메시지 8개 거부, 피처 {len(feats)}개 (enabled {on}개, NaN 고정 {len(feats) - on}개)")
+print(f"OK: 메시지 예시 {len(examples)}개 통과, 잘못된 메시지 22개 거부, 피처 {len(feats)}개 (enabled {on}개, NaN 고정 {len(feats) - on}개)")

@@ -10,7 +10,10 @@
     { "$ref": "#/$defs/SCR" },
     { "$ref": "#/$defs/OVR" },
     { "$ref": "#/$defs/PROF" },
-    { "$ref": "#/$defs/HB" }
+    { "$ref": "#/$defs/HB" },
+    { "$ref": "#/$defs/SYM" },
+    { "$ref": "#/$defs/GPS" },
+    { "$ref": "#/$defs/RISK" }
   ],
   "$defs": {
     "HELLO": {
@@ -91,6 +94,44 @@
         "seq": { "type": "integer", "minimum": 0 }
       },
       "required": ["t", "seq"],
+      "additionalProperties": false
+    },
+    "SYM": {
+      "description": "M08, app -> controller. Self-reported sickness score (MISC 0-10, integer) by touch. Data collection only: logged by the controller, never used by the policy",
+      "type": "object",
+      "properties": {
+        "t": { "const": "SYM" },
+        "misc": { "type": "integer", "minimum": 0, "maximum": 10 }
+      },
+      "required": ["t", "misc"],
+      "additionalProperties": false
+    },
+    "GPS": {
+      "description": "M09, app -> controller, after HELLO, 1-10 Hz. Phone GPS speed (m/s), horizontal accuracy (m), optional bearing (deg) and altitude (m). No latitude/longitude",
+      "type": "object",
+      "properties": {
+        "t": { "const": "GPS" },
+        "spd": { "type": "number", "minimum": 0, "maximum": 100 },
+        "acc": { "type": "number", "minimum": 0 },
+        "brg": { "type": "number", "minimum": 0, "exclusiveMaximum": 360 },
+        "alt": { "type": "number" }
+      },
+      "required": ["t", "spd", "acc"],
+      "additionalProperties": false
+    },
+    "RISK": {
+      "description": "M10, controller -> app, every inference period (10 s). This phone's P(MISC>=2), P(MISC>=3), ..., P(MISC>=6), 2 decimals. Display only",
+      "type": "object",
+      "properties": {
+        "t": { "const": "RISK" },
+        "p": {
+          "type": "array",
+          "items": { "type": "number", "minimum": 0, "maximum": 1 },
+          "minItems": 5,
+          "maxItems": 5
+        }
+      },
+      "required": ["t", "p"],
       "additionalProperties": false
     }
   }

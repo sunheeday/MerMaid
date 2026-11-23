@@ -1,0 +1,25 @@
+{
+ "source": "logs/rides/pi01-00001-001.sqlite",
+ "transform": "axis relabel only (exact 90 deg about z), no tilt/bias/gravity/time correction",
+ "R_car_from_sensor": [
+  [
+   0.0,
+   1.0,
+   0.0
+  ],
+  [
+   -1.0,
+   0.0,
+   0.0
+  ],
+  [
+   0.0,
+   0.0,
+   1.0
+  ]
+ ],
+ "car_axes": "x forward, y left, z up",
+ "units": "accel m/s^2 (gravity included), gyro rad/s (startup bias already removed by P1)",
+ "ride_start_kst": "2026-11-21 21:45:06.000",
+ "samples": 317025
+}

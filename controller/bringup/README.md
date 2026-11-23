@@ -191,3 +191,23 @@ ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && WAIT=40 sh controller/bringup/demo
 페어링(암호화)이 끝나지 않는다. ESP32 로그에 `security: encrypted=1`이 없고, 페이지는 `startNotifications`에서 기다리느라 HELLO를 보내지 않는다.
 확인할 것: 맥의 블루투스 페어링 요청 창, 맥 Bluetooth 설정의 옛 `MSAgent` 삭제, ESP32에 저장된 본딩 정리.
 ESP32 전원과 로그는 맥 USB(보드의 "UART" 포트, CP2102 → `/dev/cu.usbserial-*`)로 받는다. Pi 핀 3가닥(7·29·9)은 데이터선이라 전원이 없다.
+
+## 실차 주행: start.sh / stop.sh (2026-11-23 갱신, #16~#19)
+
+```
+su
+sh /data/home/qnxuser/mermaid/rf-log/controller/bringup/start.sh 120   # 120분. 끝: stop.sh
+```
+
+- **#16** 예전에는 폰이 P6보다 먼저 브리지에 붙어 있으면 등록이 안 돼서 start.sh가 `0|DROP`을 직접 UART에 썼다. 이제 P6이 스스로
+  시작 DROP을 1초 뒤 한 번 더 보내고, 모르는 연결(CONNECT도 HELLO도 없음)에서 줄이 오면 그 연결에 DROP한다(5초에 한 번).
+  그래서 수동 쓰기는 뺐다 (P6과 같은 UART에 겹쳐 쓰면 줄이 섞일 수 있음). 확인: `p6.out`에 `line from unknown connection N`,
+  `start: drop again ...`, 주행 파일 `ctx`의 DROP 이유 `unknown_conn`·`p6_start_retry`
+- **#18** 앱이 M09 GPS를 보내면 `p6.out`의 10초 stat 줄에 `gps N (to P2 n, fail k)`. 주행이 끝나면 `p2.out`에 `gps_rx`, `gps_filled`.
+  주행 파일: `sqlite3 <ride>.sqlite "SELECT count(*), avg(spd), avg(acc) FROM gps"`, G2 피처는 infer의 x[33] (speed_mean_10s)
+- **#19** 앱이 10초마다 M10 RISK를 받는다. `p4.out` 끝 통계 `risk_fwd`/`risk_fwd_fail`, `p5.out` 1분 요약 줄 `risk_sent`/`risk_unrouted`,
+  `p6.out` stat `risk_drop`, 주행 파일 `ctx`의 `RISK_OUT`
+- 맥으로 폰 대신 확인: `firmware/bridge/tools/ble_check.py ai --gps 8.3` (GPS 1초마다 보내기, RISK 10초 간격 확인)
+
+**Pi에서 아직 확인하지 않은 것 (2026-11-23 기준, 맥 시험만 통과):** 실제 브리지에서 #16 재현·해결, QNX에서 P6 → P2 GPS_SPEED 3 ms 제한이
+충분한지(`fail` 수), 실제 폰 GPS 값과 G2 피처, 앱의 RISK 표시.

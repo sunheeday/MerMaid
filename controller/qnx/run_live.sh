@@ -5,6 +5,7 @@
 # 환경 변수
 #   FAKE_IMU=1     가짜 IMU (IMU 없이 경로 시험)          DURATION_S=N  N초 주행 후 자동으로 끝
 #   RF=0           P5·P6 없이 (P4 --hud 고정 등록)        SER=/dev/ser3 ESP32 UART
+#   HUD=1          RF일 때도 HUD(송풍·앰비언트)가 연결돼 있다고 보고 P4에 --hud (HUD 기기 없이 Tier 1·2 시험)
 #   I2C=/dev/i2c1  IMU 버스                               MODELS=…      기본 ml/out/runs/<CURRENT>/models
 #   LOGS=DIR       P7 주행 로그 폴더 (기본 ~/mermaid/logs)  P7=0          로거 없이
 # 시작 순서: P6 → P5 → P7 로거 → P4 → P3 → P2 → P1. LIVE는 센서 오류 뒤 새 주행이 이어질 수 있어서
@@ -21,6 +22,7 @@ pids=""
 rf4="--hud"; rf2=""
 if [ "${RF:-1}" != "0" ]; then
     rf4="--rf"; rf2="--motion"
+    [ "${HUD:-0}" != "0" ] && rf4="--rf --hud"
     $B/p6_comm --dev "${SER:-/dev/ser3}" > "$out/p6.out" 2>&1 &
     pids="$pids $!"
     sleep 1

@@ -17,6 +17,9 @@ import numpy as np
 SCHEMA_SQL = (Path(__file__).resolve().parents[1] / "protocol" / "ride_schema.sql").read_text(encoding="utf-8")
 SCHEMA_VERSION = int(re.search(r"^-- schema_version: (\d+)$", SCHEMA_SQL, re.M).group(1))
 TABLES = tuple(re.findall(r"^CREATE TABLE (\w+)", SCHEMA_SQL, re.M))
+# 뒤 버전에서 생긴 표: 그보다 옛 버전 파일에는 없어도 된다 (옛 파일도 받는다)
+TABLE_SINCE = {"gps": 2}
+MIN_SCHEMA_VERSION = 1
 RIDE_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}-\d{5}-\d{3,}$")  # <device>-<session:05d>-<ride:03d>
 MAX_SAMPLE_WINDOW_S = 600.0
 PROBS = ("p2", "p3", "p4", "p5", "p6")
@@ -87,12 +90,16 @@ class RideFile:
         if ok != "ok":
             raise RideFileError(f"integrity_check: {ok}")
         have = {r[0] for r in self.con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        missing = [t for t in TABLES if t not in have]
+        if "meta" not in have:
+            raise RideFileError("missing tables: meta")
+        m = self.meta
+        ver = _int(m.get("schema_version"))
+        if ver is None or not MIN_SCHEMA_VERSION <= ver <= SCHEMA_VERSION:
+            raise RideFileError(
+                f"schema_version {m.get('schema_version')!r}, expected {MIN_SCHEMA_VERSION}..{SCHEMA_VERSION}")
+        missing = [t for t in TABLES if t not in have and ver >= TABLE_SINCE.get(t, 1)]
         if missing:
             raise RideFileError(f"missing tables: {', '.join(missing)}")
-        m = self.meta
-        if _int(m.get("schema_version")) != SCHEMA_VERSION:
-            raise RideFileError(f"schema_version {m.get('schema_version')!r}, expected {SCHEMA_VERSION}")
         rid = m.get("ride_id")
         if not rid or not RIDE_ID.match(rid):
             raise RideFileError(f"bad meta.ride_id {rid!r}")
@@ -188,6 +195,13 @@ class RideFile:
     def label_rows(self) -> list[dict]:
         return [dict(zip(("mono_ns", "t", "phone", "misc"), r)) for r in self.con.execute(
             "SELECT mono_ns, t, phone, misc FROM label ORDER BY mono_ns, rowid")]
+
+    def gps_rows(self) -> list[dict]:
+        """M09 GPS (스키마 2부터. 1이면 빈 목록)"""
+        if not self.con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gps'").fetchone():
+            return []
+        return [dict(zip(("mono_ns", "t", "phone", "spd", "brg", "acc", "alt"), r)) for r in self.con.execute(
+            "SELECT mono_ns, t, phone, spd, brg, acc, alt FROM gps ORDER BY mono_ns, rowid")]
 
     # ---------- 원본 샘플 ----------
     def samples(self, t_from: float = 0.0, t_to: float | None = None, cols: list[str] | None = None) -> dict:

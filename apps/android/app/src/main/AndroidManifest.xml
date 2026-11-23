@@ -5,12 +5,18 @@
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     <uses-feature android:name="android.software.companion_device_setup" android:required="true" />
+    <!-- GPS가 없는 폰에도 설치는 된다 (속도를 안 보낼 뿐) -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <!-- 브리지 검색·연결. 위치 추론에 쓰지 않음 (NFR-08) -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- 차 속도 (M09 GPS). 속도·정확도·방향·고도만 보내고 위도·경도는 보내지도 저장하지도 않음.
+         주행 기록 수집 동의가 켜져 있고 차와 연결됐을 때만 위치를 요청. 백그라운드 위치 권한은 요청하지 않음 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- 상주 알림 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 타 앱 위 모션 큐 -->
@@ -18,6 +24,7 @@
     <!-- 백그라운드 상주 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <!-- 탑승 감지 시 앱을 열지 않아도 서비스 시작 (CDM) -->
     <uses-permission android:name="android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE" />
     <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
@@ -50,7 +57,7 @@
         <service
             android:name=".service.LinkService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
 
         <!-- 등록된 브리지가 범위에 들어오거나 나가면 시스템이 호출 (APP-F-02, 08) -->
         <service
