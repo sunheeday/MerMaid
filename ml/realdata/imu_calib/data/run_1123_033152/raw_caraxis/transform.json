@@ -1,0 +1,23 @@
+{
+ "source": "logs/rides/pi01-00001-001.sqlite",
+ "transform": "none (sensor remounted, imu_mount R = identity)",
+ "R_car_from_sensor": [
+  [
+   1.0,
+   0.0,
+   0.0
+  ],
+  [
+   0.0,
+   1.0,
+   0.0
+  ],
+  [
+   0.0,
+   0.0,
+   1.0
+  ]
+ ],
+ "car_axes": "x forward, y left, z up",
+ "samples": 228487
+}

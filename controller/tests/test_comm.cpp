@@ -1,5 +1,5 @@
 // P6 통신 코어 테스트: 줄 조립, 프레임, HELLO 5초, HB 1초, 기기 메시지 → P4/P5 메시지, P5/P2 메시지 → UART 줄,
-// 시작 DROP, P5 재시작(OUT_RESYNC → HELLO 재전송, INT 기록)
+// 시작 DROP, P5 재시작(OUT_RESYNC → HELLO 재전송, INT 기록), M08 SYM 규칙, 주행 로그 사건(LogEvent)
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -357,6 +357,47 @@ static void start_drops_all() {
           "then DEV_BYE ALL");
 }
 
+// #16: 시작 DROP을 1초 뒤 한 번 더, 모르는 연결(CONNECT도 HELLO도 없음)에서 줄이 오면 그 연결에 DROP (5초에 한 번)
+static void unknown_connection() {
+    Comm c(nullptr, 0);
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    c.on_start(0);
+    CHECK(lines(c.on_tick(500)).size() == 1, "only HB before 1 s");
+    c.on_uart_line("0|CONNECT", 600);  // 첫 DROP 뒤 다시 붙은 기기
+    c.on_uart_line("1|" + hello("app", kPhone), 700);  // CONNECT 없이 HELLO (등록은 된다)
+    Actions a = c.on_tick(1000);
+    CHECK(!has_line(a, "0|DROP") && !has_line(a, "1|DROP") && has_line(a, "2|DROP") && has_line(a, "8|DROP"),
+          "start DROP again, except connections that came back");
+    CHECK(!ev.empty() && ev.back().kind == msg::CtxKind::DROP && ev.back().sender == "all" &&
+              ev.back().value == "{\"conn\":[2,3,4,5,6,7,8],\"reason\":\"p6_start_retry\"}",
+          "retry logged: %s", ev.empty() ? "" : ev.back().value.c_str());
+    a = c.on_tick(2000);
+    for (int i = 0; i < 9; i++) CHECK(!has_line(a, std::to_string(i) + "|DROP"), "retry only once (%d)", i);
+
+    // P6보다 먼저 붙어 있던 폰: CONNECT 없이 HB만 온다 → 그 연결에 DROP
+    a = c.on_uart_line("4|{\"t\":\"HB\",\"seq\":7}", 2100);
+    CHECK(has_line(a, "4|DROP"), "line from unknown connection -> DROP");
+    CHECK(ev.back().kind == msg::CtxKind::DROP && ev.back().sender == "conn4" &&
+              ev.back().value == "{\"conn\":4,\"reason\":\"unknown_conn\"}",
+          "DROP reason unknown_conn: %s", ev.back().value.c_str());
+    CHECK(!has_line(c.on_uart_line("4|{\"t\":\"HB\",\"seq\":8}", 3100), "4|DROP"), "not again within 5 s");
+    CHECK(!has_line(c.on_uart_line("4|{\"t\":\"SCR\",\"on\":true,\"att\":true}", 7000), "4|DROP"), "not again within 5 s (SCR)");
+    CHECK(has_line(c.on_uart_line("4|{\"t\":\"HB\",\"seq\":9}", 7100), "4|DROP"), "again after 5 s (bridge missed it)");
+    // 브리지가 끊고 기기가 다시 붙음 → 정상 등록, 더는 DROP 없음
+    c.on_uart_line("4|DISCONNECT", 7200);
+    c.on_uart_line("4|CONNECT", 7300);
+    CHECK(c.on_uart_line("4|{\"t\":\"HB\",\"seq\":0}", 7400).empty(), "HB after CONNECT, before HELLO: no DROP");
+    c.on_uart_line("4|" + hello("app", "phone-b"), 7500);
+    CHECK(c.registered(4) && c.on_uart_line("4|{\"t\":\"HB\",\"seq\":1}", 7600).empty(), "registered: no DROP");
+    // 등록된 연결(1)과 HELLO 전 연결(0)의 줄은 DROP하지 않는다
+    CHECK(!has_line(c.on_uart_line("1|{\"t\":\"HB\",\"seq\":1}", 7700), "1|DROP"), "HELLO without CONNECT counts as known");
+    CHECK(!has_line(c.on_uart_line("0|{\"t\":\"HB\",\"seq\":1}", 7800), "0|DROP"), "CONNECT without HELLO yet counts as known");
+    // 잘못된 HELLO는 DROP하지 않고(거부만), 다음 줄에서 DROP
+    CHECK(!has_line(c.on_uart_line("6|" + hello("car", "x"), 8000), "6|DROP"), "bad HELLO: only REJECT");
+    CHECK(has_line(c.on_uart_line("6|{\"t\":\"HB\",\"seq\":1}", 8100), "6|DROP"), "then next line -> DROP");
+}
+
 // P5 재시작: OUT_RESYNC → 다음 박자에 등록된 연결마다 DEV_HELLO, 보낸 INT 기록을 싣는다
 static void resync() {
     Comm c(nullptr, 0);
@@ -421,6 +462,235 @@ static void resync() {
     CHECK(h.size() == 1 && h[0].int_known == 0, "record cleared on CONNECT");
 }
 
+// M08 SYM: 앱만, HELLO 뒤, 0~10 정수만 → Sym (P7로). 아니면 버리고 REJECT 사건
+static void sym_rules() {
+    Comm c(nullptr, 0);
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    auto rejected = [&](const std::string& line, const char* why) {
+        const size_t n0 = ev.size();
+        const Actions a = c.on_uart_line(line, 100);
+        return a.empty() && ev.size() == n0 + 1 && ev.back().kind == msg::CtxKind::REJECT &&
+               ev.back().value.find(why) != std::string::npos;
+    };
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 0);
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":3}", "SYM before HELLO") && ev.back().sender == "conn0", "SYM before HELLO dropped");
+    c.on_uart_line("0|" + hello("app", kPhone), 1);
+    c.on_uart_line("1|CONNECT", 2);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 3);
+
+    for (int n : {0, 3, 10}) {
+        const Actions a = c.on_uart_line("0|{\"t\":\"SYM\",\"misc\":" + std::to_string(n) + "}", 10);
+        const auto* y = only<Sym>(a);
+        CHECK(y && y->phone == kPhone && y->misc == n, "SYM %d accepted, nothing for P4 or P5", n);
+    }
+    CHECK(only<Sym>(c.on_uart_line("0|{\"t\":\"SYM\",\"misc\":4.0}", 11)) != nullptr, "4.0 is the integer 4 (same as the JSON schema)");
+    const size_t before = ev.size();
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":11}", "0..10"), "11 out of range");
+    CHECK(ev.back().sender == kPhone && ev.back().value.find("\\\"misc\\\":11") != std::string::npos,
+          "reject names the phone and keeps the raw text: %s", ev.back().value.c_str());
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":-1}", "0..10"), "-1 out of range");
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":3.5}", "0..10"), "3.5 is not an integer");
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":1e30}", "0..10"), "huge number");
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":\"3\"}", "not a number"), "string refused");
+    CHECK(rejected("0|{\"t\":\"SYM\",\"misc\":true}", "not a number"), "bool refused");
+    CHECK(rejected("0|{\"t\":\"SYM\"}", "reason"), "missing misc");
+    CHECK(rejected("1|{\"t\":\"SYM\",\"misc\":3}", "SYM from HUD") && ev.back().sender == "hud-01", "HUD cannot send SYM");
+    CHECK(ev.size() == before + 8, "one REJECT per bad SYM");
+}
+
+// M09 GPS (#18): 앱만, HELLO 뒤. spd 0~100, acc >= 0 필수, brg [0,360)·alt 선택. 통과하면 Gps 하나 (P7·P2로)
+static void gps_rules() {
+    Comm c(nullptr, 0);
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    auto rejected = [&](const std::string& line, const char* why) {
+        const size_t n0 = ev.size();
+        const Actions a = c.on_uart_line(line, 100);
+        return a.empty() && ev.size() == n0 + 1 && ev.back().kind == msg::CtxKind::REJECT &&
+               ev.back().value.find(why) != std::string::npos;
+    };
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 0);
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":1,\"acc\":3}", "GPS before HELLO"), "GPS before HELLO dropped");
+    c.on_uart_line("0|" + hello("app", kPhone), 1);
+    c.on_uart_line("1|CONNECT", 2);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 3);
+
+    Actions a = c.on_uart_line("0|{\"t\":\"GPS\",\"spd\":12.34,\"brg\":87.5,\"acc\":3.2,\"alt\":45.1}", 10);
+    const auto* g = only<Gps>(a);
+    CHECK(g && g->phone == kPhone && g->spd == 12.34 && g->brg == 87.5 && g->acc == 3.2 && g->alt == 45.1, "full GPS");
+    a = c.on_uart_line("0|{\"t\":\"GPS\",\"spd\":0,\"acc\":0}", 11);
+    g = only<Gps>(a);
+    CHECK(g && g->spd == 0 && g->acc == 0 && std::isnan(g->brg) && std::isnan(g->alt), "required only, stopped car; brg/alt NaN");
+    a = c.on_uart_line("0|{\"t\":\"GPS\",\"spd\":100,\"acc\":50,\"brg\":0,\"alt\":-12.5,\"x\":1}", 12);
+    CHECK(only<Gps>(a) != nullptr, "edges 100 m/s, brg 0, negative altitude, unknown field ignored");
+    const size_t before = ev.size();
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12}", "missing key acc"), "acc required");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"acc\":3}", "missing key spd"), "spd required");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":-0.1,\"acc\":3}", "spd out of range"), "negative speed");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":100.1,\"acc\":3}", "spd out of range"), "over 100 m/s");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":\"12\",\"acc\":3}", "not a number"), "string speed");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12,\"acc\":-1}", "acc out of range"), "negative accuracy");
+    c.on_tick(1000);  // REJECT는 HB 박자마다 kMaxRejectsPerSec개까지
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12,\"acc\":3,\"brg\":360}", "brg out of range"), "bearing 360");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12,\"acc\":3,\"brg\":-1}", "brg out of range"), "negative bearing");
+    CHECK(rejected("0|{\"t\":\"GPS\",\"spd\":12,\"acc\":3,\"alt\":null}", "not a number"), "alt null");
+    CHECK(rejected("1|{\"t\":\"GPS\",\"spd\":12,\"acc\":3}", "GPS from HUD") && ev.back().sender == "hud-01", "HUD cannot send GPS");
+    CHECK(ev.size() == before + 10, "one REJECT per bad GPS");
+}
+
+// M10 RISK (#19): OUT_RISK → 그 연결이 등록된 앱이고 기기가 같을 때만 한 줄, 소수 2자리. 로그 RISK_OUT
+static void risk_out() {
+    Comm c(nullptr, 0);
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    c.on_tick(0);
+    c.on_uart_line("3|CONNECT", 0);
+    c.on_uart_line("3|" + hello("app", kPhone), 1);
+    c.on_uart_line("1|CONNECT", 2);
+    c.on_uart_line("1|" + hello("hud", "hud-01"), 3);
+    msg::OutRisk r;
+    r.conn = 3;
+    msg::copy_id(r.device, kPhone);
+    const double p[5] = {0.994, 0.856, 0.5549, 0.03, 0.0};
+    for (int k = 0; k < 5; k++) r.p[k] = p[k];
+    Actions a = c.on_out_risk(r);
+    CHECK(lines(a).size() == 1 && lines(a)[0] == "3|{\"t\":\"RISK\",\"p\":[0.99,0.86,0.55,0.03,0.00]}", "RISK line: %s",
+          lines(a).empty() ? "-" : lines(a)[0].c_str());
+    CHECK(!ev.empty() && ev.back().kind == msg::CtxKind::RISK_OUT && ev.back().sender == kPhone &&
+              ev.back().value == "{\"conn\":3,\"p\":[0.99,0.86,0.55,0.03,0.00]}",
+          "RISK_OUT logged: %s", ev.empty() ? "-" : ev.back().value.c_str());
+    r.p[0] = std::nan("");
+    r.p[1] = 1.7;
+    r.p[2] = -0.2;
+    a = c.on_out_risk(r);
+    CHECK(lines(a).size() == 1 && lines(a)[0] == "3|{\"t\":\"RISK\",\"p\":[0.00,1.00,0.00,0.03,0.00]}",
+          "NaN and out-of-range values clamped to valid JSON 0..1");
+    const size_t n = ev.size();
+    r.conn = 1;  // HUD에는 보내지 않는다
+    msg::copy_id(r.device, "hud-01");
+    CHECK(c.on_out_risk(r).empty(), "not to the HUD");
+    r.conn = 3;
+    msg::copy_id(r.device, "other-phone");
+    CHECK(c.on_out_risk(r).empty(), "device on that conn changed: dropped");
+    r.conn = 5;
+    msg::copy_id(r.device, kPhone);
+    CHECK(c.on_out_risk(r).empty(), "unregistered conn: dropped");
+    r.conn = 200;
+    CHECK(c.on_out_risk(r).empty(), "bad conn: dropped");
+    CHECK(ev.size() == n && c.risk_dropped() == 4, "dropped RISK counted, not logged (%llu)",
+          (unsigned long long)c.risk_dropped());
+}
+
+// 주행 로그 사건: 링크(CONNECT·DISCONNECT·DROP + 이유), Pi → 기기(INT·PROF 회신), 버린 것(REJECT). HB·MOT는 없음
+static void log_events() {
+    Comm c(nullptr);  // 무응답 감시 켬
+    std::vector<LogEvent> ev;
+    c.set_event_sink([&](const LogEvent& e) { ev.push_back(e); });
+    auto last = [&](msg::CtxKind k, const std::string& sender, const std::string& value) {
+        return !ev.empty() && ev.back().kind == k && ev.back().sender == sender && ev.back().value == value;
+    };
+    c.on_start();
+    CHECK(ev.size() == 1 && last(msg::CtxKind::DROP, "all", "{\"conn\":\"all\",\"reason\":\"p6_start\"}"), "start DROP logged once");
+    c.on_tick(0);
+    c.on_uart_line("0|CONNECT", 0);
+    CHECK(last(msg::CtxKind::CONNECT, "conn0", "{\"conn\":0}"), "CONNECT before HELLO");
+    c.on_tick(5000);
+    CHECK(last(msg::CtxKind::DROP, "conn0", "{\"conn\":0,\"reason\":\"no_hello_5s\"}"), "DROP reason: no HELLO");
+    c.on_uart_line("0|DISCONNECT", 5100);
+    CHECK(last(msg::CtxKind::DISCONNECT, "conn0", "{\"conn\":0,\"registered\":0}"), "DISCONNECT of an unregistered conn");
+
+    c.on_uart_line("2|CONNECT", 6000);
+    size_t n = ev.size();
+    c.on_uart_line("2|" + hello("app", kPhone), 6001);
+    c.on_uart_line("2|{\"t\":\"HB\",\"seq\":1}", 6002);
+    c.on_uart_line("2|{\"t\":\"SCR\",\"on\":true,\"att\":true}", 6003);
+    CHECK(ev.size() == n, "HELLO, HB, SCR make no core events (the process logs what it forwards)");
+
+    msg::OutInt i;
+    i.conn = 2;
+    i.tier = 3;
+    i.on = 1;
+    c.on_out_int(i);
+    CHECK(last(msg::CtxKind::INT, kPhone, "{\"conn\":2,\"tier\":3,\"on\":1}"), "INT to one phone: %s", ev.back().value.c_str());
+    c.on_uart_line("3|CONNECT", 6010);
+    c.on_uart_line("3|" + hello("hud", "x"), 6011);
+    n = ev.size();
+    i.conn = msg::kConnAll;
+    i.tier = 1;
+    i.on = 0;
+    c.on_out_int(i);
+    CHECK(ev.size() == n + 2 && ev[n].sender == kPhone && ev[n].value == "{\"conn\":2,\"tier\":1,\"on\":0,\"all\":1}" &&
+              ev[n + 1].sender == "hud-01" && ev[n + 1].value == "{\"conn\":3,\"tier\":1,\"on\":0,\"all\":1}",
+          "INT ALL: one row per registered device");
+    i.conn = 7;
+    c.on_out_int(i);
+    CHECK(last(msg::CtxKind::INT, "conn7", "{\"conn\":7,\"tier\":1,\"on\":0}"), "INT to a conn nobody is registered on");
+
+    msg::OutProf p;
+    p.conn = 2;
+    p.mssq = 12.5;
+    p.sens = 1.2;
+    c.on_out_prof(p);
+    CHECK(last(msg::CtxKind::PROF_OUT, kPhone, "{\"conn\":2,\"mssq\":12.5,\"sens\":1.2}"), "PROF reply: %s", ev.back().value.c_str());
+    msg::OutDrop d;
+    d.conn = 3;
+    c.on_out_drop(d);
+    CHECK(last(msg::CtxKind::DROP, "hud-01", "{\"conn\":3,\"reason\":\"p5\"}"), "DROP asked by P5");
+
+    n = ev.size();
+    msg::Motion mo;
+    mo.ax = 0.1;
+    mo.ay = 0.2;
+    msg::OutStream st;
+    st.conn = 2;
+    st.on = 1;
+    c.on_out_stream(st);
+    c.on_motion(mo);
+    CHECK(ev.size() == n, "MOT and stream changes are not logged");
+
+    // 거부: 이유와 원문 앞부분. 따옴표는 이스케이프, 길면 자른다 (value는 191자 이하의 올바른 JSON)
+    c.on_uart_line("2|{\"t\":\"OVR\",\"dev\":\"someone-else\",\"on\":true}", 6100);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().sender == kPhone &&
+              ev.back().value.find("\"reason\":\"OVR target someone-else not allowed\"") != std::string::npos &&
+              ev.back().value.find("\"raw\":\"{\\\"t\\\":\\\"OVR\\\"") != std::string::npos,
+          "OVR on another phone rejected with reason and raw: %s", ev.back().value.c_str());
+    c.on_uart_line("2|{\"t\":\"PROF\",\"mssq\":99,\"sens\":1}", 6101);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().value.find("PROF out of range") != std::string::npos, "PROF range");
+    c.on_uart_line("2|{\"t\":\"XYZ\"}", 6102);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().value.find("unknown t XYZ") != std::string::npos, "unknown t");
+    c.on_uart_line("2|not json", 6103);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().value.find("\"raw\":\"not json\"") != std::string::npos, "broken JSON");
+    c.on_uart_line("garbage \x01\xEA\xB0\x80 line", 6104);
+    CHECK(ev.back().kind == msg::CtxKind::REJECT && ev.back().sender == "uart" &&
+              ev.back().value == "{\"conn\":null,\"reason\":\"bad line\",\"raw\":\"garbage ???? line\"}",
+          "bad frame: control and non-ASCII bytes replaced: %s", ev.back().value.c_str());
+    c.on_uart_line("2|{\"t\":\"XYZ\",\"pad\":\"" + std::string(300, '"') + "\"}", 6105);
+    CHECK(ev.back().value.size() <= 191 && ev.back().value.back() == '}' &&
+              ev.back().value[ev.back().value.size() - 3] != '\\',
+          "long raw text cut without breaking an escape (%zu chars)", ev.back().value.size());
+
+    // 쓰레기 줄이 쏟아져도 1초에 kMaxRejectsPerSec개만
+    n = ev.size();  // 이번 박자(5000 ms의 HB 뒤)에 이미 6개
+    for (int k = 0; k < 50; k++) c.on_uart_line("zzz", 6200);
+    CHECK(ev.size() == n + static_cast<size_t>(kMaxRejectsPerSec) - 6, "REJECT events are rate limited: %zu", ev.size() - n);
+    c.on_uart_line("2|{\"t\":\"HB\",\"seq\":2}", 6900);
+    c.on_uart_line("3|{\"t\":\"HB\",\"seq\":2}", 6900);
+    c.on_tick(7000);  // 다음 HB 박자
+    n = ev.size();
+    c.on_uart_line("zzz", 7001);
+    CHECK(ev.size() == n + 1, "limit resets on the next HB beat");
+
+    // 등록된 기기가 5초 조용함 → DROP + 이유 (BYE는 Actions로 나가 프로세스가 남긴다)
+    c.on_uart_line("3|DISCONNECT", 7002);
+    CHECK(last(msg::CtxKind::DISCONNECT, "hud-01", "{\"conn\":3,\"registered\":1}"), "DISCONNECT names the device");
+    c.on_tick(11900);
+    CHECK(last(msg::CtxKind::DROP, kPhone, "{\"conn\":2,\"reason\":\"silent_5s\"}"), "DROP reason: silent 5 s: %s",
+          ev.back().value.c_str());
+}
+
 int main() {
     line_assembler();
     frames();
@@ -435,7 +705,12 @@ int main() {
     hello_resend();
     ctx_resend();
     start_drops_all();
+    unknown_connection();
     resync();
+    sym_rules();
+    gps_rules();
+    risk_out();
+    log_events();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;

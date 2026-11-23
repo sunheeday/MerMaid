@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,23 +47,36 @@ import com.mermaid.passenger.data.Cmd
 import com.mermaid.passenger.data.Prefs
 import com.mermaid.passenger.data.Repo
 import com.mermaid.passenger.protocol.Proto
+import com.mermaid.passenger.service.GpsFeed
 import com.mermaid.passenger.service.LinkService
 import com.mermaid.passenger.service.Presence
 import java.util.regex.Pattern
 
 /** 화면 ID (화면정의서 1장) */
-enum class Screen { WELCOME, PERMS, REGISTER, PROFILE_ONB, HOME, REGISTER_AGAIN, PROFILE, SETTINGS, DIAG }
+enum class Screen { WELCOME, PERMS, REGISTER, PROFILE_ONB, HOME, REGISTER_AGAIN, PROFILE, SETTINGS, DIAG, DASH }
 
 class MainActivity : ComponentActivity() {
     /** 화면이 다시 보일 때마다 증가 → 권한 상태 다시 읽기 */
     private val resumeTick = mutableIntStateOf(0)
+    /** 멀미 점수 알림을 눌러 들어올 때마다 증가 → 홈의 "지금 멀미 정도" 카드로 이동 */
+    val symFocus = mutableIntStateOf(0)
     private var assocDone: ((String?, String?) -> Unit)? = null
     private val assocLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { onAssocResult(it) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null && intent?.getBooleanExtra(EXTRA_SYM, false) == true) symFocus.intValue++
         setContent { MerMaidTheme { AppRoot(this, resumeTick.intValue) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_SYM, false)) symFocus.intValue++
+    }
+
+    companion object {
+        const val EXTRA_SYM = "sym"
     }
 
     override fun onResume() {
@@ -89,7 +103,8 @@ class MainActivity : ComponentActivity() {
         val cdm = getSystemService(CompanionDeviceManager::class.java)
         // 광고 패킷에 이름과 128비트 UUID가 다 안 들어갈 수 있어 두 조건 중 하나만 맞아도 표시
         val byName = BluetoothLeDeviceFilter.Builder()
-            .setNamePattern(Pattern.compile(Pattern.quote(Proto.NAME_PREFIX) + ".*")).build()
+            // 이미 본딩된 폰은 광고 이름(MSAgent-xxxx) 대신 저장된 GAP 이름(MSAgent)으로 보인다 → 둘 다 받는다
+            .setNamePattern(Pattern.compile(Pattern.quote(Proto.NAME_PREFIX.trimEnd('-')) + "(-.*)?")).build()
         val byService = BluetoothLeDeviceFilter.Builder()
             .setScanFilter(ScanFilter.Builder().setServiceUuid(ParcelUuid(Proto.SERVICE)).build()).build()
         val req = AssociationRequest.Builder().addDeviceFilter(byName).addDeviceFilter(byService).setSingleDevice(false).build()
@@ -164,15 +179,23 @@ object Perms {
     fun notif(c: Context) = Build.VERSION.SDK_INT < 33 || granted(c, Manifest.permission.POST_NOTIFICATIONS)
     fun overlay(c: Context) = Settings.canDrawOverlays(c)
     fun battery(c: Context) = c.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(c.packageName)
-    fun missing(c: Context) = listOf(bt(c), notif(c), overlay(c), battery(c)).count { !it }
+    /** 차 속도(GPS). 정확한 위치여야 GPS 속도가 나온다 */
+    val LOC = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    fun loc(c: Context) = GpsFeed.fine(c)
+    fun missing(c: Context) = listOf(bt(c), notif(c), overlay(c), battery(c), loc(c)).count { !it }
 }
 
 @Composable
 fun AppRoot(act: MainActivity, tick: Int) {
     val settings by Prefs.settings.collectAsState()
     var screen by rememberSaveable { mutableStateOf(if (settings.onboarded) Screen.HOME else Screen.WELCOME) }
-    val sub = screen in setOf(Screen.PROFILE, Screen.SETTINGS, Screen.DIAG, Screen.REGISTER_AGAIN)
-    BackHandler(enabled = sub) { screen = Screen.HOME }
+    val sub = screen in setOf(Screen.PROFILE, Screen.SETTINGS, Screen.DIAG, Screen.REGISTER_AGAIN, Screen.DASH)
+    // RF 진단은 홈과 대시보드("전체 보기") 두 곳에서 열 수 있어 돌아갈 곳을 기억한다
+    var diagBack by rememberSaveable { mutableStateOf(Screen.HOME) }
+    val go: (Screen) -> Unit = { next -> if (next == Screen.DIAG) diagBack = if (screen == Screen.DASH) Screen.DASH else Screen.HOME; screen = next }
+    BackHandler(enabled = sub) { screen = if (screen == Screen.DIAG) diagBack else Screen.HOME }
+    val symFocus = act.symFocus.intValue
+    LaunchedEffect(symFocus) { if (symFocus > 0 && settings.onboarded) screen = Screen.HOME }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -183,9 +206,10 @@ fun AppRoot(act: MainActivity, tick: Int) {
                 Screen.REGISTER_AGAIN -> RegisterScreen(act, onboarding = false, onDone = { act.connectIfReady(); screen = Screen.HOME })
                 Screen.PROFILE_ONB -> ProfileScreen(onboarding = true, onBack = null) { act.finishOnboarding(); screen = Screen.HOME }
                 Screen.PROFILE -> ProfileScreen(onboarding = false, onBack = { screen = Screen.HOME }) { screen = Screen.HOME }
-                Screen.HOME -> HomeScreen(act, tick) { screen = it }
-                Screen.SETTINGS -> SettingsScreen(act, tick, onBack = { screen = Screen.HOME }) { screen = it }
-                Screen.DIAG -> DiagnosticsScreen(onBack = { screen = Screen.HOME })
+                Screen.HOME -> HomeScreen(act, tick, symFocus, go)
+                Screen.SETTINGS -> SettingsScreen(act, tick, onBack = { screen = Screen.HOME }, go)
+                Screen.DIAG -> DiagnosticsScreen(onBack = { screen = diagBack })
+                Screen.DASH -> DashboardScreen(onBack = { screen = Screen.HOME }, go)
             }
         }
     }

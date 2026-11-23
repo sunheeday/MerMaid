@@ -6,6 +6,9 @@
 //   P4 → P5 → P6(받기 스레드)     명령이 내려가는 방향
 //   P2 → P6(받기 스레드)          MOT 10 Hz
 //   P6(UART 스레드) → P5, P4      기기에서 들어온 것
+//   P6(UART 스레드) → P2          GPS 속도 (#18). P2→P6(MOTION)과 짝이지만 P6 쪽 받는 이가 받기 스레드(바로 회신,
+//                                 MsgSend 안 함)라 고리가 닫히지 않는다 (RF_MESSAGES.md §2-2)
+//   P4 → P5 → P6(받기 스레드)     위험 확률 RISK_FWD → OUT_RISK (#19). 명령과 같은 방향
 //   P5는 P4에게 먼저 보내지 않는다. P4가 10초마다 보내는 DEV_SYNC의 회신으로 등록 목록을 준다.
 //   P6의 받기 스레드는 MsgSend 하지 않는다.
 #pragma once
@@ -24,12 +27,15 @@ enum RfType : uint16_t {
     CTX_PROF = 0x8022,    // P6 -> P4, M06 PROF
     // 0x8023: 비워 둠 (M04 MISC 제거, PROTOCOL.md §3). 번호를 재사용하지 않음
     TIER_CMD = 0x8030,    // P4 -> P5, 기기 하나 ON/OFF (policy.hpp의 Command)
+    RISK_FWD = 0x8031,    // P4 -> P5, 폰 하나의 위험 확률 5개 (앱 대시보드 표시용, #19)
     OUT_INT = 0x8040,     // P5 -> P6, M01 INT를 보낼 것
     OUT_STREAM = 0x8041,  // P5 -> P6, 이 연결에 MOT를 보낼지
     OUT_PROF = 0x8042,    // P5 -> P6, M06 PROF(저장된 프로필)를 보낼 것
     OUT_DROP = 0x8043,    // P5 -> P6, 연결을 끊을 것
     OUT_RESYNC = 0x8044,  // P5 -> P6, P5가 (다시) 시작함: 등록된 기기를 DEV_HELLO로 다시 알려 달라
+    OUT_RISK = 0x8045,    // P5 -> P6, M10 RISK를 이 연결에 보낼 것 (#19)
     MOTION = 0x8050,      // P2 -> P6, 100 ms마다 (constants.json mot_period_ms)
+    GPS_SPEED = 0x8051,   // P6 -> P2, 폰의 M09 GPS 속도 (1~10 Hz, #18)
 };
 
 constexpr int kMaxConn = 9;          // 브리지 연결 번호 0~8 (PROTOCOL.md §1)
@@ -107,6 +113,13 @@ struct TierCmd {
     uint8_t on = 0;
 };
 
+// P4가 RISK(P3)를 처리할 때 폰마다 하나. "default"(폰 없음) 행은 보내지 않는다. 회신 없음 (빈 회신)
+struct RiskFwd {
+    Hdr h{RISK_FWD, 0, 0};
+    char device[kIdLen] = {};  // 폰 ID
+    double p[5] = {};          // P(MISC>=2), ..., P(MISC>=6), 개인 보정 뒤 (P4가 판단에 쓰는 값)
+};
+
 // ---- P5 -> P6 ----
 struct OutInt {
     Hdr h{OUT_INT, 0, 0};
@@ -137,6 +150,25 @@ struct OutDrop {
 struct OutResync {
     Hdr h{OUT_RESYNC, 0, 0};
 };
+
+// P5가 RISK_FWD의 기기 ID를 연결 번호로 바꾼 것. P6은 그 연결이 등록된 앱일 때만 RISK 한 줄을 쓴다
+struct OutRisk {
+    Hdr h{OUT_RISK, 0, 0};
+    uint8_t conn = 0;
+    char device[kIdLen] = {};  // 확인용 (P6이 그 연결의 기기와 같은지 본다: 그 사이 다른 기기가 같은 번호를 받았을 때)
+    double p[5] = {};
+};
+
+// ---- P6 -> P2 ----
+// 앱이 보낸 M09 GPS 중 속도만 (P6 규칙 통과). P2는 받자마자 회신하고 보관만 한다 (common/gps_speed.hpp)
+struct GpsSpeed {
+    Hdr h{GPS_SPEED, 0, 0};
+    uint64_t mono_ns = 0;     // P6이 줄을 받은 단조 시각
+    double spd = 0;           // m/s, 0~100
+    double acc = 0;           // 수평 정확도 m, >= 0
+    char phone[kIdLen] = {};
+};
+constexpr uint64_t kGpsSpeedTimeoutNs = 3 * 1000000ULL;  // P6 UART 스레드가 P2를 기다리는 한도 (3 ms). 실패는 세기만
 
 // ---- P2 -> P6 ----
 struct Motion {

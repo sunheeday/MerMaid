@@ -51,6 +51,10 @@ add_executable(test_sample_ring tests/test_sample_ring.cpp)
 target_link_libraries(test_sample_ring mmcommon)
 add_test(NAME sample_ring COMMAND test_sample_ring)
 
+add_executable(test_gps_speed tests/test_gps_speed.cpp)
+target_link_libraries(test_gps_speed mmcommon)
+add_test(NAME gps_speed COMMAND test_gps_speed)
+
 # P7 로거 코어 (SQLite). controller/third_party/sqlite/sqlite3.c(공식 amalgamation)가 있으면 함께 빌드하고 (보드),
 # 없으면 시스템 SQLite를 쓴다 (Mac SDK). 둘 다 없으면 P7을 빌드하지 않는다
 set(MM_SQLITE "")
@@ -140,6 +144,12 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "QNX")
       # P7 로거: 주행 파일 내용과 격리 (P7 kill -9, SIGSTOP에도 P1~P4는 그대로). 약 1분 30초
       add_test(NAME log_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/log_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
       set_tests_properties(log_sim PROPERTIES TIMEOUT 240)
+      # 폰과 오간 사건(P6·P5 → P7)이 주행 파일 ctx·label 표에 남는지, P7이 멈추거나 죽어도 폰이 보는 것은 같은지. 약 1분 40초
+      add_test(NAME log_rf_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/log_rf_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
+      set_tests_properties(log_rf_sim PROPERTIES TIMEOUT 300)
+      # 폰 GPS(M09) → gps 표·P2 속도 피처, 위험 확률(M10 RISK) → 폰 (#18, #19). 약 50초
+      add_test(NAME gps_risk_sim COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/gps_risk_sim_test.py ${CMAKE_CURRENT_BINARY_DIR})
+      set_tests_properties(gps_risk_sim PROPERTIES TIMEOUT 180)
     endif()
   endif()
 endif()

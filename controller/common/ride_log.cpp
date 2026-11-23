@@ -293,8 +293,11 @@ void Logger::commit() {
     }
 }
 
+// 주행 안/밖은 **사건이 생긴 시각**으로만 정한다 (P7에 닿은 때나 그때 샘플이 있었는지와 무관):
+// mono_ns가 주행 시작(mono_start_ns)보다 앞이면 주행 전 사건 → ok = false (t NULL).
+// 보내는 쪽은 사건을 큐에 두었다가 최대 100 ms 뒤에 보내므로, 주행 전 사건이 주행이 열린 뒤에 닿을 수 있다
 double Logger::t_of(uint64_t mono_ns, bool& ok) const {
-    ok = !anchors_.empty();
+    ok = !anchors_.empty() && mono_ns >= ride_mono0_;
     if (!ok) return 0;
     auto it = std::upper_bound(anchors_.begin(), anchors_.end(), std::make_pair(mono_ns, UINT64_MAX));
     if (it != anchors_.begin()) --it;
@@ -358,6 +361,8 @@ void Logger::open_ride(const ring::Item& it, uint32_t col_mask, uint64_t now) {
     const bool joined = it.kind != ring::RIDE_START;  // P7이 주행 중간에 시작: 링에 남은 샘플부터
     ride_mono0_ = it.mono_ns;
     anchors_.clear();
+    // 첫 기준점은 주행 시작 자체: 첫 샘플(약 10 ms 뒤)이 오기 전에 닿은 사건도 주행 시각을 받는다
+    anchors_.emplace_back(it.mono_ns, joined ? it.seq : 0);
     chunk_n_ = 0;
     next_seq_ = 0;
     ring_lost_ride_ = hold_ride_ = 0;
@@ -404,6 +409,17 @@ void Logger::open_ride(const ring::Item& it, uint32_t col_mask, uint64_t now) {
             }))
             st_.ctx_rows++;
     }
+    // 주행 전에 있었던 기기 사건 (폰은 보통 주행이 시작되기 전에 붙는다: HELLO, CONNECT, 첫 INT …). t는 NULL
+    for (const Ctx& c : pre_) {
+        if (fl.run("INSERT INTO ctx (mono_ns, t, sender, kind, value) VALUES (?, NULL, ?, ?, ?)", [&](sqlite3_stmt* s) {
+                sqlite3_bind_int64(s, 1, static_cast<sqlite3_int64>(c.mono_ns));
+                sqlite3_bind_text(s, 2, c.sender.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(s, 3, c.kind.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(s, 4, c.value.c_str(), -1, SQLITE_TRANSIENT);
+            }))
+            st_.ctx_rows++;
+    }
+    pre_.clear();
     st_.rides_opened++;
     commit();  // meta는 바로 디스크에
 }
@@ -495,6 +511,19 @@ void Logger::on_p1_restart(uint64_t now) {
     if (file_ || refused_) close_ride(closing_ ? "ride_end" : "p1_restart", now);
 }
 
+// P6·P5는 P7로 보내기가 2 ms 안에 회신을 못 받으면 같은 사건을 다음 바퀴에 다시 보낸다 (사건을 잃지 않으려고).
+// 그런데 회신만 늦었고 P7은 이미 받은 경우가 있다 → 같은 사건이 두 번 온다. 사건마다 생긴 시각(ns)이 찍혀 있으므로
+// 시각과 내용이 모두 같은 것은 같은 사건이다: 한 번만 적는다
+bool Logger::seen_before(const std::string& key) {
+    if (std::find(recent_.begin(), recent_.end(), key) != recent_.end()) {
+        st_.dup_msgs++;
+        return true;
+    }
+    if (recent_.size() >= kRecentKeys) recent_.pop_front();
+    recent_.push_back(key);
+    return false;
+}
+
 void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_total) {
     (void)now;
     queue_drop_seen_ = std::max(queue_drop_seen_, queue_drop_total);
@@ -567,9 +596,20 @@ void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_t
             msg::LogCtx m;
             std::memcpy(&m, p, sizeof m);
             Ctx c{m.mono_ns, id_of(m.sender, msg::kIdLen), msg::ctx_kind_name(m.kind), id_of(m.value, sizeof m.value)};
+            if (seen_before(std::to_string(c.mono_ns) + "|" + c.sender + "|" + c.kind + "|" + c.value)) return;
             if (m.kind == msg::CtxKind::SCR || m.kind == msg::CtxKind::PROF) snapshot_[{c.sender, c.kind}] = c;
             if (!writable()) {
-                if (m.kind != msg::CtxKind::SCR && m.kind != msg::CtxKind::PROF) st_.outside_ride++;
+                if (m.kind == msg::CtxKind::SCR || m.kind == msg::CtxKind::PROF) return;  // 마지막 값은 위에서 기억
+                if (refused_) {  // 공간이 없어 기록하지 않는 주행
+                    st_.outside_ride++;
+                    return;
+                }
+                // 주행 밖: 다음 주행 파일을 열 때 적는다. 넘치면 가장 오래된 것을 버리고 센다
+                if (pre_.size() >= kPreRideCtx) {
+                    pre_.pop_front();
+                    st_.outside_ride++;
+                }
+                pre_.push_back(c);
                 return;
             }
             ensure_txn();
@@ -591,6 +631,8 @@ void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_t
             msg::LogSym m;
             std::memcpy(&m, p, sizeof m);
             if (m.misc < 0 || m.misc > 10) break;
+            if (seen_before(std::to_string(m.mono_ns) + "|" + id_of(m.phone, msg::kIdLen) + "|SYM|" + std::to_string(m.misc)))
+                return;
             if (!writable()) {
                 st_.outside_ride++;
                 return;
@@ -607,6 +649,35 @@ void Logger::on_msg(const void* p, size_t n, uint64_t now, uint64_t queue_drop_t
                     sqlite3_bind_int(s, 4, m.misc);
                 }))
                 st_.label_rows++;
+            return;
+        }
+        case msg::LOG_GPS: {
+            // M09 GPS (#18): 주행 안에서만 남긴다 (주행 밖의 속도는 쓸 데가 없다). 다시 보낸 것은 같은 시각·폰으로 알아본다
+            if (n < sizeof(msg::LogGps)) break;
+            msg::LogGps m;
+            std::memcpy(&m, p, sizeof m);
+            if (!std::isfinite(m.spd) || !std::isfinite(m.acc)) break;
+            const std::string phone = id_of(m.phone, msg::kIdLen);
+            if (seen_before(std::to_string(m.mono_ns) + "|" + phone + "|GPS")) return;
+            if (!writable()) {
+                st_.outside_ride++;
+                return;
+            }
+            ensure_txn();
+            bool ok;
+            const double t = t_of(m.mono_ns, ok);
+            if (file_->run("INSERT INTO gps (mono_ns, t, phone, spd, brg, acc, alt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                           [&](sqlite3_stmt* s) {
+                               sqlite3_bind_int64(s, 1, static_cast<sqlite3_int64>(m.mono_ns));
+                               if (ok) sqlite3_bind_double(s, 2, t);
+                               else sqlite3_bind_null(s, 2);
+                               sqlite3_bind_text(s, 3, phone.c_str(), -1, SQLITE_TRANSIENT);
+                               sqlite3_bind_double(s, 4, m.spd);
+                               bind_real_or_null(s, 5, m.brg);
+                               sqlite3_bind_double(s, 6, m.acc);
+                               bind_real_or_null(s, 7, m.alt);
+                           }))
+                st_.gps_rows++;
             return;
         }
         default:

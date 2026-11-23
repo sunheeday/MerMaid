@@ -77,7 +77,7 @@ private fun Feature(n: String, c: Color, title: String, sub: String) {
     }
 }
 
-// ───────── APP-02 권한 안내 (블루투스 → 알림 → 다른 앱 위에 표시 → 배터리)
+// ───────── APP-02 권한 안내 (블루투스 → 알림 → 다른 앱 위에 표시 → 배터리 → 위치)
 private data class PermStep(val icon: String, val title: String, val sub: String, val why: String, val button: String)
 
 private val STEPS = listOf(
@@ -85,18 +85,21 @@ private val STEPS = listOf(
     PermStep("🔔", "알림", "연결 상태 · 빠른 조작", "연결 상태를 알림창에 조용히 보여 드리고, 거기서 바로 모션 큐를 켜고 끌 수 있어요.", "허용하기"),
     PermStep("▣", "다른 앱 위에 표시", "모션 큐", "YouTube·SNS를 볼 때 화면 가장자리에만 점이 나타나요. 화면을 누르는 데는 영향이 없어요.", "설정에서 허용하기"),
     PermStep("⚡", "배터리 제한 없음", "주행 중 연결 유지", "절전 기능이 앱을 멈추면 주행 중 연결이 끊길 수 있어요. '제한 없음'으로 두면 안정적이에요.", "허용하기"),
+    PermStep("⌖", "위치 (정확한 위치)", "차 속도", "폰 GPS로 차 속도만 재서 멀미 예측에 써요. 위도·경도는 보내지도 저장하지도 않고, 주행 기록 수집에 동의했을 때만 차와 연결된 동안 켜요. '정확한 위치'를 골라 주세요.", "허용하기"),
 )
+private val LAST = STEPS.lastIndex
 
 @Composable
 fun PermissionsScreen(act: MainActivity, tick: Int, onDone: () -> Unit) {
     val ctx = LocalContext.current
     var skipped by remember { mutableStateOf(setOf<Int>()) }
     var localTick by remember { mutableStateOf(0) }
-    val granted = remember(tick, localTick) { listOf(Perms.bt(ctx), Perms.notif(ctx), Perms.overlay(ctx), Perms.battery(ctx)) }
-    val current = (0..3).firstOrNull { !granted[it] && it !in skipped }
+    val granted = remember(tick, localTick) { listOf(Perms.bt(ctx), Perms.notif(ctx), Perms.overlay(ctx), Perms.battery(ctx), Perms.loc(ctx)) }
+    val current = (0..LAST).firstOrNull { !granted[it] && it !in skipped }
 
     val btLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { localTick++ }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { localTick++ }
+    val locLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { localTick++ }
 
     if (current == null) { LaunchedEffect(Unit) { onDone() }; return }
     val step = STEPS[current]
@@ -104,15 +107,16 @@ fun PermissionsScreen(act: MainActivity, tick: Int, onDone: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (i in 0..3) Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp))
+            for (i in 0..LAST) Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp))
                 .background(if (i <= current) MM.Brand else MaterialTheme.colorScheme.surfaceVariant))
         }
-        Muted("${current + 1} / 4 단계")
+        Muted("${current + 1} / ${STEPS.size} 단계")
         Text(when (current) {
             0 -> "차와 연결할 수 있게\n해 주세요"
             1 -> "알림창에서 바로\n조절할 수 있게 해 주세요"
             2 -> "다른 앱 위에\n점을 그릴 수 있게 해 주세요"
-            else -> "주행 중에 연결이\n끊기지 않게 해 주세요"
+            3 -> "주행 중에 연결이\n끊기지 않게 해 주세요"
+            else -> "차 속도를 잴 수 있게\n해 주세요"
         }, style = MaterialTheme.typography.headlineMedium)
         if (current == 2) CuePreview()
         Muted(step.why)
@@ -139,7 +143,8 @@ fun PermissionsScreen(act: MainActivity, tick: Int, onDone: () -> Unit) {
                 0 -> btLauncher.launch(Perms.BT)
                 1 -> if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) else localTick++
                 2 -> act.openOverlaySettings()
-                else -> act.openBatterySettings()
+                3 -> act.openBatterySettings()
+                else -> locLauncher.launch(Perms.LOC)
             }
         }
         Text("나중에 할게요", Modifier.fillMaxWidth().clickable { skipped = skipped + current }.padding(10.dp),

@@ -47,4 +47,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // JVM 단위 시험 (파싱·링버퍼·Hz 계산). org.json은 android.jar에 껍데기만 있어 시험에서만 진짜를 넣는다
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

@@ -15,6 +15,8 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.RemoteViews
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -30,6 +32,7 @@ import com.mermaid.passenger.data.Repo
 import com.mermaid.passenger.link.RfSession
 import com.mermaid.passenger.link.Target
 import com.mermaid.passenger.overlay.CueOverlay
+import com.mermaid.passenger.protocol.Proto
 import com.mermaid.passenger.ui.MainActivity
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -49,7 +52,14 @@ class LinkService : LifecycleService() {
         const val ACTION_DEVICE_GONE = "com.mermaid.passenger.DEVICE_GONE"
         const val ACTION_DEVICE_BACK = "com.mermaid.passenger.DEVICE_BACK"
         const val ACTION_STOP = "com.mermaid.passenger.STOP"
+        const val ACTION_SYM = "com.mermaid.passenger.SYM"   // 알림에서 고른 멀미 점수 (EXTRA_MISC)
+        const val EXTRA_MISC = "misc"
         private const val NOTI_ID = 1
+        private const val NOTI_SYM = 2
+        private val SYM_CELLS = intArrayOf(
+            R.id.sym_0, R.id.sym_1, R.id.sym_2, R.id.sym_3, R.id.sym_4, R.id.sym_5,
+            R.id.sym_6, R.id.sym_7, R.id.sym_8, R.id.sym_9, R.id.sym_10,
+        )
 
         /** 연결 시작 (포그라운드 서비스로) */
         fun start(ctx: Context, action: String = ACTION_START) {
@@ -63,23 +73,28 @@ class LinkService : LifecycleService() {
     }
 
     private lateinit var rfThread: HandlerThread
+    private lateinit var rfHandler: Handler
     private lateinit var session: RfSession
     private lateinit var overlay: CueOverlay
     private val main = Handler(Looper.getMainLooper())
     private var screenOn = true
     private var unlocked = true
+    private lateinit var gps: GpsFeed
+    private var fgsLocation = false      // 포그라운드 서비스가 location 종류로 떠 있음
 
     override fun onCreate() {
         super.onCreate()
         Repo.serviceRunning = true
         goForeground()
         rfThread = HandlerThread("mermaid-rf").apply { start() }
+        rfHandler = Handler(rfThread.looper)
         overlay = CueOverlay(this)
         session = RfSession(this, Handler(rfThread.looper), object : RfSession.Listener {
             override fun onMotion(ax: Float, ay: Float, pax: Float?, pay: Float?) = overlay.feed(ax, ay, pax, pay)
             override fun onSafeOff() { main.post { overlay.hideNow() } }
             override fun onGiveUp() { main.post { stopEverything() } }
         })
+        gps = GpsFeed(this, rfHandler) { session.sendGps(it) }
 
         readScreen()
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
@@ -92,9 +107,10 @@ class LinkService : LifecycleService() {
                     is Cmd.Override -> session.requestOverride(cmd.dev, cmd.on)
                     Cmd.ToggleCue -> session.toggleCue()
                     Cmd.SendProfile -> session.sendProfile()
-                    Cmd.RefreshScreen -> readScreen()
+                    Cmd.RefreshScreen -> { readScreen(); updateGps(Repo.live.value, Prefs.settings.value, fromApp = true) } // 앱이 다시 보임: 권한이 바뀌었을 수 있음
                     Cmd.Reconnect -> session.reconnect()
                     Cmd.DemoDrop -> session.demoDrop()
+                    is Cmd.Symptom -> session.sendSymptom(cmd.misc)
                 }
             }
         }
@@ -103,6 +119,8 @@ class LinkService : LifecycleService() {
             combine(Repo.live, Prefs.settings) { l, s -> l to s }.distinctUntilChanged().collect { (l, s) ->
                 updateOverlay(l, s)
                 postNotification(l)
+                updateSymPrompt(l, s)
+                updateGps(l, s)
             }
         }
     }
@@ -124,6 +142,17 @@ class LinkService : LifecycleService() {
             }
             ACTION_DEMO -> session.connect(Target.Demo)
             ACTION_TOGGLE_CUE -> session.toggleCue()
+            ACTION_SYM -> {
+                NotificationManagerCompat.from(this).cancel(NOTI_SYM)
+                val misc = intent?.getIntExtra(EXTRA_MISC, -1) ?: -1
+                val ok = Repo.live.value.link == LinkState.CONNECTED && Prefs.settings.value.logConsent
+                when {
+                    Repo.live.value.link == LinkState.IDLE -> stopEverything() // 연결이 없는데 남은 알림을 눌러 깨어난 경우
+                    misc !in Proto.SYM_MIN..Proto.SYM_MAX -> Unit
+                    ok -> { session.sendSymptom(misc); Toast.makeText(this, "멀미 $misc 기록됨", Toast.LENGTH_SHORT).show() }
+                    else -> Toast.makeText(this, "차와 연결되지 않아 기록하지 못했어요", Toast.LENGTH_SHORT).show()
+                }
+            }
             ACTION_DEVICE_GONE -> {
                 Repo.log('·', "차량이 범위를 벗어남 — 30초 뒤 종료")
                 main.removeCallbacks(goneTimeout); main.postDelayed(goneTimeout, 30_000)
@@ -133,13 +162,50 @@ class LinkService : LifecycleService() {
         return START_STICKY
     }
 
-    /** Android 14+: connectedDevice 유형은 블루투스 권한이나 CDM 등록이 있어야 함. 없으면 시작하지 않음 */
-    private fun goForeground(): Boolean = try {
-        startForeground(NOTI_ID, buildNotification(Repo.live.value), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-        true
-    } catch (e: Exception) {
-        Repo.log('!', "포그라운드 서비스 시작 실패: ${e.message}")
-        false
+    /**
+     * Android 14+: connectedDevice 유형은 블루투스 권한이나 CDM 등록이 있어야 함. 없으면 시작하지 않음.
+     * location 유형은 위치 권한이 있어야 하고, 백그라운드에서 시작하면 거부될 수 있다 → 그때는 connectedDevice만으로
+     * (그러면 앱이 화면에 없는 동안 GPS가 멈출 수 있음. 앱을 한 번 열면 다시 location으로 올린다)
+     */
+    private fun goForeground(): Boolean {
+        val n = buildNotification(Repo.live.value)
+        val base = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (GpsFeed.any(this)) {
+            try {
+                startForeground(NOTI_ID, n, base or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                if (!fgsLocation) Repo.log('·', "포그라운드 서비스: 연결 + 위치")
+                fgsLocation = true
+                return true
+            } catch (e: Exception) {
+                if (fgsLocation || !locWarned) Repo.log('!', "위치 종류로 시작 못 함 (${e.javaClass.simpleName}) — 연결만으로 계속")
+                locWarned = true
+            }
+        }
+        return try {
+            startForeground(NOTI_ID, n, base)
+            fgsLocation = false
+            true
+        } catch (e: Exception) {
+            Repo.log('!', "포그라운드 서비스 시작 실패: ${e.message}")
+            false
+        }
+    }
+    private var locWarned = false
+
+    // ───────── GPS: 연결됨(신호 없음 포함) ∧ 주행 기록 수집 동의. 데모는 가짜 GPS를 늘 켠다
+    private fun updateGps(l: Live, s: com.mermaid.passenger.data.Settings, fromApp: Boolean = false) {
+        if (!::gps.isInitialized) return
+        val linked = l.link == LinkState.CONNECTED || l.link == LinkState.LOST
+        val demo = l.kind == "데모"
+        val want = linked && (demo || s.logConsent)
+        val why = when {
+            !linked -> "꺼짐 · 차와 연결되지 않음"
+            !s.logConsent -> "꺼짐 · 주행 기록 수집 동의가 꺼져 있음"
+            else -> "꺼짐"
+        }
+        // 권한이 새로 생겼는데 서비스가 위치 종류 없이 떠 있으면 올린다. 앱이 화면에 있을 때만 시도 (백그라운드면 거부됨)
+        if (fromApp && want && !demo && !fgsLocation && GpsFeed.any(this)) goForeground()
+        rfHandler.post { gps.set(want, demo, why) }
     }
 
     private val goneTimeout = Runnable {
@@ -147,6 +213,8 @@ class LinkService : LifecycleService() {
     }
 
     private fun stopEverything() {
+        stopSymPrompt()
+        rfHandler.post { gps.stop("꺼짐 · 연결 종료") }
         session.stop()
         overlay.hideNow()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -157,6 +225,8 @@ class LinkService : LifecycleService() {
         Repo.serviceRunning = false
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         main.removeCallbacksAndMessages(null)
+        NotificationManagerCompat.from(this).cancel(NOTI_SYM)
+        rfHandler.post { gps.stop("꺼짐 · 연결 종료") }
         session.stop()
         overlay.hideNow()
         rfThread.quitSafely()
@@ -167,12 +237,20 @@ class LinkService : LifecycleService() {
 
     // ───────── 화면 상태 (APP-F-15, 20)
     private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context, i: Intent) = readScreen()
+        override fun onReceive(c: Context, i: Intent) {
+            readScreen(userPresent = i.action == Intent.ACTION_USER_PRESENT)
+            // 잠금 해제 직후에는 isKeyguardLocked가 아직 true일 수 있다. 한 번만 읽으면 att=false로 굳어
+            // 컨트롤러의 Tier 3 게이트가 닫힌 채로 남는다 (실기에서 확인) → 조금 뒤 두 번 더 읽는다
+            if (i.action != Intent.ACTION_SCREEN_OFF) {
+                main.postDelayed({ readScreen() }, 500)
+                main.postDelayed({ readScreen() }, 2000)
+            }
+        }
     }
 
-    private fun readScreen() {
+    private fun readScreen(userPresent: Boolean = false) {
         screenOn = getSystemService(PowerManager::class.java).isInteractive
-        unlocked = !getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        unlocked = userPresent || !getSystemService(KeyguardManager::class.java).isKeyguardLocked
         session.updateScreen(screenOn, unlocked && Settings.canDrawOverlays(this))
         main.post { updateOverlay(Repo.live.value, Prefs.settings.value) }
     }
@@ -185,6 +263,73 @@ class LinkService : LifecycleService() {
             l.link != LinkState.CONNECTED || !screenOn || !unlocked -> overlay.hideNow()
             else -> overlay.hide()
         }
+    }
+
+    // ───────── 멀미 점수 묻기 (M08 SYM): 주행 중 ∧ 동의 켜짐일 때 SYM_PROMPT_MS마다 알림
+    private var symPromptOn = false
+    private var symSeenAt: Long? = null
+
+    private val symPrompt = object : Runnable {
+        override fun run() {
+            postSymPrompt()
+            main.postDelayed(this, Proto.SYM_PROMPT_MS)
+        }
+    }
+
+    /**
+     * 조건: 연결됨(HELLO 뒤, 끊김·안전 OFF 아님) ∧ 이번 연결에서 INT를 받음 ∧ 주행 기록 수집 동의.
+     * 조건이 깨지면 알림을 지우고 멈춘다. 점수를 보내면 그때부터 다시 잰다.
+     * 응답이 없으면 아무것도 보내지 않는다 (이전 값 다시 보내기 없음).
+     */
+    private fun updateSymPrompt(l: Live, s: com.mermaid.passenger.data.Settings) {
+        val want = l.link == LinkState.CONNECTED && l.intSeen && s.logConsent
+        val answered = l.symAt != symSeenAt
+        symSeenAt = l.symAt
+        if (want == symPromptOn && !answered) return
+        stopSymPrompt()
+        symPromptOn = want
+        if (want) main.postDelayed(symPrompt, Proto.SYM_PROMPT_MS)
+    }
+
+    private fun stopSymPrompt() {
+        symPromptOn = false
+        main.removeCallbacks(symPrompt)
+        NotificationManagerCompat.from(this).cancel(NOTI_SYM)
+    }
+
+    /** 누르면 홈의 "지금 멀미 정도" 카드가 열리고, 펼치면 알림에서 바로 0~10을 고를 수 있다 */
+    private fun postSymPrompt() {
+        val nm = NotificationManagerCompat.from(this)
+        if (!nm.areNotificationsEnabled()) return
+        val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val open = PendingIntent.getActivity(
+            this, 3, Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_SYM, true), flags,
+        )
+        val title = "지금 멀미 정도를 알려 주세요"
+        val big = RemoteViews(packageName, R.layout.notif_sym).apply {
+            setTextViewText(R.id.sym_title, title)
+            setTextViewText(R.id.sym_guide, "0 없음 · 1 약간 불편 · 2~5 어지러움·더움·두통 · 6~9 메스꺼움 · 10 구토")
+            SYM_CELLS.forEachIndexed { n, id ->
+                setTextViewText(id, n.toString())
+                setOnClickPendingIntent(id, PendingIntent.getService(
+                    this@LinkService, 100 + n,
+                    Intent(this@LinkService, LinkService::class.java).setAction(ACTION_SYM).putExtra(EXTRA_MISC, n), flags,
+                ))
+            }
+        }
+        val n = NotificationCompat.Builder(this, MerMaidApp.CHANNEL_SYM)
+            .setSmallIcon(R.drawable.ic_cue)
+            .setColor(0xFFA50034.toInt())
+            .setContentTitle(title)
+            .setContentText("눌러서 0(없음)~10(구토) 중에 골라 주세요")
+            .setContentIntent(open)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomBigContentView(big)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setTimeoutAfter(Proto.SYM_PROMPT_MS)
+            .build()
+        try { nm.notify(NOTI_SYM, n) } catch (_: SecurityException) {}
     }
 
     // ───────── 상주 알림 (화면정의서 9쪽 상태별 문구, APP-F-21·24)
