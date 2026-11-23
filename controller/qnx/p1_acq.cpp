@@ -177,11 +177,14 @@ int run_live(int argc, char** argv) {
     uint32_t i2c_speed = 400000;
     double timeout_ms = 5, duration_s = 0;
     int prio = 40;
-    bool fake = false;
+    bool fake = false, auto_level = false;
+    double level_max_deg = imu::kAutoLevelMaxDeg;
     for (int i = 2; i < argc; i++) {
         const std::string a = argv[i];
         const bool more = i + 1 < argc;
         if (a == "--fake-imu") fake = true;
+        else if (a == "--auto-level") auto_level = true;
+        else if (a == "--auto-level-max-deg" && more) level_max_deg = std::atof(argv[++i]);
         else if (a == "--i2c" && more) i2c = argv[++i];
         else if (a == "--i2c-speed" && more) i2c_speed = static_cast<uint32_t>(std::atol(argv[++i]));
         else if (a == "--mount" && more) mount_path = argv[++i];
@@ -199,6 +202,8 @@ int run_live(int argc, char** argv) {
     imu::Acquirer::Config cfg;
     try {
         cfg.mount = imu::load_mount(mount_path);
+        cfg.auto_level = auto_level;
+        cfg.auto_level_max_deg = level_max_deg;
     } catch (const std::exception& e) {
         std::fprintf(stderr, "p1: %s\n", e.what());
         return 2;
@@ -260,6 +265,20 @@ int run_live(int argc, char** argv) {
             } else {
                 const bool start = o.kind == imu::Out::RIDE_START;
                 if (start) ride_t0 = now;
+                if (start && auto_level) {
+                    const imu::Stats& ls = acq.stats();
+                    const imu::Mat3& M = acq.mount_R();
+                    if (ls.level == 1)
+                        std::fprintf(stderr, "p1: auto-level applied: tilt %.2f deg (pitch %+.2f, roll %+.2f)\n",
+                                     ls.level_tilt_deg, ls.level_pitch_deg, ls.level_roll_deg);
+                    else if (ls.level_tilt_deg > 0)
+                        std::fprintf(stderr, "p1: auto-level NOT applied: tilt %.2f deg > %.1f, using imu_mount.json\n",
+                                     ls.level_tilt_deg, level_max_deg);
+                    else
+                        std::fprintf(stderr, "p1: auto-level NOT applied: no still window, using imu_mount.json\n");
+                    std::fprintf(stderr, "p1: mount R [[%.6f, %.6f, %.6f], [%.6f, %.6f, %.6f], [%.6f, %.6f, %.6f]]\n",
+                                 M[0][0], M[0][1], M[0][2], M[1][0], M[1][1], M[1][2], M[2][0], M[2][1], M[2][2]);
+                }
                 if (!send_edge(p2, start ? msg::RIDE_START : msg::RIDE_END, o.seq)) edge_fails++;
                 std::fprintf(stderr, "p1: %s%s\n", start ? "RIDE_START" : "RIDE_END",
                              start ? "" : (" after " + std::to_string(o.seq) + " samples").c_str());
@@ -304,14 +323,14 @@ int run_live(int argc, char** argv) {
     const imu::Stats& st = acq.stats();
     std::printf("{\"proc\": \"p1\", \"mode\": \"%s\", \"rides\": %llu, \"samples\": %llu, \"hold\": %llu, "
                 "\"send_fail\": %llu, \"edge_fail\": %llu, \"overflow\": %llu, \"misaligned\": %llu, "
-                "\"i2c_error_ticks\": %llu, \"restarts\": %llu, \"init_fails\": %llu, \"bias_uncalibrated\": %s, "
+                "\"i2c_error_ticks\": %llu, \"restarts\": %llu, \"init_fails\": %llu, \"bias_uncalibrated\": %s, \"auto_level\": %d, "
                 "\"rate_hz\": %.3f, \"i2c_hz\": %u, \"ticks\": %llu, \"wake_late_us_max\": %.0f, "
                 "\"wake_late_over_1ms\": %llu, \"ring\": %s}\n",
                 fake ? "live-fake" : "live", (unsigned long long)st.rides, (unsigned long long)st.samples,
                 (unsigned long long)st.hold, (unsigned long long)fails, (unsigned long long)edge_fails,
                 (unsigned long long)st.overflow, (unsigned long long)st.misaligned,
                 (unsigned long long)st.i2c_error_ticks, (unsigned long long)st.restarts,
-                (unsigned long long)st.init_fails, st.bias_uncalibrated ? "true" : "false", st.rate_hz, actual_speed,
+                (unsigned long long)st.init_fails, st.bias_uncalibrated ? "true" : "false", st.level, st.rate_hz, actual_speed,
                 (unsigned long long)ticks, late_max / 1e3, (unsigned long long)late_1ms,
                 rw.is_open() ? "true" : "false");
     if (acq.fatal()) return 3;
@@ -325,7 +344,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
                      "usage: p1_acq <trip.bin> [--speed S] [--timeout-ms T] [--prio P] [--ring NAME|none]\n"
                      "       p1_acq --live [--i2c DEV] [--i2c-speed HZ] [--mount FILE] [--state DIR] [--timeout-ms T]\n"
-                     "                     [--prio P] [--ring NAME|none] [--duration-s S] [--fake-imu]\n");
+                     "                     [--prio P] [--ring NAME|none] [--duration-s S] [--fake-imu]\n"
+                     "                     [--auto-level [--auto-level-max-deg D]]\n");
         return 2;
     }
     if (!std::strcmp(argv[1], "--live")) return run_live(argc, argv);
