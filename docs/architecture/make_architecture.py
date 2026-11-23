@@ -55,8 +55,8 @@ def overview():
     s = [DEFS]
     # 개발 PC
     s.append(box(20, 40, 330, 340, "lane-pc", "개발 PC (Mac)", [("Python 3.12 + C++ · 오프라인, 한 번", "s")], title_cls="lt", dy0=30, step=17, pad=20))
-    items = [("TU Delft 적합 (S1)", "K0 = 51.4"), ("시뮬레이터 (S3) → v006", "탑승 1,920회 · 100 Hz"),
-             ("피처 featurize (S2, C++)", "10초마다 46개"), ("학습 (S4) → v007", "LightGBM ×5 · 문턱"),
+    items = [("TU Delft 적합 (S1)", "K0 = 51.4"), ("시뮬레이터 (S3) → v017", "탑승 1,920회 · 100 Hz"),
+             ("피처 featurize (S2, C++)", "10초마다 46개"), ("학습 (S4) → v018", "LightGBM ×5 · 문턱"),
              ("실차 · 사람 MISC 검증", "BATON · comma · TU Delft")]
     for i, (a, b) in enumerate(items):
         y = 98 + i * 50
@@ -81,7 +81,7 @@ def overview():
     s.append(arrow("M801,180 L801,200 L696,200 L696,219", "a-pi", "pi"))
     s.append(arrow("M742,255 L754,255", "a-pi", "pi"))
     s.append(box(495, 220, 145, 70, "store", "P4가 쓰는 것", ["state/ 허용도·프로필", "cycles.csv · CMD 로그"], title_cls="t2", step=16, rx=8))
-    s.append(box(495, 305, 352, 60, "store", "Pi에 내려받은 파일 (~/mermaid/repo)", ["runs/CURRENT · runs/v007/models · controller/config"], title_cls="t2", step=17, rx=8))
+    s.append(box(495, 305, 352, 60, "store", "Pi에 내려받은 파일 (~/mermaid/repo)", ["runs/CURRENT · runs/v018/models · controller/config"], title_cls="t2", step=17, rx=8))
     # 차량 입력
     s.append(box(420, 400, 450, 58, "proc-todo", "차량 입력: MPU-6050 IMU (I²C) · CAN 신호", ["실시간 읽기 미구현. 지금은 P1이 trip.bin을 100 Hz로 재생"], title_cls="t2", step=17, rx=10))
     s.append(arrow("M462,400 L462,181", "a-todo", "todo"))
@@ -115,19 +115,19 @@ COLS = [
      ["K0 51.4 → constants.json", "η 0.65 → sim_config.json", "out/oman_tudelft.json", "out/K_lpf.npy, K_raw.npy"]),
     ("S3 시뮬레이터", ["sim_config.json (T-23)", "sim_effects.json", "constants.json"],
      ("sim.py", ["경로 · 운전 → IMU · CAN", "승객 → Oman 라벨 MISC"]),
-     ["trip 100 Hz × 32열", "MISC(t), score(t)", "v006/trips/ride_000*.bin"]),
-    ("S2 피처 (C++)", ["constants.json (Wf·이벤트)", "feature_order.json (v3)"],
+     ["trip 100 Hz × 32열", "MISC(t), score(t)", "v017/trips/ride_000*.bin"]),
+    ("S2 피처 (C++)", ["constants.json (Wf·이벤트)", "feature_order.json (v5)"],
      ("featurize", ["FeatureExtractor = P2 코드", "1,000샘플마다 한 행"]),
      ["features.bin [t, 46개]"]),
-    ("데이터셋 조립", ["← sim.py 라벨 · 승객", "feature_order.json (v3)"],
+    ("데이터셋 조립", ["← sim.py 라벨 · 승객", "feature_order.json (v5)"],
      ("build_dataset.py", ["G8 NaN + G10 승객 4개", "y_k: 다음 5분 최대 ≥ k"]),
-     ["v006/dataset.npz", "v006/rides.json", "v006/dataset_report.json", "v006/run.json"]),
-    ("S4 학습", ["← v006/dataset.npz", "policy.json (재생)"],
+     ["v017/dataset.npz", "v017/rides.json", "v017/dataset_report.json", "v017/run.json"]),
+    ("S4 학습", ["← v017/dataset.npz", "policy.json (재생)"],
      ("train.py", ["5-fold · LightGBM ×5", "문턱: 주행 재생으로"]),
-     ["v007/models/model_2~6.txt", "v007/thresholds.json", "v007/train/report.md", "v007/run.json"]),
+     ["v018/models/model_2~6.txt", "v018/thresholds.json", "v018/train/report.md", "v018/run.json"]),
     ("배포 · 검증", ["runs/CURRENT", "Pi: actual_pi, cycles.csv"],
-     ("runs.py use · verify/", ["use v007 → 문턱 복사", "AC-01 · AC-02 · 실차 비교"]),
-     ["config/thresholds.json", "v007/parity/, verify/", "v007/compare/*.md"]),
+     ("runs.py use · verify/", ["use v018 → 문턱 복사", "AC-01 · AC-02 · 실차 비교"]),
+     ["config/thresholds.json", "v007/parity/ (Pi), v018/verify/", "v018/compare/*.md"]),
 ]
 
 
@@ -173,15 +173,15 @@ def validation():
         title_cls="tm", step=16, rx=10))
     s.append(arrow("M230,71 L269,71", "a-pc", "pc"))
     s.append(arrow("M230,143 L269,143", "a-pc", "pc"))
-    s.append(pill(550, 56, 220, "v008/real_baton.npz  23,348행", "outpill"))
-    s.append(pill(550, 128, 220, "v009/real_comma2k19.npz  1,788행", "outpill"))
+    s.append(pill(550, 56, 220, "v019/real_baton.npz  23,348행", "outpill"))
+    s.append(pill(550, 128, 220, "v020/real_comma2k19.npz  1,788행", "outpill"))
     s.append(arrow("M510,69 L549,69", "a-pc", "pc"))
     s.append(arrow("M510,141 L549,141", "a-pc", "pc"))
-    s.append(box(810, 40, 220, 98, "proc-pc", "compare.py", ["피처 분포 p10 / p50 / p90 · KS", "라벨 비율 (같은 시간 범위)", "CURRENT 모델(v007)을 그대로 적용",
-                                                        "시뮬 쪽: 그 모델의 v006 데이터"], title_cls="tm", step=16, rx=10))
+    s.append(box(810, 40, 220, 98, "proc-pc", "compare.py", ["피처 분포 p10 / p50 / p90 · KS", "라벨 비율 (같은 시간 범위)", "CURRENT 모델(v018)을 그대로 적용",
+                                                        "시뮬 쪽: 그 모델의 v017 데이터"], title_cls="tm", step=16, rx=10))
     s.append(arrow("M770,69 L790,69 L790,89 L809,89", "a-pc", "pc"))
     s.append(arrow("M770,141 L790,141 L790,100 L809,100", "a-pc", "pc"))
-    s.append(box(1070, 40, 160, 98, "outpill", "v007/compare/", ["baton_v008.md", "comma2k19_v009.md", "BATON k4 ROC 0.82", "comma k4 ROC 0.88"], title_cls="tm", step=16, rx=8))
+    s.append(box(1070, 40, 160, 98, "outpill", "v018/compare/", ["baton_v019.md", "comma2k19_v020.md", "BATON k4 ROC 0.85", "comma k4 ROC 0.95"], title_cls="tm", step=16, rx=8))
     s.append(arrow("M1030,89 L1069,89", "a-pc", "pc"))
     # 보정 (T-23)
     s.append(pill(550, 214, 220, "sim.npz (작은 시뮬, --out)", "file"))
@@ -203,9 +203,9 @@ def validation():
     s.append(arrow("M230,425 L269,425", "a-pc", "pc"))
     s.append(box(550, 322, 220, 56, "cfgbox", "constants · sim_config", ["K0 51.4 · η 0.65 (사람이 옮겨 적음)"], title_cls="tm", step=16, rx=8))
     s.append(arrow("M510,350 L549,350", "a-cfg", "cfg"))
-    s.append(box(550, 392, 220, 70, "store", "CURRENT 모델 (v007)", ["models/model_2~6.txt", "thresholds.json (Tier 리드)"], title_cls="t2", step=16, rx=8))
+    s.append(box(550, 392, 220, 70, "store", "CURRENT 모델 (v018)", ["models/model_2~6.txt", "thresholds.json (Tier 리드)"], title_cls="t2", step=16, rx=8))
     s.append(arrow("M549,427 L511,427", "a-pc", "pc"))
-    s.append(box(810, 392, 245, 70, "outpill", "v007/verify/tudelft_replay.md", ["k4 ROC 0.67 · PR 0.62", "Tier 1 닿기 전 켜짐 83%"], title_cls="tm", step=16, rx=8))
+    s.append(box(810, 392, 245, 70, "outpill", "v018/verify/tudelft_replay.md", ["k4 ROC 0.64 · PR 0.61", "Tier 1 닿기 전 켜짐 86%"], title_cls="tm", step=16, rx=8))
     s.append(arrow("M390,462 L390,476 L920,476 L920,463", "a-pc", "pc"))
     return f'<svg viewBox="0 0 1250 490" role="img" aria-label="검증과 보정 루프">{"".join(s)}</svg>'
 
@@ -215,7 +215,7 @@ def runtime():
     s = [DEFS]
     # 설정 (위)
     s.append(box(250, 40, 440, 70, "cfgbox", "protocol/*.json → gen_cpp.py → protocol_gen.hpp", ["컴파일 때 고정: 32열 Row, 52개 순서, Oman · Wf · 이벤트 · 휴식 상수, 기본 프로필"], title_cls="tm", step=18, rx=8))
-    s.append(box(770, 40, 180, 70, "cfgbox", "runs/v007/models/", ["model_2~6.txt (CURRENT)", "models.json (sha256)"], title_cls="tm", step=16, rx=8))
+    s.append(box(770, 40, 180, 70, "cfgbox", "runs/v018/models/", ["model_2~6.txt (CURRENT)", "models.json (sha256)"], title_cls="tm", step=16, rx=8))
     s.append(box(1030, 40, 200, 70, "cfgbox", "controller/config/", ["policy.json · thresholds.json", "--rf (P5 명부) 또는 --phone, --hud"], title_cls="tm", step=16, rx=8))
     for x in (340, 600):
         s.append(arrow(f"M{x},110 L{x},199", "a-cfg", "cfg"))
@@ -226,14 +226,14 @@ def runtime():
     P = [
         (250, "P1 acq · 우선순위 40", ["trip.bin → 100 Hz", "clock_nanosleep 절대 시각", "주행 안 seq 번호", "RIDE_START / RIDE_END", "LIVE 모드 미구현"]),
         (510, "P2 feat · 30", ["Wf · Oman · 이벤트 · 휴식", "창 10 s / 1 m / 5 m / 누적", "1,000샘플마다 46개", "seq 빠짐 셈", "RIDE_START에 초기화"]),
-        (770, "P3 infer · 20", ["lib_lightgbm 4.6.0", "모델 5개 (로드 95 ms)", "폰마다 77개 행 (최대 9)", "단조 보정 min(p_k, p_k−1)", "--vehicle-type"]),
+        (770, "P3 infer · 20", ["lib_lightgbm 4.6.0", "모델 5개 (로드 95 ms)", "폰마다 52개 행 (최대 9)", "단조 보정 min(p_k, p_k−1)", "--vehicle-type"]),
         (1030, "P4 policy · 15", ["Tier 1·2·3 문턱 + tol", "hold · off · 쿨다운 · 비활성", "프로필은 설문 그대로 저장", "바뀐 상태만 원자 저장", "시각 = 주행 시각"]),
     ]
     for x, t, ls in P:
         w = 190 if x == 1030 else 180
         s.append(box(x, 200, w, 160, "proc-pi", t, ls, title_cls="tm", dy0=24, step=19, rx=10))
     gaps = [(170, 250, ["파일 읽기"], []), (430, 510, ["SAMPLE", "100 Hz", "seq + Row"], ["제한 5 ms"]),
-            (690, 770, ["VEH", "10초마다", "t + 71개"], ["제한 1 s"]), (950, 1030, ["RISK", "폰마다", "P(≥2..6)"], ["제한 1 s"])]
+            (690, 770, ["VEH", "10초마다", "t + 46개"], ["제한 1 s"]), (950, 1030, ["RISK", "폰마다", "P(≥2..6)"], ["제한 1 s"])]
     for a, b, top, bot in gaps:
         s.append(arrow(f"M{a},300 L{b - 1},300", "a-pi", "pi"))
         m = (a + b) / 2
@@ -501,7 +501,7 @@ OFFLINE_ROWS = [
     ["S3 시뮬레이터", OK + "<br>" + C("python3 ml/simulator/build_dataset.py --note \"…\""),
      ul(C("sim_config.json") + ": 구간 비율·길이·속도, 운전자, 회생, 차량, IMU 잡음, 승객, 실내, 라벨. T-23 보정 항목은 " + C("calibrated") + " 표시", C("sim_effects.json") + ": 뒷자리 1.1~1.5, 온도 1.05~1.2, 풍량 0.85~1.0, 소음 1.0", C("constants.json") + ": K0, MSSQ 규준"),
      ul("경로 480개 (15~40분, 구간 8종, 고속도로 8%) → v² 앞뒤 훑기 → 0.3 Hz 저크 제한", "운전자 가속 0.7~2.0, 감속 0.5~1.6 m/s², 정차 5~120 s", "IMU = 운동학 + g·sinθ + 노면 굴곡 + 차로 유지 흔들림 + 2~15 Hz 진동 + 잡음", "CAN 신호: 페달, 회생, SOC, 배터리, 경로 예측, 공조, 좌석, 소음", "승객 120명: MSSQ ~ N(12.9, 9.9²), true_sens = sens·e^N(0, 0.65²)", "라벨: K = K0·true_sens·m, 운동학 가속도로 Oman, 1분 단위 잡음 0.5, 반올림"),
-     ul("탑승마다 trip (100 Hz × 32열, " + C("trip_format.json") + ")", "탑승마다 MISC(t), score(t), 승객 설정", C("ml/out/runs/v006/trips/ride_0000~0007.bin") + " (재생용 8개, 약 55 MB씩)")],
+     ul("탑승마다 trip (100 Hz × 32열, " + C("trip_format.json") + ")", "탑승마다 MISC(t), score(t), 승객 설정", C("ml/out/runs/v017/trips/ride_0000~0007.bin") + " (재생용 8개, 약 55 MB씩)")],
     ["S2 피처", OK + "<br>" + C("build/featurize trip.bin features.bin [--oman-k K]"),
      ul("trip.bin: float64 [version, 32, 100] 머리말 + 100 Hz 행", C("protocol_gen.hpp") + " (Wf 계수, 이벤트 기준과 되돌림 폭, 휴식, Oman 상수, 52개 순서)"),
      ul("C++ " + C("FeatureExtractor") + " (P2와 같은 코드)", "Wf 쌍선형 4구간 → RMS, jerk, MSDV. 필터는 첫 샘플 정상상태로 시작 (T-22)", "0.63 Hz LP → Oman, 이벤트는 기준을 넘는 순간 세고 0.25 m/s² 되돌아와야 다시 셈 (T-07)", "창 10 s / 1 m / 5 m / 누적, 1,000샘플마다 출력"),
@@ -509,23 +509,23 @@ OFFLINE_ROWS = [
     ["데이터셋 조립", OK + " (S3 안에서)",
      ul("features.bin (46개)", "sim.py의 승객 (MSSQ, sens, EV 경험), 차량 유형, MISC(t)"),
      ul("46개 + G8 2개 (NaN) + G10 4개 = 52개", "y_k = 다음 10초 행부터 300초 안 최대 MISC ≥ k (k = 2..6)", "미래 5분이 다 있는 행만 남김", "8개 프로세스 병렬, 약 7분"),
-     ul(C("ml/out/runs/v006/dataset.npz") + ": X (286,788×77), y (×5), t, misc, score, future_max, ride_id, trip_id, person_id, k, feature_names, feature_version (103 MB)", C("rides.json") + ": 탑승 1,920회 설정", C("dataset_report.json") + ": 라벨 비율 0.910 / 0.555 / 0.209 / 0.059 / 0.012, K 중앙값 55.2", C("run.json") + ": 종류, git 커밋, feature_order 3, 설명")],
+     ul(C("ml/out/runs/v017/dataset.npz") + ": X (286,788×52), y (×5), t, misc, score, future_max, ride_id, trip_id, person_id, k, feature_names, feature_version (75 MB)", C("rides.json") + ": 탑승 1,920회 설정", C("dataset_report.json") + ": 라벨 비율 0.910 / 0.555 / 0.209 / 0.059 / 0.012, K 중앙값 55.2", C("run.json") + ": 종류, git 커밋, feature_order 5, 설명")],
     ["S4 학습", OK + "<br>" + C("python3 ml/train/train.py [--data vNNN] --note \"…\""),
-     ul(C("dataset.npz") + " (기본: 가장 최근 데이터셋 버전)", C("feature_order.json") + ": 단조 +1 9개, 그룹 드롭아웃 비율, droppable", C("ml/train/common.py") + ": LightGBM 파라미터 (잎 7, 잎당 1,000행, L2 10, 학습률 0.03, 최소 100회)", C("controller/config/policy.json") + ": 재생용 hold, off"),
+     ul(C("dataset.npz") + " (기본: 가장 최근 데이터셋 버전)", C("feature_order.json") + ": 단조 +1 7개, 그룹 드롭아웃 비율, droppable", C("ml/train/common.py") + ": LightGBM 파라미터 (잎 7, 잎당 1,000행, L2 10, 학습률 0.03, 최소 100회)", C("controller/config/policy.json") + ": 재생용 hold, off"),
      ul("사람 단위 5-fold, 학습 쪽 15% 사람은 조기 종료 · 문턱용", "원본 + 그룹 드롭아웃 복사본 1벌 (+ 칸 2%)", "이진 LightGBM 5개 (P≥2..6), 단조 제약, 단조 보정 (" + R("frank2001", "Frank & Hall 2001") + " 방식)", "검증용 사람 재생으로 Tier 문턱 고르기 (0.05~0.95, 0.01 간격)", "AC-03 PR-AUC, AC-04 그룹 지우기, AC-05 재생 지표", "전체 사람으로 최종 모델"),
-     ul(C("ml/out/runs/v007/models/model_2~6.txt") + " (LightGBM 텍스트, 트리 224/102/100/100/100)", C("models/models.json") + " (트리 수, sha256, feature_order_version 3)", C("v007/thresholds.json") + ": 0.53 / 0.51 / 0.59", C("v007/train/report.md") + ", " + C("report.json"), C("v007/run.json") + ": inputs.dataset = v006")],
-    ["배포", OK + "<br>" + C("python3 ml/runs.py use v007"),
-     ul(C("v007/thresholds.json"), C("v007/models/models.json") + " (있는지 확인)"),
-     ul(C("ml/out/runs/CURRENT") + "에 v007을 씀", "문턱을 배포 설정으로 복사하고 " + C("\"run\": \"v007\"") + "을 붙임 (git으로 이력)"),
+     ul(C("ml/out/runs/v018/models/model_2~6.txt") + " (LightGBM 텍스트, 트리 186/204/159/117/100)", C("models/models.json") + " (트리 수, sha256, feature_order_version 5)", C("v018/thresholds.json") + ": 0.46 / 0.47 / 0.54", C("v018/train/report.md") + ", " + C("report.json"), C("v018/run.json") + ": inputs.dataset = v017")],
+    ["배포", OK + "<br>" + C("python3 ml/runs.py use v018"),
+     ul(C("v018/thresholds.json"), C("v018/models/models.json") + " (있는지 확인)"),
+     ul(C("ml/out/runs/CURRENT") + "에 v018을 씀", "문턱을 배포 설정으로 복사하고 " + C("\"run\": \"v018\"") + "을 붙임 (git으로 이력)"),
      ul(C("controller/config/thresholds.json"), C("run_pipeline.sh") + ", " + C("model_parity.py") + ", " + C("compare.py") + "가 CURRENT를 기본값으로 읽음")],
     ["실차 변환", OK + "<br>" + C("python3 ml/realdata/build_real.py --source baton|comma2k19 --root …"),
      ul(R("baton", "BATON-Sample") + ": 운전자 2명, 34주행, 19.1 h (폰 IMU + CAN 속도)", R("comma2k19", "comma2k19") + " Chunk 1: 차 1대, 19구간, 2.9 h"),
      ul("장착 방향 추정 (convert.align: 기울기, 진행 방향, 정지 구간 중력)", "a_long = CAN 속도 미분, a_lat = v·ω_z로 Oman 라벨 (가상 승객, 시뮬레이터와 같은 120명 풀)", "trip.bin으로 바꿔 같은 featurize", "없는 신호는 NaN"),
-     ul(C("v008/real_baton.npz") + " (23,348행)", C("v009/real_comma2k19.npz") + " (1,788행)", C("real_<source>_report.json") + ": 축 정렬, 라벨 비율", C("trips/real/<source>/") + " (--keep-trips)")],
+     ul(C("v019/real_baton.npz") + " (23,348행)", C("v020/real_comma2k19.npz") + " (1,788행)", C("real_<source>_report.json") + ": 축 정렬, 라벨 비율", C("trips/real/<source>/") + " (--keep-trips)")],
     ["실차 비교", OK + "<br>" + C("python3 ml/realdata/compare.py --source baton"),
-     ul("실차 npz (최신 버전)", "CURRENT 모델 (v007)", "그 모델의 학습 데이터 (v006)"),
+     ul("실차 npz (최신 버전)", "CURRENT 모델 (v018)", "그 모델의 학습 데이터 (v017)"),
      ul("운동 피처 분포 (p10/p50/p90, KS)", "라벨 비율 P(≥k), Oman 점수 (같은 시간 범위)", "시뮬레이터 모델을 실차 행에 그대로 적용한 ROC/PR-AUC, 평균 예측 대 실제 비율"),
-     ul(C("v007/compare/baton_v008.md") + ": 사람 운전 k4 ROC 0.82, PR 0.52 (평균 예측 0.231, 실제 0.203)", C("v007/compare/comma2k19_v009.md") + ": k4 ROC 0.88, PR 0.38")],
+     ul(C("v018/compare/baton_v019.md") + ": 사람 운전 k4 ROC 0.85, PR 0.59 (평균 예측 0.233, 실제 0.203)", C("v018/compare/comma2k19_v020.md") + ": k4 ROC 0.95, PR 0.66")],
     ["시뮬레이터 보정 (T-23)", OK + "<br>" + C("build_dataset.py --trips 60 --out /tmp/x/sim.npz → calibrate.py /tmp/x/sim.npz"),
      ul("작은 시뮬 데이터셋 (" + C("--out") + ", 버전 폴더 밖)", "실차 npz (BATON 사람 운전 = 목표, comma2k19 = 점검)"),
      ul("피처 15개 중앙값과 KS 거리, 속도대 비율, 라벨 비율", "평균 KS가 점수. 80주행으로 세 번 돌려 정함"),
@@ -533,7 +533,7 @@ OFFLINE_ROWS = [
     ["TU Delft 재생", OK + "<br>" + C("python3 ml/verify/tudelft_replay.py ml/data/raw/ATDOMS.mat"),
      ul(C("ATDOMS.mat") + ": 17명 × 4조건, MISC 30초마다, MSSQ", "CURRENT 모델, 그 문턱"),
      ul("같은 앞뒤 가속도를 내는 가상 주행 (v0 50 km/h에서 3.3초마다 속도 오르내림) → featurize", "승객 피처 = 실제 MSSQ", "라벨 = 10초마다 다음 5분 실제 MISC 최대 ≥ k", "모델, oman_score, oman × sens, 개인 K Oman(상한) 비교"),
-     ul(C("v007/verify/tudelft_replay.md") + ", " + C(".json"), "k4 ROC 0.67 / PR 0.62 (oman_score 하나 0.64 / 0.60)", "사람 순위 Spearman 0.40 (MSSQ 0.41, 개인 K 0.65)", "Tier 1이 MISC 3 전에 켜짐 83%, 리드 중앙값 7.2분")],
+     ul(C("v018/verify/tudelft_replay.md") + ", " + C(".json"), "k4 ROC 0.64 / PR 0.61 (oman_score 하나 0.64 / 0.60)", "사람 순위 Spearman 0.19 (MSSQ 0.41, 개인 K 0.65. v007은 0.40)", "Tier 1이 MISC 3 전에 켜짐 86%, 리드 중앙값 6.5분")],
     ["AC-01 동등성", OK + "<br>" + C("model_parity.py make → (Pi) verify_model → check"),
      ul("CURRENT 모델 5개", "데이터 2,000행 + NaN 201 + 0 201 + 분기 기준값 ±1e-9와 그 값 1,800 = 4,202행"),
      ul("Mac Python LightGBM 기대값", "Pi " + C("verify_model") + "이 lib_lightgbm으로 예측, 메모리·시간 측정"),
@@ -555,11 +555,17 @@ VERSION_ROWS = [
     [C("v003"), "models", "1", "v002", "T-24 학습 설정. 문턱 0.53 / 0.51 / 0.59", "v1 기준"],
     [C("v004"), "real-baton", "1", "–", "BATON-Sample 변환", "v003 비교용"],
     [C("v005"), "real-comma2k19", "1", "–", "comma2k19 Chunk 1 변환", "v003 비교용"],
-    [C("v006"), "dataset", "3", "–", "이벤트 히스테리시스 (T-07), 나머지는 v002와 같음", "현재"],
-    [C("v007"), "models", "3", "v006", "T-24 설정 그대로. 문턱 0.53 / 0.51 / 0.59", '<span class="tag ok">CURRENT</span>'],
-    [C("v008"), "real-baton", "3", "–", "BATON-Sample, 피처 v3", "현재"],
-    [C("v009"), "real-comma2k19", "3", "–", "comma2k19 Chunk 1, 피처 v3", "현재"],
+    [C("v006"), "dataset", "3", "–", "이벤트 히스테리시스 (T-07), 나머지는 v002와 같음", "v3 기준"],
+    [C("v007"), "models", "3", "v006", "T-24 설정 그대로. 문턱 0.53 / 0.51 / 0.59", "v3 기준"],
+    [C("v008"), "real-baton", "3", "–", "BATON-Sample, 피처 v3", "v007 비교용"],
+    [C("v009"), "real-comma2k19", "3", "–", "comma2k19 Chunk 1, 피처 v3", "v007 비교용"],
     [C("v010"), "dataset", "4", "–", "피처 v4 실험: sensitivity 끔, +1 제약을 mssq로", DROP],
+    [C("v011") + "~" + C("v013"), "models, real", "4", "v010", "피처 v4 실험의 모델과 실차", DROP],
+    [C("v015") + ", " + C("v016"), "dataset", "5", "–", "빌드가 끝나기 전에 멈춤 (dataset.npz 없음)", DROP],
+    [C("v017"), "dataset", "5", "–", "피처 v5: 25개 삭제 (C21), 탑승·라벨은 v006과 같음", "현재"],
+    [C("v018"), "models", "5", "v017", "T-24 설정 그대로. 문턱 0.46 / 0.47 / 0.54", '<span class="tag ok">CURRENT</span>'],
+    [C("v019"), "real-baton", "5", "–", "BATON-Sample, 피처 v5", "현재"],
+    [C("v020"), "real-comma2k19", "5", "–", "comma2k19 Chunk 1, 피처 v5", "현재"],
     [C("v011"), "models", "4", "v010", "시뮬 PR k4 0.524, k5 0.252. 실차 BATON k5·k6, comma k4 나빠져 채택 안 함", DROP],
     [C("v012"), "real-baton", "4", "–", "v011 비교용 BATON-Sample", DROP],
     [C("v013"), "real-comma2k19", "4", "–", "v011 비교용 comma2k19 Chunk 1", DROP],
@@ -596,7 +602,12 @@ UPGRADE_ROWS = [
      "v2 실험이 v1 데이터셋 · 모델을 덮어써서, 되돌리려면 전부 다시 만들어야 했음",
      ul(C("ml/runs.py") + ": 실행마다 " + C("ml/out/runs/vNNN") + "을 새로 만듦 (이미 있으면 실패)", C("run.json") + "에 종류, 입력 버전, git 커밋, 파라미터, 설명", "배포는 " + C("runs.py use vNNN") + "으로만"),
      ul("입력: 모든 생성 스크립트 (build_dataset, train, build_real)", "출력: 버전 폴더, " + C("CURRENT") + ", " + C("controller/config/thresholds.json")),
-     ul("v001~v009 (아래 표)", "리포트는 입력 버전 폴더 안에 씀 (compare/, verify/, parity/, csv/)")],
+     ul("v001~v020 (아래 표)", "리포트는 입력 버전 폴더 안에 씀 (compare/, verify/, parity/, csv/)")],
+    ["C21<br>피처 v5 정리", DONE,
+     "77개 중 25개는 차에 들어올 출처도 없고 시뮬레이터 라벨에 닿는 경로도 없었음 (페달, 회생·배터리, 내비, 소음, 설정 온도 등). " + C("pred_ax/ay_10s") + "는 정답을 미리 보여 주는 칸",
+     ul("25개를 " + C("feature_order.json") + "에서 지움 (enabled=false가 아니라 삭제, 번호 다시 매김)", "C++ " + C("features.cpp") + "에서 G3a·G3b·G4·G7 계산 삭제, 주행 파일 meta에 " + C("feature_version"), "원시 칸과 시뮬레이터 신호는 그대로"),
+     ul("입력: 같은 탑승·라벨 (남은 52개 값은 v006과 완전히 같음)", "출력: v017 데이터셋, v018 모델 (CURRENT), v019 · v020 실차"),
+     ul("시뮬 PR k3 0.860 → 0.860, k4 0.496 → 0.523, k5 0.210 → 0.246, k6 0.056 → 0.051", "BATON k4 ROC 0.82 → 0.85, comma2k19 0.88 → 0.95", "TU Delft k4 ROC 0.67 → 0.64 (oman_score 하나와 같아짐), 사람 순위 Spearman 0.40 → 0.19")],
 ]
 
 STAGE_ROWS = [
@@ -605,6 +616,7 @@ STAGE_ROWS = [
     ["T-24 규제 (v003)", "0.859 / 0.499", "0.53 / 0.51 / 0.59", "83% · 1.11/h", "0.82 / 0.52", "0.89 / 0.37", "0.67 / 0.62"],
     ["v2 실험 (v001, 채택 안 함)", "0.867 / 0.520", "–", "–", "– / 0.48", "–", "– / 0.61"],
     ["T-07 히스테리시스 (v007)", "0.860 / 0.496", "0.53 / 0.51 / 0.59", "84% · 1.12/h", "0.82 / 0.52", "0.88 / 0.38", "0.67 / 0.62"],
+    ["C21 피처 v5 (v018)", "0.860 / 0.523", "0.46 / 0.47 / 0.54", "85% · 1.16/h", "0.85 / 0.59", "0.95 / 0.66", "0.64 / 0.61"],
 ]
 
 # ------------------------------------------------------------------ 식과 근거
@@ -668,14 +680,14 @@ FORMULA_ROWS = [
 ]
 
 RUN_STEPS = [
-    ["1", C("python3 ml/simulator/build_dataset.py --note \"…\""), "sim_config.json, constants.json, feature_order.json", C("v006/") + " dataset.npz, rides.json, dataset_report.json, trips/"],
-    ["2", C("python3 ml/train/train.py --note \"…\""), "최신 데이터셋 (v006)", C("v007/") + " models/, thresholds.json, train/report.md"],
-    ["3", C("python3 ml/runs.py use v007"), "v007", C("ml/out/runs/CURRENT") + ", " + C("controller/config/thresholds.json")],
-    ["4", C("python3 ml/realdata/build_real.py --source baton --root ml/data/raw/baton --note \"…\""), "BATON 원자료", C("v008/real_baton.npz")],
-    ["5", C("python3 ml/realdata/build_real.py --source comma2k19 --root ml/data/raw/comma2k19/chunk1 --keep-trips --note \"…\""), "comma2k19 원자료", C("v009/real_comma2k19.npz") + ", trips/real/"],
-    ["6", C("python3 ml/realdata/compare.py --source baton") + "<br>" + C("python3 ml/realdata/compare.py --source comma2k19"), "CURRENT 모델, 최신 실차, v006", C("v007/compare/*.md, *.json")],
-    ["7", C("python3 ml/verify/tudelft_replay.py ml/data/raw/ATDOMS.mat"), "ATDOMS, CURRENT 모델", C("v007/verify/tudelft_replay.md")],
-    ["8", C("python3 ml/verify/model_parity.py make") + " → Pi " + C("verify_model") + " → " + C("check"), "CURRENT 모델", C("v007/parity/result.json")],
+    ["1", C("python3 ml/simulator/build_dataset.py --note \"…\""), "sim_config.json, constants.json, feature_order.json", C("v017/") + " dataset.npz, rides.json, dataset_report.json, trips/"],
+    ["2", C("python3 ml/train/train.py --note \"…\""), "최신 데이터셋 (v017)", C("v018/") + " models/, thresholds.json, train/report.md"],
+    ["3", C("python3 ml/runs.py use v018"), "v018", C("ml/out/runs/CURRENT") + ", " + C("controller/config/thresholds.json")],
+    ["4", C("python3 ml/realdata/build_real.py --source baton --root ml/data/raw/baton --note \"…\""), "BATON 원자료", C("v019/real_baton.npz")],
+    ["5", C("python3 ml/realdata/build_real.py --source comma2k19 --root ml/data/raw/comma2k19/chunk1 --keep-trips --note \"…\""), "comma2k19 원자료", C("v020/real_comma2k19.npz") + ", trips/real/"],
+    ["6", C("python3 ml/realdata/compare.py --source baton") + "<br>" + C("python3 ml/realdata/compare.py --source comma2k19"), "CURRENT 모델, 최신 실차, v017", C("v018/compare/*.md, *.json")],
+    ["7", C("python3 ml/verify/tudelft_replay.py ml/data/raw/ATDOMS.mat"), "ATDOMS, CURRENT 모델", C("v018/verify/tudelft_replay.md")],
+    ["8", C("python3 ml/verify/model_parity.py make") + " → Pi " + C("verify_model") + " → " + C("check"), "CURRENT 모델", C("v018/parity/result.json") + " (v007까지 Pi에서 함)"],
     ["9", "Pi: " + C("controller/qnx/run_pipeline.sh") + " → " + C("pipeline_check.py check"), "CURRENT 모델 (tar로 복사)", "cycles.csv, 비교 JSON"],
 ]
 
@@ -691,7 +703,7 @@ RUNTIME_ROWS = [
      "stdout JSON: received, seq_gaps, veh_sent, veh_fail, push_us_max",
      "받음 186,518 · 빠짐 0 · VEH 186 · 받기 처리 최대 2.5 ms"],
     ["P3 infer<br>" + OK, C("p3_infer --models DIR [--vehicle-type 0|1] [--once] [--prio 20]"),
-     ul("← P2 VEH, RIDE_*", C("runs/v007/models/model_2~6.txt"), "← P4 ProfilesReply"),
+     ul("← P2 VEH, RIDE_*", C("runs/v018/models/model_2~6.txt"), "← P4 ProfilesReply"),
      ul("→ P4 PROFILES 요청 (주기마다)", "→ P4 RISK {seq, t, t_emit_ns, t_infer_ns, n, id[n], p[n][P≥2..6]}, 제한 1 s", "폰 없으면 \"default\" 한 행: MSSQ 12.90, sens 1.0, EV NaN"),
      "stdout JSON: cycles, profiles_fail, risk_fail, infer_ms_max",
      "주기 186 · 실패 0 · 추론 최대 0.55 ms (폰 2대)"],
@@ -712,18 +724,18 @@ RUNTIME_ROWS = [
 
 FORMAT_ROWS = [
     [C("ml/out/runs/vNNN/run.json"), "JSON", "version, kind (dataset / models / real-…), created, git {commit, dirty}, feature_order_version, note, inputs {dataset: …}, params", "모든 생성 스크립트"],
-    [C("ml/out/runs/CURRENT"), "한 줄 텍스트", "배포 중인 모델 버전 (지금 v007)", C("runs.py use") + " → run_pipeline.sh, 리포트 기본값"],
+    [C("ml/out/runs/CURRENT"), "한 줄 텍스트", "배포 중인 모델 버전 (지금 v018)", C("runs.py use") + " → run_pipeline.sh, 리포트 기본값"],
     [C("vNNN/trips/ride_XXXX.bin"), "float64 LE. 머리말 [version=1, n_columns=32, 100] + 100 Hz 행", "t, ax, ay, az (중력 포함, +9.81), gx, gy, gz, speed, accel_pedal, brake_pedal, drive_mode, cruise_on, regen_decel, regen_level, one_pedal, soc, batt_power, motor_torque, dist_next_turn, angle_next_turn, pred_ax_10s, pred_ay_10s, curvature_ahead, cabin_temp, set_temp, fan_level, ac_on, seat_row, seatback_angle, window_open, noise_level, noise_lowfreq_level. 신호가 없으면 그 열 전체 NaN", "S3, build_real → P1, featurize"],
     ["features.bin", "float64. 머리말 [feature_version, 47] + 10초마다 [t, 46개]", "차량 피처 0~45 (G1, G2, G5, G6, G9). feature_version = 5", "featurize → build_dataset, build_real, tudelft_replay"],
-    [C("v006/dataset.npz"), "NumPy (allow_pickle=False로 읽음)", "X 286,788×77, y 286,788×5 (k=2..6), t, misc, score, future_max, ride_id, trip_id, person_id, k, feature_names, feature_version", "S3 → S4, compare, CSV"],
+    [C("v017/dataset.npz"), "NumPy (allow_pickle=False로 읽음)", "X 286,788×52, y 286,788×5 (k=2..6), t, misc, score, future_max, ride_id, trip_id, person_id, k, feature_names, feature_version", "S3 → S4, compare, CSV"],
     [C("v008/real_baton.npz"), "NumPy", "dataset.npz와 같은 칸 + tag_das (운전 보조 켜짐 여부, 사람 운전 행만 고를 때)", "build_real → compare, calibrate"],
-    [C("v007/models/model_k.txt"), "LightGBM 4.6.0 텍스트 모델", "objective binary, 77 입력, 단조 제약 9개. models.json에 트리 수, sha256", "S4 → P3, AC-01, compare, tudelft_replay"],
-    [C("v007/thresholds.json") + " → " + C("controller/config/thresholds.json"), "JSON", "base_th {1: 0.53, 2: 0.51, 3: 0.59}, 고른 규칙, feature_order_version 3, 배포 쪽에는 run: v007", "S4 → runs.py use → P4"],
+    [C("v018/models/model_k.txt"), "LightGBM 4.6.0 텍스트 모델", "objective binary, 52 입력, 단조 제약 7개. models.json에 트리 수, sha256", "S4 → P3, AC-01, compare, tudelft_replay"],
+    [C("v018/thresholds.json") + " → " + C("controller/config/thresholds.json"), "JSON", "base_th {1: 0.46, 2: 0.47, 3: 0.54}, 고른 규칙, feature_order_version 5, 배포 쪽에는 run: v018", "S4 → runs.py use → P4"],
     [C("controller/config/policy.json"), "JSON", "tiers (기기, input_k, shared, hold 1/6/12, gate), off_margin 0.10, off_hold 6, cooldown 300 s, quick_off 30 s, max_quick_offs 3, tolerance {0.4, 6, −4}, safety_timeout 30 s", "사람 → P4, 학습 재생"],
     [C("state/tolerance/<기기>.json"), "JSON, 임시 파일 → fsync → rename → 디렉터리 fsync", "{\"n\": 정수}", "P4 ↔ 디스크"],
     [C("state/profiles/<ID>.json"), "JSON, 같은 방식", "{mssq, sens} (%.17g), 앱 설문 그대로. 옛 형식의 sens_mssq는 설문값으로 읽음. EV 경험, 차량 유형은 아직 없음 (T-17)", "P4 ↔ 디스크"],
     [C("cycles.csv"), "CSV, 주기 × 폰마다 한 줄", "seq, t, latency_ms, infer_ms, phone, p2, p3, p4, p5, p6, airflow-01, display-01, phone-0 …", "P4 → AC-02"],
-    [C("v007/parity/vectors.bin"), "float64 행렬", "4,202 × 77 시험 벡터 (expected_p.bin, actual_pi.bin은 4,202 × 5 확률)", "AC-01"],
+    [C("vNNN/parity/vectors.bin"), "float64 행렬", "4,202 × 피처 수 시험 벡터 (v007은 77). expected_p.bin, actual_pi.bin은 4,202 × 5 확률", "AC-01"],
 ]
 
 MSG_ROWS = [
@@ -737,12 +749,12 @@ MSG_ROWS = [
 PARAM_ROWS = [
     ["K0 51.4, β 66.2 / 502.4 s, 지수 0.4, 0.63 Hz 입력 LP", "S1 oman_tudelft.py + " + R("irmak2022", "Irmak 2022") + " → " + C("constants.json"), "시뮬레이터 라벨, featurize, P2 Oman 피처"],
     ["ISO Wf 계수, 이벤트 1.5 / −0.75 / 2.0과 되돌림 0.25, 휴식 180 s · 0.05", C("constants.json") + " (" + R("iso2631", "ISO 2631-1") + ", " + R("he2013", "He 2013") + ", " + R("nguyen2019", "Nguyen 2019") + ")", "featurize, P2"],
-    ["피처 77개 순서, 단위, 단조, 드롭아웃, enabled, version 3", C("feature_order.json"), "build_dataset, 학습, P2, P3, 문턱 파일 검사"],
+    ["피처 52개 순서, 단위, 단조, 드롭아웃, enabled, version 5", C("feature_order.json"), "build_dataset, 학습, P2, P3, 문턱 파일 검사"],
     ["MSSQ → sens = clip(e^(0.3z), 0.5, 2), 기본 프로필 12.90 / 1.0", C("constants.json") + " (" + R("golding2006", "Golding 2006") + ")", "시뮬레이터 승객, P3 기본 행, 앱 설문"],
     ["η 0.65, 환경 배수, 라벨 잡음 0.5", "S1 + " + C("sim_config.json") + ", " + C("sim_effects.json"), "시뮬레이터 라벨만"],
     ["운전 · 도로 분포 (고속도로, 가감속, 노면, 차로 흔들림)", "T-23 " + C("calibrate.py") + " → " + C("sim_config.json"), "시뮬레이터 운동"],
-    ["model_2~6.txt", "S4 → " + C("v007/models/"), "P3, AC-01, 실차 비교, TU Delft 재생"],
-    ["base_th 0.53 / 0.51 / 0.59", "S4 재생 → " + C("v007/thresholds.json") + " → " + C("runs.py use"), "P4, AC-02, TU Delft Tier 리드"],
+    ["model_2~6.txt", "S4 → " + C("v018/models/"), "P3, AC-01, 실차 비교, TU Delft 재생"],
+    ["base_th 0.46 / 0.47 / 0.54", "S4 재생 → " + C("v018/thresholds.json") + " → " + C("runs.py use"), "P4, AC-02, TU Delft Tier 리드"],
     ["hold, off, 쿨다운, 허용도 식", C("policy.json") + " (PRD 설계)", "P4, 학습 재생"],
     ["n[d] → tol = 0.4·tanh(n/6)", "P4 (승객 수동 조작, P6의 CTX_OVR)", "P4 문턱. P3 G8 입력은 꺼짐"],
     ["화면 ON · 응시 (SCR)", "앱, HUD " + NO + " · 지금은 " + C("--hud"), "P4 게이트"],
@@ -766,7 +778,7 @@ def page():
 <body>
 <main>
 <h1>MerMaid 워크플로우 구조</h1>
-<p class="sub">2026-11-22 기준 <code>main</code> 브랜치. 피처 순서 version 3, 배포 모델 <code>v007</code>. 시뮬레이션 → 학습 → 검증의 모든 입력과 출력, 지금까지 고친 것, 식과 근거 문헌. 자세한 정의는 <a href="SPEC.md">docs/architecture/SPEC.md</a>, 실차 비교는 <a href="../ml/REALDATA.md">docs/ml/REALDATA.md</a>.</p>
+<p class="sub">2026-11-24 기준. 피처 순서 version 5, 배포 모델 <code>v018</code>. 시뮬레이션 → 학습 → 검증의 모든 입력과 출력, 지금까지 고친 것, 식과 근거 문헌. 자세한 정의는 <a href="SPEC.md">docs/architecture/SPEC.md</a>, 실차 비교는 <a href="../ml/REALDATA.md">docs/ml/REALDATA.md</a>.</p>
 <nav>
 <a href="#overview">1. 전체 그림</a><a href="#offline">2. 시뮬레이션 → 학습</a><a href="#validation">3. 검증 · 보정</a><a href="#stages">4. 단계별 입출력</a>
 <a href="#versions">5. 결과 버전</a><a href="#upgrades">6. 고도화 이력</a><a href="#formulas">7. 식과 근거</a><a href="#runtime">8. Pi 런타임</a>
@@ -786,7 +798,7 @@ def page():
 <div class="fig">{overview()}</div>
 
 <h2 id="offline">2. 시뮬레이션 → 학습 → 배포</h2>
-<p>왼쪽에서 오른쪽으로 한 번 돌리면 새 데이터셋 버전(v006)과 새 모델 버전(v007)이 생깁니다. 모든 단계가 <code>protocol/</code>의 계약 파일을 읽습니다. 시뮬레이터 정답(MISC)은 Oman 식으로 만들므로, 이 그림 안의 성능은 "구조가 의도대로 도는가"의 근거이고 실제 정확도는 3장에서 따로 봅니다.</p>
+<p>왼쪽에서 오른쪽으로 한 번 돌리면 새 데이터셋 버전(v017)과 새 모델 버전(v018)이 생깁니다. 모든 단계가 <code>protocol/</code>의 계약 파일을 읽습니다. 시뮬레이터 정답(MISC)은 Oman 식으로 만들므로, 이 그림 안의 성능은 "구조가 의도대로 도는가"의 근거이고 실제 정확도는 3장에서 따로 봅니다.</p>
 <div class="fig">{offline()}</div>
 
 <h2 id="validation">3. 검증 · 보정 루프</h2>
@@ -797,7 +809,7 @@ def page():
 <p>vNNN은 <code>ml/out/runs/vNNN/</code>입니다. 명령은 저장소 루트에서 실행합니다.</p>
 {table(["단계", "상태 · 실행", "입력", "처리", "출력"], OFFLINE_ROWS)}
 <h3>처음부터 다시 만드는 순서</h3>
-<p>지금 버전(v006~v009)은 이 순서로 만들었습니다. 각 단계가 새 버전 번호를 받으므로, 실제 번호는 실행할 때 다를 수 있습니다.</p>
+<p>지금 버전(v017~v020)은 이 순서로 만들었습니다. 각 단계가 새 버전 번호를 받으므로, 실제 번호는 실행할 때 다를 수 있습니다.</p>
 {table(["#", "명령", "읽는 것", "만드는 것"], RUN_STEPS)}
 
 <h2 id="versions">5. 결과 버전 (<code>ml/runs.py</code>)</h2>

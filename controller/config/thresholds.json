@@ -1,6 +1,6 @@
 {
   "placeholder": false,
-  "feature_order_version": 3,
+  "feature_order_version": 5,
   "source": "ml/train/train.py final model, policy replay on a 15% person holdout of the synthetic data",
   "rule": {
     "1": "largest threshold with detection_rate >= 0.85 (replay, grid step 0.01)",
@@ -8,9 +8,9 @@
     "3": "smallest threshold with false_activations_per_hour <= 0.25 (replay, grid step 0.01)"
   },
   "base_th": {
-    "1": 0.53,
-    "2": 0.51,
-    "3": 0.59
+    "1": 0.46,
+    "2": 0.47,
+    "3": 0.54
   },
-  "run": "v007"
+  "run": "v018"
 }

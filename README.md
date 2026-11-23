@@ -166,7 +166,7 @@ flowchart LR
     REAL["Real-drive converters<br/>comma2k19 · BATON · TU Delft"]:::done
     CAL["calibrate.py<br/>KS score"]:::done
     TRAIN["featurize → train.py"]:::done
-    RUNS[("runs/vNNN<br/>deployed v007")]:::done
+    RUNS[("runs/vNNN<br/>deployed v018")]:::done
     LLM["Claude loop"]:::plan
   end
 

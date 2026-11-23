@@ -108,6 +108,7 @@ def server_stage(tmp, rides, env, s1_c):
     try:
         import fastapi  # noqa: F401
         import httpx
+        import sqlalchemy  # noqa: F401  server/db.py
         import uvicorn  # noqa: F401
     except ImportError:
         print("D. log server: skipped (pip install -r server/requirements.txt)")
@@ -132,6 +133,8 @@ def server_stage(tmp, rides, env, s1_c):
             except httpx.HTTPError:
                 time.sleep(0.1)
         check(up, "server up")
+        if not up:
+            print(srv.text()[-2000:])
         collect = [sys.executable, os.path.join(REPO, "server", "tools", "collect_logs.py"), "--local", rides, "--server", url,
                    "--key", key]
         r = subprocess.run(collect, capture_output=True, text=True, timeout=120, env=senv)

@@ -103,7 +103,7 @@ def main():
     data = {"X": cat("X"), "y": cat("y"), "t": cat("t"), "misc": cat("misc"), "score": cat("score"),
             "future_max": cat("future_max"), "ride_id": rep("ride_id"), "trip_id": rep("trip_id"),
             "person_id": rep("person_id"), "k": np.array(sim.CFG["label"]["k"]),
-            "feature_names": np.array([f["name"] for f in FEAT]),
+            "feature_names": np.array([f["name"] for f in tripio.FEATURES["features"]]),
             "feature_version": np.array(tripio.FEATURES["version"])}
     np.savez_compressed(a.out, **data)
 
