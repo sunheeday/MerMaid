@@ -1,0 +1,8 @@
+# imu_calib 환경 = 저장소 ml/requirements.txt 와 같음. 만들기: python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+lightgbm==4.6.0
+numpy
+pandas
+scipy
+scikit-learn
+jsonschema
+matplotlib
