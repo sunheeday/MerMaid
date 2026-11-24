@@ -34,18 +34,13 @@ public:
 
     // 지금(now_ns) 쓸 속도 m/s, 없으면 NaN
     double speed(uint64_t now_ns) const {
-        const Slot* best = nullptr;  // 2초 안, acc 최소
-        const Slot* newest = nullptr;
-        for (const Slot& s : slot_) {
-            if (!s.used) continue;
-            const uint64_t age = now_ns >= s.mono_ns ? now_ns - s.mono_ns : 0;  // 미래 시각(시계 차이)은 방금 받은 것으로
-            if (age > kStaleNs) continue;
-            if (!newest || s.mono_ns > newest->mono_ns) newest = &s;
-            if (age <= kFreshNs && (!best || s.acc < best->acc)) best = &s;
-        }
-        if (best) return best->spd;
-        if (newest) return newest->spd;
-        return std::numeric_limits<double>::quiet_NaN();
+        const Slot* s = pick(now_ns);
+        return s ? s->spd : std::numeric_limits<double>::quiet_NaN();
+    }
+    // speed()가 고른 값의 수평 정확도 m, 없으면 NaN (횡단 경사 제거가 정확도 나쁜 초를 거른다)
+    double accuracy(uint64_t now_ns) const {
+        const Slot* s = pick(now_ns);
+        return s ? s->acc : std::numeric_limits<double>::quiet_NaN();
     }
 
     void clear() {
@@ -59,6 +54,18 @@ private:
         uint64_t mono_ns = 0;
         double spd = 0, acc = 0;
     };
+    const Slot* pick(uint64_t now_ns) const {
+        const Slot* best = nullptr;  // 2초 안, acc 최소
+        const Slot* newest = nullptr;
+        for (const Slot& s : slot_) {
+            if (!s.used) continue;
+            const uint64_t age = now_ns >= s.mono_ns ? now_ns - s.mono_ns : 0;  // 미래 시각(시계 차이)은 방금 받은 것으로
+            if (age > kStaleNs) continue;
+            if (!newest || s.mono_ns > newest->mono_ns) newest = &s;
+            if (age <= kFreshNs && (!best || s.acc < best->acc)) best = &s;
+        }
+        return best ? best : newest;
+    }
     Slot* find(const char* phone) {
         for (Slot& s : slot_)
             if (s.used && std::strncmp(s.phone, phone, kIdLen) == 0) return &s;
