@@ -441,6 +441,81 @@ static void auto_level_only_first_calibration() {
     }
 }
 
+// ---- 가속도 센서 오차 보정 (Config::accel_cal) ----
+static void accel_cal_parse() {
+    // sensor_6face.json 형식 그대로 (note 등 다른 키는 무시)
+    const AccelCal c = parse_accel_cal(
+        "{\"bias\": [0.0, 0.0263, -0.0003], \"scale\": [1.0, 0.99937, 0.98931], \"note\": \"x\", \"measured_axes\": [\"y\", \"z\"]}");
+    CHECK(c.bias[1] == 0.0263 && c.scale[2] == 0.98931, "parse 6-face file");
+    auto rejects = [](const char* text) {
+        try {
+            parse_accel_cal(text);
+        } catch (const std::exception&) {
+            return true;
+        }
+        return false;
+    };
+    CHECK(rejects("{\"bias\": [0, 2.0, 0], \"scale\": [1, 1, 1]}"), "bias 2 m/s^2 rejected");
+    CHECK(rejects("{\"bias\": [0, 0, 0], \"scale\": [1, 1, 1.2]}"), "scale 1.2 rejected");
+    CHECK(rejects("{\"bias\": [0, 0], \"scale\": [1, 1, 1]}"), "2 numbers rejected");
+    CHECK(rejects("{\"scale\": [1, 1, 1]}"), "missing bias rejected");
+    const Vec3 a = apply_accel_cal(c, {1.0, 1.0, 10.0});
+    CHECK(std::fabs(a[1] - (1.0 - 0.0263) * 0.99937) < 1e-12 && std::fabs(a[2] - (10.0 + 0.0003) * 0.98931) < 1e-12,
+          "(a - bias) * scale");
+}
+
+static void accel_cal_before_rotation() {
+    // 센서 z가 차 왼쪽(y)을 보게 붙은 R: 오차는 센서 z축에서 빠져야 한다 (돌린 뒤 차 축에서 빼면 틀림)
+    Mount m;
+    m.R = {{{1, 0, 0}, {0, 0, 1}, {0, -1, 0}}};
+    AccelCal c;
+    c.bias = {0, 0, 0.2};
+    c.scale = {1, 1, 1.01};
+    Raw r{};
+    r.a[2] = 8192;  // 센서 z = 1 g
+    const Sample s = convert(r, m, {0, 0, 0}, c);
+    CHECK(std::fabs(s.a[1] - (kG - 0.2) * 1.01) < 1e-12 && std::fabs(s.a[2]) < 1e-12, "cal in sensor axes, then R (%.5f)",
+          s.a[1]);
+    const Sample d = convert(r, m, {0, 0, 0});
+    CHECK(std::fabs(d.a[1] - kG) < 1e-12, "default: no cal");
+}
+
+static void accel_cal_ride() {
+    // 차는 수평, 센서 y에 0.3 m/s² 치우침. 보정이 없으면 자동 수평 맞춤이 이를 기울기(약 1.75도)로 잘못 본다
+    auto sig = [](uint64_t) {
+        Raw raw{};
+        raw.a[1] = static_cast<int16_t>(std::lround(0.3 / kG * 8192));
+        raw.a[2] = 8192;
+        return raw;
+    };
+    Acquirer::Config cfg;
+    cfg.auto_level = true;
+    cfg.has_accel_cal = true;
+    cfg.accel_cal.bias = {0, std::lround(0.3 / kG * 8192) / imu::kAccelLsbPerG * kG, 0};  // 정수로 반올림된 값 그대로
+    Sim sim(cfg);
+    sim.mpu.signal = sig;
+    sim.run_until(3000 * MS);
+    const auto s = sim.samples();
+    CHECK(!s.empty() && std::fabs(s.back()->row[proto::C_AY]) < 2e-3, "cal on: ay = 0 (%.4f)", s.back()->row[proto::C_AY]);
+    CHECK(sim.acq.stats().level_tilt_deg < 0.02, "cal on: level sees no tilt (%.3f deg)", sim.acq.stats().level_tilt_deg);
+    const Out* so = nullptr;
+    for (const auto& o : sim.outs)
+        if (o.kind == Out::RIDE_START) so = &o;
+    CHECK(so && so->row[ring::S_ACAL_BIAS + 1] == cfg.accel_cal.bias[1] && so->row[ring::S_ACAL_SCALE + 2] == 1,
+          "start info: accel cal");
+
+    Acquirer::Config off;
+    off.auto_level = true;
+    Sim sim2(off);
+    sim2.mpu.signal = sig;
+    sim2.run_until(3000 * MS);
+    CHECK(sim2.acq.stats().level_tilt_deg > 1.6, "cal off: bias read as tilt (%.3f deg)", sim2.acq.stats().level_tilt_deg);
+    const Out* so2 = nullptr;
+    for (const auto& o : sim2.outs)
+        if (o.kind == Out::RIDE_START) so2 = &o;
+    CHECK(so2 && std::isnan(so2->row[ring::S_ACAL_BIAS]), "cal off: start info NaN");
+}
+
 int main() {
     decode_convert();
     mount_parse();
@@ -460,6 +535,9 @@ int main() {
     auto_level_with_mount_axes();
     auto_level_rejects_large_tilt();
     auto_level_only_first_calibration();
+    accel_cal_parse();
+    accel_cal_before_rotation();
+    accel_cal_ride();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;

@@ -59,6 +59,40 @@ Mount load_mount(const std::string& path) {
     return parse_mount(ss.str());
 }
 
+namespace {
+Vec3 vec3_at(const json::Value& v, const char* key) {
+    const json::Value& a = v.at(key);
+    if (a.type != json::Value::Array || a.arr.size() != 3) throw std::runtime_error(std::string("accel_cal: ") + key + " must have 3 numbers");
+    return {a.arr[0].number(), a.arr[1].number(), a.arr[2].number()};
+}
+}  // namespace
+
+AccelCal parse_accel_cal(const std::string& text) {
+    const json::Value v = json::parse(text);
+    AccelCal c;
+    c.bias = vec3_at(v, "bias");
+    c.scale = vec3_at(v, "scale");
+    for (int i = 0; i < 3; i++) {
+        if (!std::isfinite(c.bias[i]) || std::fabs(c.bias[i]) > kAccelCalMaxBias)
+            throw std::runtime_error("accel_cal: bias out of range (|b| <= 1.5 m/s^2)");
+        if (!std::isfinite(c.scale[i]) || std::fabs(c.scale[i] - 1.0) > kAccelCalMaxScaleErr)
+            throw std::runtime_error("accel_cal: scale out of range (0.9 .. 1.1)");
+    }
+    return c;
+}
+
+AccelCal load_accel_cal(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) throw std::runtime_error("accel_cal: cannot open " + path);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return parse_accel_cal(ss.str());
+}
+
+Vec3 apply_accel_cal(const AccelCal& c, const Vec3& a) {
+    return {(a[0] - c.bias[0]) * c.scale[0], (a[1] - c.bias[1]) * c.scale[1], (a[2] - c.bias[2]) * c.scale[2]};
+}
+
 static Vec3 rotate(const Mat3& R, const Vec3& v) {
     Vec3 o{};
     for (int i = 0; i < 3; i++) o[i] = R[i][0] * v[0] + R[i][1] * v[1] + R[i][2] * v[2];
@@ -88,13 +122,13 @@ bool level_rotation(const Vec3& m, double max_deg, Mat3& L, double& tilt_deg) {
     return true;
 }
 
-Sample convert(const Raw& r, const Mount& m, const Vec3& bias_dps) {
+Sample convert(const Raw& r, const Mount& m, const Vec3& bias_dps, const AccelCal& cal) {
     Vec3 a{}, g{};
     for (int i = 0; i < 3; i++) {
         a[i] = r.a[i] / kAccelLsbPerG * kG;
         g[i] = (r.g[i] / kGyroLsbPerDps - bias_dps[i]) * kPi / 180.0;
     }
-    return {rotate(m.R, a), rotate(m.R, g)};
+    return {rotate(m.R, apply_accel_cal(cal, a)), rotate(m.R, g)};
 }
 
 void fill_row(Row& row, uint64_t seq, const Sample& s) {
@@ -234,7 +268,7 @@ void Acquirer::try_level(const Still* s) {
     level_tried_ = true;  // 첫 보정에서만: 주행 중 재시작 때는 차가 경사로에 서 있을 수 있다
     st_.level = 0;
     if (!s) return;
-    const Vec3 m = rotate(cfg_.mount.R, s->acc_mean);
+    const Vec3 m = rotate(cfg_.mount.R, apply_accel_cal(cfg_.accel_cal, s->acc_mean));  // 오차를 뺀 뒤 기울기를 잰다
     st_.level_pitch_deg = std::atan2(m[0], m[2]) * 180.0 / kPi;
     st_.level_roll_deg = std::atan2(m[1], m[2]) * 180.0 / kPi;
     Mat3 L;
@@ -271,6 +305,12 @@ void Acquirer::start_ride(uint64_t now, std::vector<Out>& out) {
         for (int i = 0; i < 3; i++)
             for (int j = 0; j < 3; j++) o.row[ring::S_MOUNT_R + 3 * i + j] = mount_.R[i][j];
     }
+    if (cfg_.has_accel_cal) {
+        for (int i = 0; i < 3; i++) {
+            o.row[ring::S_ACAL_BIAS + i] = cfg_.accel_cal.bias[i];
+            o.row[ring::S_ACAL_SCALE + i] = cfg_.accel_cal.scale[i];
+        }
+    }
     out.push_back(o);
 }
 
@@ -293,7 +333,7 @@ void Acquirer::emit(const Raw& r, uint32_t flags, std::vector<Out>& out) {
     o.kind = Out::SAMPLE;
     o.flags = flags;
     o.seq = seq_++;
-    fill_row(o.row, o.seq, convert(r, mount_, bias_));
+    fill_row(o.row, o.seq, convert(r, mount_, bias_, cfg_.accel_cal));
     out.push_back(o);
     last_ = r;
     has_last_ = true;

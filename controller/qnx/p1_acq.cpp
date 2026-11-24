@@ -9,6 +9,7 @@
 //   MPU-6050을 FIFO로 읽는다 (common/imu.hpp, 설계 docs/controller/DATA_LOGGING.md §4). 보정(정지 2초)이 끝나면 RIDE_START,
 //   SIGINT/SIGTERM이나 --duration-s가 지나면 RIDE_END를 보내고 끝낸다. 센서 오류로 주행이 끊기면 다시 보정 후 새 주행.
 //   --state DIR    자이로 바이어스를 DIR/imu_bias.json에 저장하고, 정지 판정을 못 얻으면 그 값을 쓴다
+//   --accel-cal F  가속도 센서 오차 보정 파일 (bias, scale; 6면 측정 sensor_6face.json 형식). 없으면 보정 안 함
 //   --fake-imu     실제 IMU 대신 가짜 MPU (Mac 시험, IMU 없는 보드 시험). QNX가 아니면 --live에 필수
 //
 // 링(기본 /mermaid_samples)을 못 만들어도 경고만 하고 계속한다. 끝나면 통계를 JSON 한 줄로 낸다.
@@ -173,7 +174,7 @@ void save_bias(const std::string& path, const imu::Vec3& b) {
 }
 
 int run_live(int argc, char** argv) {
-    std::string i2c = "/dev/i2c1", mount_path = "controller/config/imu_mount.json", state_dir, ring_name = ring::kDefaultName;
+    std::string i2c = "/dev/i2c1", mount_path = "controller/config/imu_mount.json", accel_cal_path, state_dir, ring_name = ring::kDefaultName;
     uint32_t i2c_speed = 400000;
     double timeout_ms = 5, duration_s = 0;
     int prio = 40;
@@ -188,6 +189,7 @@ int run_live(int argc, char** argv) {
         else if (a == "--i2c" && more) i2c = argv[++i];
         else if (a == "--i2c-speed" && more) i2c_speed = static_cast<uint32_t>(std::atol(argv[++i]));
         else if (a == "--mount" && more) mount_path = argv[++i];
+        else if (a == "--accel-cal" && more) accel_cal_path = argv[++i];
         else if (a == "--state" && more) state_dir = argv[++i];
         else if (a == "--timeout-ms" && more) timeout_ms = std::atof(argv[++i]);
         else if (a == "--prio" && more) prio = std::atoi(argv[++i]);
@@ -204,6 +206,13 @@ int run_live(int argc, char** argv) {
         cfg.mount = imu::load_mount(mount_path);
         cfg.auto_level = auto_level;
         cfg.auto_level_max_deg = level_max_deg;
+        if (!accel_cal_path.empty()) {
+            cfg.accel_cal = imu::load_accel_cal(accel_cal_path);
+            cfg.has_accel_cal = true;
+            const imu::AccelCal& c = cfg.accel_cal;
+            std::fprintf(stderr, "p1: accel cal %s: bias [%.4f, %.4f, %.4f] m/s^2, scale [%.5f, %.5f, %.5f]\n",
+                         accel_cal_path.c_str(), c.bias[0], c.bias[1], c.bias[2], c.scale[0], c.scale[1], c.scale[2]);
+        }
     } catch (const std::exception& e) {
         std::fprintf(stderr, "p1: %s\n", e.what());
         return 2;
@@ -345,7 +354,7 @@ int main(int argc, char** argv) {
                      "usage: p1_acq <trip.bin> [--speed S] [--timeout-ms T] [--prio P] [--ring NAME|none]\n"
                      "       p1_acq --live [--i2c DEV] [--i2c-speed HZ] [--mount FILE] [--state DIR] [--timeout-ms T]\n"
                      "                     [--prio P] [--ring NAME|none] [--duration-s S] [--fake-imu]\n"
-                     "                     [--auto-level [--auto-level-max-deg D]]\n");
+                     "                     [--auto-level [--auto-level-max-deg D]] [--accel-cal FILE]\n");
         return 2;
     }
     if (!std::strcmp(argv[1], "--live")) return run_live(argc, argv);

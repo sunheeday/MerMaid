@@ -130,6 +130,25 @@ a = R · a_s,  g = R · g_s                     [차량 축: x 앞, y 왼쪽, z 
   `{"version": 1, "R": [[1,0,0],[0,1,0],[0,0,1]], "note": "보드 x = 차 앞"}`. 행렬식이 1 ± 1e-3이 아니면 시작하지 않는다.
 - 가속도는 중력을 포함한다(`trip_format.json`: 수평 정지 시 z = +9.81).
 
+**가속도 센서 오차 보정 (선택, `p1_acq --accel-cal FILE`, `run_live.sh`에서 `ACCEL_CAL=FILE`, 기본 없음)**
+
+MPU-6050 가속도계는 축마다 영점 치우침(bias)과 눈금 오차(scale, 1% 안팎)가 있다. 6면 정지 측정
+(`docs/ml/imu_calib/6면_측정_절차.md`, `ml/realdata/imu_calib/six_face.py`)으로 구한 값을 주면 회전 전에 센서 축에서 바로잡는다.
+
+```
+a_s = (raw_a / 8192 × 9.80665 − bias) × scale   [센서 축, 축마다]
+a = R · a_s
+```
+
+- 파일은 6면 측정 결과(`sensor_6face.json`) 그대로 쓴다: `{"bias": [bx, by, bz], "scale": [sx, sy, sz], ...}` (다른 키는 무시).
+  `|bias| > 1.5 m/s²`이거나 `|scale − 1| > 0.1`이면 시작하지 않는다 (사양 ±80~150 mg, ±3%보다 넉넉히).
+- 센서마다 다른 값이라 저장소에는 넣지 않는다. Pi에 두고 경로를 준다.
+- 자동 수평 맞춤(4-4)도 보정한 정지 평균으로 기울기를 잰다. 주행 전에 `make_mount.py`로 `imu_mount.json`을 만들 때도
+  `--accel-cal` 같은 파일을 줘야 Pi와 같은 순서가 된다(센서 오차 → R).
+- 정지 판정(4-4의 표준편차)과 자이로는 바꾸지 않는다.
+- 기록: `p1.err`에 `accel cal FILE: bias […], scale […]`, RIDE_START 주행 정보(`S_ACAL_BIAS`, `S_ACAL_SCALE`) → 주행 파일 meta `accel_cal`.
+  맥 도구(`make_caraxis.py`, `make_mount.py`)는 meta를 읽어 되돌린 원래 값으로 계산한다.
+
 ### 4-4. 시작 보정 (자이로 바이어스)
 
 1. FIFO를 켠 뒤 2초(200샘플)를 모은다. 정지가 아니면 창을 1초씩 밀며 다시 판정한다.

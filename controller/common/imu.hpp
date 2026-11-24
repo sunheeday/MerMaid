@@ -93,12 +93,26 @@ bool level_rotation(const Vec3& m_car, double max_deg, Mat3& L, double& tilt_deg
 Mat3 matmul(const Mat3& A, const Mat3& B);  // {"version":1,"R":[[..],[..],[..]]}. 회전 행렬이 아니면 예외
 Mount load_mount(const std::string& path);
 
+// 가속도 센서 오차 (센서 축): 보정값 = (측정값 − bias) × scale. 6면 정지 측정으로 구한다
+// (ml/realdata/imu_calib/six_face.py → sensor_6face.json). 기본은 오차 없음 (bias 0, scale 1)
+struct AccelCal {
+    Vec3 bias{0, 0, 0};   // m/s²
+    Vec3 scale{1, 1, 1};
+};
+constexpr double kAccelCalMaxBias = 1.5;    // m/s². MPU-6050 영점 오차 사양(±80~150 mg)보다 넉넉히. 넘으면 파일이 틀린 것
+constexpr double kAccelCalMaxScaleErr = 0.1;  // |scale − 1|. 눈금 사양 ±3%
+// {"bias":[bx,by,bz],"scale":[sx,sy,sz], ...}. 다른 키(note 등)는 무시. 범위를 벗어나면 예외
+AccelCal parse_accel_cal(const std::string& json_text);
+AccelCal load_accel_cal(const std::string& path);
+Vec3 apply_accel_cal(const AccelCal& c, const Vec3& a_sensor);
+
 // 차량 축, a: m/s² (중력 포함, 수평 정지 시 z = +9.81), g: rad/s
 struct Sample {
     Vec3 a;
     Vec3 g;
 };
-Sample convert(const Raw& r, const Mount& m, const Vec3& gyro_bias_dps);
+// 순서: 센서 축에서 가속도 오차·자이로 바이어스를 뺀 뒤 R로 돌린다
+Sample convert(const Raw& r, const Mount& m, const Vec3& gyro_bias_dps, const AccelCal& cal = {});
 
 // trip_format.json 한 행: t = seq / 100, ax..gz, 나머지 25칸은 NaN (주행 전체 NaN 규칙)
 void fill_row(Row& row, uint64_t seq, const Sample& s);
@@ -158,6 +172,9 @@ public:
         // 정지를 못 얻거나 max_deg보다 기울어 있으면 mount.R 그대로. 기본 꺼짐 (docs/controller/DATA_LOGGING.md §4-4)
         bool auto_level = false;
         double auto_level_max_deg = kAutoLevelMaxDeg;
+        // 가속도 센서 오차 보정. 켜면 모든 샘플과 자동 수평 맞춤의 정지 평균에 적용한다. 기본 꺼짐 (§4-3)
+        bool has_accel_cal = false;
+        AccelCal accel_cal;
     };
     Acquirer(Bus& bus, Config cfg, std::function<void(int ms)> sleep_ms);
 

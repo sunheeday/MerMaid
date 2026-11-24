@@ -407,6 +407,12 @@ void Logger::open_ride(const ring::Item& it, uint32_t col_mask, uint64_t now) {
             }
             fl.meta("imu_mount_applied", m + "]");
         }
+        if (std::isfinite(r[ring::S_ACAL_BIAS])) {  // 가속도 센서 오차 보정 (센서 축, 보정값 = (측정값 − bias) × scale)
+            auto v3 = [&](int k) {
+                return "[" + num_json(r[k]) + ", " + num_json(r[k + 1]) + ", " + num_json(r[k + 2]) + "]";
+            };
+            fl.meta("accel_cal", "{\"bias\": " + v3(ring::S_ACAL_BIAS) + ", \"scale\": " + v3(ring::S_ACAL_SCALE) + "}");
+        }
     }
     for (const auto& kv : cfg_.meta) fl.meta(kv.first, kv.second);
     // 주행 전에 받은 마지막 화면·프로필 상태 (mono_ns < mono_start_ns로 구분)
