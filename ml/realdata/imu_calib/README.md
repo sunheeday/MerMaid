@@ -19,12 +19,13 @@
 
 | 파일 | 하는 일 | 출력 |
 |---|---|---|
-| `make_mount.py` | 주행 전 정지 기록 → Pi에 넣을 `imu_mount.json` (장착 기울기·축 방향) | json |
-| `make_caraxis.py` | 주행 기록(sqlite) → 축 순서만 바꾼 원본. 기록 당시 Pi R을 되돌린다. 다른 도구의 입력 | `<주행>/raw_caraxis/` |
+| `make_mount.py` | 주행 전 정지 기록 → Pi에 넣을 `imu_mount.json` (장착 기울기·축 방향). Pi가 `ACCEL_CAL`로 달리면 `--accel-cal` 같은 파일 | json |
+| `make_caraxis.py` | 주행 기록(sqlite) → 축 순서만 바꾼 원본. 기록 당시 Pi R과 센서 오차 보정(meta `accel_cal`)을 되돌린다. 다른 도구의 입력 | `<주행>/raw_caraxis/` |
 | `imu_calib.py` | 계산 함수 (정지 구간, 기울기 회전, 요 추정, 6면 풀이, 시간축, 표시) | |
 | `run_calibration.py` | 센서 오차 → 장착 기울기 → 요(추정만) → 이상값 표시 → 100 Hz 재표본화, 검증 보고 | `<주행>/calibrated/` |
 | `six_face.py`, `sensor_6face.json` | 6면 측정 → 축별 치우침·눈금 (11-23 측정값, x축은 미측정이라 0·1) | json |
-| `cross_slope.py` | GPS로 좌우 횡단 경사 성분 제거 (시험용) | `<주행>/calibrated_xslope2/` |
+| `cross_slope.py` | GPS로 좌우 횡단 경사 성분 제거 (오프라인, 앞뒤 창) | `<주행>/calibrated_xslope2/` |
+| `cross_slope_rt.py` | P2 실시간 횡단 경사 제거(`p2_feat --xslope`)와 같은 계산, 창 길이 비교 `--compare` | `<주행>/calibrated_xslope_rt/` |
 | `gps_check.py` | GPS 속도·방향과 대조 (V7) | `<주행>/calibrated/gps_check.*` |
 | `check_applied.py` | 기록된 보정 값이 그대로 적용됐는지 재현 검사 | `check_applied.md` |
 | `model_rerun.py` | 보정 전후 모델 재추론·정책 재생 (V12) | `model_rerun.md/json`, 그림 |
@@ -54,6 +55,8 @@ R=~/SE_project/drive_logs/run_1123_033152
 .venv/bin/python run_calibration.py $R --tilt-window 54 108 --yaw-window 176 1594 --drive-window 150 1600 --six-face sensor_6face.json
 .venv/bin/python gps_check.py $R --drive-window 150 1600
 .venv/bin/python cross_slope.py $R
+.venv/bin/python cross_slope_rt.py $R                       # 실시간(P2) 방식, 30초 창
+.venv/bin/python cross_slope_rt.py $R --compare 30 60 120   # 창 길이 비교
 .venv/bin/python check_applied.py $R
 .venv/bin/python model_rerun.py $R 결과_1123_MSSQ26 --mssq 26 --still-until 150 --until 1600 --extra "F 횡단경사 뺌(직진 중앙값)=calibrated_xslope2"
 .venv/bin/python v11_features.py $R 결과_1123 --drive-from 150 --until 1600 --extra "F 횡단경사 뺌(직진 중앙값)=calibrated_xslope2"

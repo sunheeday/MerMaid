@@ -2,6 +2,7 @@
 
 Pi 기록은 그때 Pi에 들어 있던 imu_mount R로 이미 돌아가 있다(meta의 imu_mount). 이 스크립트는
     센서 축 = Rᵀ · 기록 값        (R을 되돌림, 기울기 보정이 들어 있었어도 지운다)
+    가속도  = 센서 축 / scale + bias  (meta에 accel_cal이 있으면: Pi 센서 오차 보정을 되돌림)
     차 축   = R_axes · 센서 축    (--forward/--left: 축 순서·부호만)
 으로 만든다. 기울기는 run_calibration.py 가 다시 구한다.
 
@@ -22,7 +23,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_mount import AXES, axes_rotation  # noqa: E402
+from make_mount import AXES, axes_rotation, undo_accel_cal  # noqa: E402
 
 
 def main():
@@ -49,15 +50,17 @@ def main():
 
     R_rec = np.array(json.loads(meta.get("imu_mount", '{"R": [[1,0,0],[0,1,0],[0,0,1]]}'))["R"], float)
     R_axes = axes_rotation(a.forward, a.left)
-    M = R_axes @ R_rec.T                       # 기록 값 → 차 축(축만)
-    car = np.column_stack([np.arange(len(d)) / 100.0, d[:, :3] @ M.T, d[:, 3:] @ M.T, hold])
+    acc_s = undo_accel_cal(meta, d[:, :3] @ R_rec)   # 센서 축, Pi 센서 오차 보정도 되돌림 (run_calibration.py --six-face 가 다시 함)
+    car = np.column_stack([np.arange(len(d)) / 100.0, acc_s @ R_axes.T, d[:, 3:] @ R_rec @ R_axes.T, hold])
 
     out = os.path.join(a.ride, "raw_caraxis")
     os.makedirs(out, exist_ok=True)
     np.save(os.path.join(out, "samples_100hz.npy"), car.astype(np.float32))
     info = {"source": os.path.relpath(dbs[0], a.ride),
-            "transform": f"axis relabel only (forward={a.forward}, left={a.left}); recorded imu_mount R undone",
+            "transform": f"axis relabel only (forward={a.forward}, left={a.left}); recorded imu_mount R undone"
+                         + ("; recorded accel_cal undone" if "accel_cal" in meta else ""),
             "R_car_from_sensor": R_axes.tolist(), "recorded_imu_mount_R": R_rec.tolist(),
+            "recorded_accel_cal": json.loads(meta["accel_cal"]) if "accel_cal" in meta else None,
             "car_axes": "x forward, y left, z up", "samples": int(len(d)), "hold": int(hold.sum())}
     json.dump(info, open(os.path.join(out, "transform.json"), "w"), ensure_ascii=False, indent=1)
     print(json.dumps(info, ensure_ascii=False))
