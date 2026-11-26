@@ -1,0 +1,18 @@
+{
+ "version": "v021",
+ "kind": "dataset",
+ "created": "2026-11-26T21:00:22",
+ "git": {
+  "commit": "d1090e6d9650013e6e4511ac0d0e7a11c93b5933",
+  "dirty": true
+ },
+ "feature_order_version": 5,
+ "note": "simulator powertrain/pedal model (lift-off and regen deceleration, faster EV onset, power-limited accel), same settings as v017",
+ "inputs": {},
+ "params": {
+  "trips": 480,
+  "passengers": 120,
+  "seed": 0,
+  "keep_trips": 8
+ }
+}
