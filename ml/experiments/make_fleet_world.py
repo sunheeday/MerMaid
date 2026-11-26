@@ -22,13 +22,15 @@ import numpy as np
 
 ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML)); sys.path.insert(0, str(ML / "simulator")); sys.path.insert(0, str(ML / "train"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 import sim  # noqa: E402
 import build_dataset as bd  # noqa: E402
 import trip as tripio  # noqa: E402
 import common as C  # noqa: E402
 
 BASE_CFG = copy.deepcopy(sim.CFG)
-MISS_P = (("G4", 0.5), ("G7", 0.4), ("G3a", 0.3))
+MISS_P = (("G4", 0.5), ("G7", 0.4), ("G3a", 0.3))  # v5에 없는 그룹은 뽑기만 하고 지우지 않는다 (FC.present)
 
 
 def draw_vehicle(rng, v):
@@ -56,7 +58,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--vehicles", type=int, default=20); ap.add_argument("--trips-per-vehicle", type=int, default=30)
     ap.add_argument("--seed", type=int, default=5); ap.add_argument("--jobs", type=int, default=min(8, mp.cpu_count()))
-    ap.add_argument("--out", default=str(ML / "out" / "bulk_world" / "fleet.npz"))
+    ap.add_argument("--out", default=str(FC.out_dir("bulk_world", "fleet.npz")))
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
@@ -88,11 +90,11 @@ def main():
     # 차 단위 센서 결측
     veh = rep("vehicle_id")
     for vc in veh_cfg:
-        for g in vc["missing"]:
+        for g in FC.present(vc["missing"]):
             X[np.ix_(veh == vc["vehicle"], C.GROUPS[g])] = np.nan
     data = {"X": X, "y": cat("y"), "t": cat("t"), "misc": cat("misc"), "score": cat("score"), "future_max": cat("future_max"),
             "ride_id": rep("ride_id"), "trip_id": rep("trip_id"), "person_id": rep("person_id"), "vehicle_id": veh, "trip_order": rep("trip_order"),
-            "k": np.array(sim.CFG["label"]["k"]), "feature_names": np.array([f["name"] for f in bd.FEAT]),
+            "k": np.array(sim.CFG["label"]["k"]), "feature_names": np.array([f["name"] for f in FC.FEATS]),
             "feature_version": np.array(tripio.FEATURES["version"]), "world": np.array("fleet"), "veh_cfg": np.array(json.dumps(veh_cfg))}
     np.savez_compressed(out, **data)
     print(f"플릿 세계: 차 {a.vehicles}, 탑승 {len(rides_all)}, 행 {len(data['t'])}, 사람 {len(np.unique(data['person_id']))}, {time.time() - t0:.0f}s → {out}")

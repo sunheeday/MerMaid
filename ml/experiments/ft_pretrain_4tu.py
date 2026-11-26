@@ -35,6 +35,9 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(ML))
 sys.path.insert(0, str(ML / "train"))
 sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(ML / "verify"))  # tudelft_replay (원래 ml/verify/ 에 있던 스크립트)
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 
 import common  # noqa: E402  (ml/train/common.py)
 import oman  # noqa: E402
@@ -50,7 +53,7 @@ GROUPS = {g: [POS[i] for i in idx if i in POS] for g, idx in common.GROUPS.items
 DROPPABLE = {g: [POS[i] for i in idx if i in POS] for g, idx in common.DROPPABLE.items()}
 DROPPABLE = {g: v for g, v in DROPPABLE.items() if v}
 DROP_P = {g: common.FO["groups"][g]["dropout"] for g in DROPPABLE}
-CAN_ALL = sorted(sum((GROUPS[g] for g in ("G2", "G3a", "G3b", "G4", "G5", "G6", "G7")), []))
+CAN_ALL = sorted(sum((GROUPS[g] for g in FC.present(("G2", "G3a", "G3b", "G4", "G5", "G6", "G7"))), []))
 CELL_OK = sorted(set(sum(DROPPABLE.values(), [])))                    # 칸 단위 결측을 넣어도 되는 자리
 OMAN_POS = POS[common.NAMES.index("oman_score")]
 MONO = [FEATS[i]["monotone"] for i in ENABLED]
@@ -89,9 +92,7 @@ def build_4tu(mat, cache, v0=50 / 3.6, seed=0):
                 path = pathlib.Path(td) / "trip.bin"
                 tripio.write_trip(path, tr.make_trip(acc, v0, rng))
                 t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
-                X = np.full((len(t), 77), np.nan)
-                X[:, :71] = Xv
-                X[:, 73], X[:, 74], X[:, 76] = mssq, float(oman.sensitivity(mssq)), 0.0
+                X = FC.full_row(Xv, mssq, float(oman.sensitivity(mssq)))
                 win = lambda tt: y_rep[(t_rep > tt) & (t_rep <= tt + 300)]
                 fut = np.array([np.nanmax(w) if tt + 300 <= t_rep[-1] and np.isfinite(w := win(tt)).any() else np.nan
                                 for tt in t])
@@ -239,7 +240,7 @@ def main():
     ap.add_argument("--ft-steps", type=int, default=300)
     ap.add_argument("--reps", type=int, default=3, help="n=1,2에서 다른 사람으로 반복")
     ap.add_argument("--control", action="store_true", help="표 확률만 쓴 대조 몸통도 학습")
-    ap.add_argument("--out", default=str(ML / "verify" / "out" / "ft4tu"))
+    ap.add_argument("--out", default=str((ML / "verify" / "out" / "ft4tu" if FC.VERSION < 5 else FC.out_dir("ft4tu"))))
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)

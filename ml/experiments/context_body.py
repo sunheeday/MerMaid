@@ -209,6 +209,8 @@ def main():
             if score > best[0]:
                 best = (score, s + 1, {k_: v.clone() for k_, v in net.state_dict().items()})
             log(f"  스텝 {s + 1} 손실 {loss.item():.3f} · 검증 사람 ROC 평균 {score:.3f} (최고 {best[0]:.3f} @ {best[1]}) ({time.time() - T0:.0f}s)")
+    if best[2] is None:  # --steps < 1000: 검증을 한 번도 안 했으면 마지막 가중치
+        best = (float("nan"), a.steps, net.state_dict())
     net.load_state_dict(best[2]); log(f"조기 종료: 스텝 {best[1]} 가중치 사용 (검증 {best[0]:.3f})")
     torch.save(net.state_dict(), out / f"ctx_net_k{a.k}_{a.steps}.pt")
 
@@ -240,7 +242,7 @@ def main():
         c = []
         for j in range(NH):
             k = bm & (W[:, j] > 0)
-            c.append(f"{roc_auc_score(Y[k, j], p_all_c[k, j]):.3f} → {roc_auc_score(Y[k, j], p_all[k, j]):.3f}" if Y[k, j].min() != Y[k, j].max() else "-")
+            c.append(f"{roc_auc_score(Y[k, j], p_all_c[k, j]):.3f} → {roc_auc_score(Y[k, j], p_all[k, j]):.3f}" if Y[k, j].size and Y[k, j].min() != Y[k, j].max() else "-")
         M.append(f"| {name} | {int(bm.sum())} | " + " | ".join(c) + " |")
     M += ["", f"총 {time.time() - T0:.0f}초"]
     txt = "\n".join(M); log("\n" + txt); (out / "summary.md").write_text(txt + "\n")

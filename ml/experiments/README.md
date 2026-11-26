@@ -86,12 +86,30 @@ python3 ml/experiments/context_body.py --base-dataset ml/out/runs/v002/dataset.n
 캐시 폴더는 `<--out>/<--base-label>`이라 위 명령이 `ml/out/bulk_3head_stk/response/`에 `ft_base_response_1500.pt`, `gbm_base_response_stacked.txt`를 만든다
 (`bulk_pretrain_3head.py` 294·334행). 받은 README에 정확한 명령이 없어 인자는 코드에서 맞춘 것이고, 이 순서로 실제로 돌려 본 적은 아직 없다.
 
-## 지금 main에서 그대로 돌릴 때 알려진 문제
+## 피처 목록 두 가지 (77칸 / 52칸)
 
-- **피처 목록:** 이 스크립트들은 feature_order v3(77칸, 켜진 74개)에서 썼다. 바뀐 세계·플릿의 결측 패턴과 FT 스크립트가 그룹 이름 `G3a`, `G3b`, `G4`, `G7`을 부르는데, v5(52칸)에는 이 그룹이 없어 KeyError가 난다
-  (`bulk_pretrain_3head.py` `log_world_missing`, `make_fleet_world.py` `MISS_P`, `zeroshot_4tu.py`, `ft_pretrain_4tu.py`, `ft_transfer_4tu*.py`).
-  보고서 그대로 재현하려면 v5 이전 커밋(`77af82a^`)과 v002 데이터셋을, 52칸으로 다시 하려면 이 그룹을 빼는 수정이 필요하다.
+스크립트는 원래 feature_order v3(77칸, 켜진 74개)에서 썼다. 지금은 `fo_compat.py`가 저장소의 `protocol/feature_order.json`을 읽어 두 목록 모두에서 돈다.
+
+| | 77칸 (v3, 보고서 결과) | 52칸 (v5, 지금 main) |
+|---|---|---|
+| 체크아웃 | v5 이전 커밋 (`77af82a^`) + 이 폴더 | 지금 main + 이 폴더 |
+| 데이터셋 | v002 등 77칸으로 만든 것 | v018·v021 등 52칸으로 만든 것 |
+| 없는 그룹 | — | `G3a`, `G3b`, `G4`, `G7`은 결측 패턴·FT 그룹 목록에서 건너뜀 |
+| 기본 출력·캐시 | 원래 경로 (`ml/out/<이름>/`, `ml/verify/out/ft4tu/`) | `ml/out/fo5/<이름>/` |
+
+- 4TU 재생 행은 칸 번호(71·73·74·76) 대신 이름(`mssq`, `sensitivity`, `vehicle_type`)으로 채운다(`fo_compat.full_row`). 77칸에서는 원래 코드와 켜진 칸이 같다.
+- 캐시는 피처 목록마다 폴더가 달라 섞이지 않는다. `--out`·`--cache`를 직접 줄 때는 두 목록의 캐시를 섞지 말 것.
+- 데이터셋의 열 수가 체크아웃의 피처 목록과 맞아야 한다(77칸 데이터셋을 v5에서 쓰면 안 된다).
+- 52칸에서는 플릿 세계의 차별 결측(`G4`, `G7`, `G3a`)과 바뀐 세계의 해당 그룹 결측이 모두 없는 그룹이라 실제로 지워지는 칸이 없다.
+  결측 상황을 보려면 v5 그룹(`G2`, `G5`, `G6`)으로 바꿔야 한다.
+- 52칸 동작은 작은 크기로만 확인했다(2026-11-27, 데이터셋 v021, 스크립트 19개 전부 인자를 줄여 끝까지 실행). 결과 숫자는 아직 없다.
+- `gbm_base_variants.py`는 머리별 GBM 캐시(`gbm_base_response_fan.txt` 등)가 필요하므로 `bulk_pretrain_3head.py --gbm perhead`를 먼저 같은 `--out`으로 돌린다.
+
+## 알려진 문제
+
 - **`make_log_world.py --same-world` 없음:** 받은 README는 문맥 모델 학습에 "추가 사람 600명"(`--same-world`)을 쓴다고 하지만 이 파일에는 그 옵션이 없다.
   `context_body.py --extra-base`에 줄 파일은 기본 설정으로 사람만 바꿔 `build_dataset.py --out ...`을 더 돌려 대신할 수 있다.
 - **PyTorch 필요:** `pip install torch --index-url https://download.pytorch.org/whl/cpu`
+- **macOS에서 멈춤:** LightGBM과 PyTorch가 각자 libomp를 올려, GBM과 FT를 한 프로세스에서 쓰는 스크립트(`bulk_pretrain_3head.py` 등)가 CPU 0%로 멈출 수 있다.
+  `OMP_NUM_THREADS=1`을 주고 돌리면 된다(M2 Mac에서 확인).
 - 출력(`ml/out/bulk_world/`, `ml/out/bulk_3head*/`)은 커밋하지 않는다.

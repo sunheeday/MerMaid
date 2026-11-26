@@ -11,6 +11,8 @@ import numpy as np
 
 ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML)); sys.path.insert(0, str(ML / "train")); sys.path.insert(0, str(ML / "verify"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 import common as C, oman, trip as tripio, tudelft_replay as TR
 from sklearn.metrics import roc_auc_score, average_precision_score
 import lightgbm as lgb
@@ -21,8 +23,8 @@ FO = C.FO; ENABLED = [i for i, f in enumerate(C.FEATS) if f["enabled"]]; POS = {
 GROUP_POS = {g: [POS[i] for i in idx if i in POS] for g, idx in C.GROUPS.items()}
 DROP_POS = {g: [POS[i] for i in idx if i in POS] for g, idx in C.DROPPABLE.items()}
 NEVER_POS = sorted({POS[i] for i in C.NEVER if i in POS}); MONO = [C.MONOTONE[i] for i in ENABLED]
-OMAN_POS = POS[C.NAMES.index("oman_score")]; CAN = ["G2", "G3a", "G3b", "G4", "G5", "G6", "G7"]
-K = 4; OUT = ML / "out" / "zeroshot_4tu"; OUT.mkdir(parents=True, exist_ok=True)
+OMAN_POS = POS[C.NAMES.index("oman_score")]; CAN = FC.present(["G2", "G3a", "G3b", "G4", "G5", "G6", "G7"])
+K = 4; OUT = FC.out_dir("zeroshot_4tu"); OUT.mkdir(parents=True, exist_ok=True)
 
 def build_tudelft(mat, cache):
     if cache.exists():
@@ -37,7 +39,7 @@ def build_tudelft(mat, cache):
                 seg, tr, yr = TR.session(getattr(getattr(A, p), c)); n = int((tr[-1] + 10) * TR.FS); acc = TR.stimulus(seg, n, amp)
                 rng = np.random.default_rng([0, pi, int(c[1])]); path = pathlib.Path(td) / "trip.bin"
                 tripio.write_trip(path, TR.make_trip(acc, v0, rng)); t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
-                X = np.full((len(t), 77), np.nan); X[:, :71] = Xv; X[:, 73], X[:, 74], X[:, 76] = mssq, float(oman.sensitivity(mssq)), 0.0
+                X = FC.full_row(Xv, mssq, float(oman.sensitivity(mssq)))
                 fut = np.array([np.nanmax(w) if tt + 300 <= tr[-1] and np.isfinite(w := yr[(tr > tt) & (tr <= tt + 300)]).any() else np.nan for tt in t])
                 v = np.isfinite(fut); Xs.append(X[v][:, ENABLED]); futs.append(fut[v]); pids.append(np.full(int(v.sum()), pi))
     X, fut, pid = np.concatenate(Xs).astype(np.float32), np.concatenate(futs), np.concatenate(pids)
@@ -87,7 +89,7 @@ def main():
     a = ap.parse_args(); t0 = time.time(); rng = np.random.default_rng(0)
     d = np.load(a.dataset); idx = rng.choice(len(d["X"]), size=min(a.rows, len(d["X"])), replace=False)
     X = d["X"][idx][:, ENABLED].astype(np.float32); y = d["y"][idx, list(d["k"]).index(K)].astype(int); rid = d["ride_id"][idx]
-    cache = ML / "out" / "ft_transfer" / "tudelft_rows.npz"
+    cache = FC.out_dir("ft_transfer", "tudelft_rows.npz")
     X4, fut, pid = build_tudelft(a.mat, cache if cache.exists() else OUT / "tudelft_rows.npz"); y4 = (fut >= K).astype(int)
     print(f"합성 {len(X)}행 (양성 {y.mean():.3f}) · 4TU {len(X4)}행 17명 (양성 {y4.mean():.3f})", flush=True)
     res = {}

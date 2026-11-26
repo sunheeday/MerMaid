@@ -26,6 +26,8 @@ import numpy as np
 
 ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML)); sys.path.insert(0, str(ML / "train")); sys.path.insert(0, str(ML / "verify"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 import common as C            # noqa: E402
 import oman                   # noqa: E402
 import trip as tripio         # noqa: E402
@@ -38,7 +40,7 @@ NF = len(ENABLED)
 GROUP_POS = {g: [POS[i] for i in idx if i in POS] for g, idx in C.GROUPS.items()}
 DROP_POS = {g: [POS[i] for i in idx if i in POS] for g, idx in C.DROPPABLE.items()}
 NEVER_POS = sorted({POS[i] for i in C.NEVER if i in POS})
-CAN_GROUPS = ["G2", "G3a", "G3b", "G4", "G5", "G6", "G7"]
+CAN_GROUPS = FC.present(["G2", "G3a", "G3b", "G4", "G5", "G6", "G7"])
 OMAN_POS = POS[C.NAMES.index("oman_score")]
 MSSQ_POS, SENS_POS = POS[C.NAMES.index("mssq")], POS[C.NAMES.index("sensitivity")]
 MONO = [C.MONOTONE[i] for i in ENABLED]
@@ -74,8 +76,7 @@ def build_tudelft(mat, cache, v0_kmh=50.0, seed=0):
                 path = pathlib.Path(td) / "trip.bin"
                 tripio.write_trip(path, TR.make_trip(acc, v0, rng))
                 t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
-                X = np.full((len(t), 77), np.nan); X[:, :71] = Xv
-                X[:, 73], X[:, 74], X[:, 76] = mssq, float(oman.sensitivity(mssq)), 0.0
+                X = FC.full_row(Xv, mssq, float(oman.sensitivity(mssq)))
                 win = lambda tt: yr[(tr > tt) & (tr <= tt + 300)]
                 fut = np.array([np.nanmax(w) if tt + 300 <= tr[-1] and np.isfinite(w := win(tt)).any() else np.nan for tt in t])
                 v = np.isfinite(fut)
@@ -237,7 +238,7 @@ def main():
     ap.add_argument("--ks", default="3,4"); ap.add_argument("--seeds", type=int, default=2)
     ap.add_argument("--bodies", default="all,table")
     ap.add_argument("--reuse-bodies", action="store_true", help="<out>/body_<mode>.pt 가 있으면 사전학습을 건너뛰고 불러온다")
-    ap.add_argument("--out", default=str(ML / "out" / "ft_transfer_v2"))
+    ap.add_argument("--out", default=str(FC.out_dir("ft_transfer_v2")))
     a = ap.parse_args()
     ks = [int(k) for k in a.ks.split(",")]; modes = a.bodies.split(",")
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)

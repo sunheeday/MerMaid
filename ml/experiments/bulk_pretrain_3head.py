@@ -26,6 +26,8 @@ import numpy as np
 
 ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML)); sys.path.insert(0, str(ML / "train"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 import common as C  # noqa: E402
 
 FO = C.FO
@@ -96,6 +98,8 @@ def log_world_missing(X, ride_id, rng, rates=(("G4", 0.8), ("G7", 0.6), ("G3a", 
     """로그 세계의 결측 패턴 (탑승 단위). 베이스 세계 표와 다르게."""
     X = X.copy(); rides, inv = np.unique(ride_id, return_inverse=True)
     for g, p in rates:
+        if g not in C.GROUPS:  # v5(52칸)에는 G3a·G4·G7이 없다
+            continue
         cols = [POS[i] for i in C.GROUPS[g] if i in POS]
         drop = rng.random(len(rides)) < p; X[np.ix_(drop[inv], cols)] = np.nan
     return X
@@ -289,7 +293,7 @@ def main():
                     help="misc: 합성 MISC 대리 라벨(≥3/≥4) / response: 베이스 세계에도 같은 반응 생성기로 켬 라벨을 만들어 베이스를 굽는다")
     ap.add_argument("--no-bulk", action="store_true", help="③ 덩어리와 ②′ 추가학습을 생략 (① ①″ ② 만)")
     ap.add_argument("--gbm", choices=["perhead", "stacked"], default="perhead", help="GBM 베이스: 헤드별 부스터 3개 | 헤드 번호 피처로 쌓은 한 모델")
-    ap.add_argument("--out", default=str(ML / "out" / "bulk_3head"))
+    ap.add_argument("--out", default=str(FC.out_dir("bulk_3head")))
     a = ap.parse_args()
     out = pathlib.Path(a.out) / a.base_label; out.mkdir(parents=True, exist_ok=True)
     logf = open(out / "log.txt", "w")

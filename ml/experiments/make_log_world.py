@@ -17,6 +17,8 @@ import numpy as np
 
 ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML)); sys.path.insert(0, str(ML / "simulator"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 import sim  # noqa: E402
 import build_dataset as bd  # noqa: E402
 import trip as tripio  # noqa: E402
@@ -43,7 +45,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--trips", type=int, default=240); ap.add_argument("--passengers", type=int, default=60)
     ap.add_argument("--seed", type=int, default=1); ap.add_argument("--jobs", type=int, default=min(8, mp.cpu_count()))
-    ap.add_argument("--out", default=str(ML / "out" / "bulk_world" / "log_dataset.npz"))
+    ap.add_argument("--out", default=str(FC.out_dir("bulk_world", "log_dataset.npz")))
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
@@ -65,7 +67,7 @@ def main():
     rep = lambda key: np.concatenate([np.full(len(r["t"]), r[key]) for r in rides])
     data = {"X": cat("X"), "y": cat("y"), "t": cat("t"), "misc": cat("misc"), "score": cat("score"),
             "future_max": cat("future_max"), "ride_id": rep("ride_id"), "trip_id": rep("trip_id"), "person_id": rep("person_id"),
-            "k": np.array(sim.CFG["label"]["k"]), "feature_names": np.array([f["name"] for f in bd.FEAT]),
+            "k": np.array(sim.CFG["label"]["k"]), "feature_names": np.array([f["name"] for f in FC.FEATS]),
             "feature_version": np.array(tripio.FEATURES["version"]), "world": np.array("log")}
     np.savez_compressed(out, **data)
     pid, cnt = np.unique([r["person_id"] for r in rides], return_counts=True)

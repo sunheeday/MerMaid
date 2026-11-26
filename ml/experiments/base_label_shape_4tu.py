@@ -21,6 +21,8 @@ import numpy as np
 
 ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML)); sys.path.insert(0, str(ML / "train")); sys.path.insert(0, str(ML / "verify")); sys.path.insert(0, str(ML / "experiments"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 import common as C  # noqa: E402
 from stop_transfer_4tu import build_tudelft_stop, group_dropout74, gbm_fit, OMAN_POS, ENABLED, MONO  # noqa: E402
 
@@ -74,8 +76,7 @@ def build_tudelft_full(mat, cache, v0_kmh=50.0, seed=0):
                 rng = np.random.default_rng([seed, pi, int(c[1])])
                 path = pathlib.Path(td) / "trip.bin"; tripio.write_trip(path, TR.make_trip(acc, v0, rng))
                 t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
-                X = np.full((len(t), 77), np.nan); X[:, :71] = Xv
-                X[:, 73], X[:, 74], X[:, 76] = mssq, float(oman.sensitivity(mssq)), 0.0
+                X = FC.full_row(Xv, mssq, float(oman.sensitivity(mssq)))
                 in_seg = np.zeros(len(t), bool)
                 for (s0, e0) in seg:
                     in_seg |= (t >= s0) & (t <= e0)
@@ -123,7 +124,7 @@ def main():
                     help="synth: 합성으로 A·B 베이스를 굽고 4TU 멈춤으로 채점 / 4tu: 4TU 학습 사람의 실제 보고로 A·B를 굽고 시험 사람 멈춤으로 채점")
     ap.add_argument("--rows", type=int, default=300_000); ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--rounds", type=int, default=30)
-    ap.add_argument("--out", default=str(ML / "out" / "base_label_shape"))
+    ap.add_argument("--out", default=str(FC.out_dir("base_label_shape")))
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     logf = open(out / "log.txt", "w")
@@ -144,12 +145,12 @@ def main():
         base_fixed = {"A": train_base(Xs, yA, np.ones(len(yA), np.float32), rid, rng, out / "base_A_max4.txt"),
                       "B": train_base(Xs, yB, wB, rid, rng, out / "base_B_event4.txt")}
         log(f"베이스 2개 준비 ({time.time() - T0:.0f}s)")
-        cache = ML / "out" / "stop_transfer" / "tudelft_stop_rows.npz"
+        cache = FC.out_dir("stop_transfer", "tudelft_stop_rows.npz")
         X4, y_stop, _, pid, sess = build_tudelft_stop(a.mat, cache if cache.exists() else out / "tudelft_stop_rows.npz")
         yA4 = yB4 = wB4 = None
     else:
         # ---- 4TU만: 학습 사람의 실제 보고로 A·B를 폴드마다 굽는다
-        X4, yA4, yB4, wB4, y_stop, pid, sess = build_tudelft_full(a.mat, ML / "out" / "base_label_shape" / "tudelft_full_rows.npz")
+        X4, yA4, yB4, wB4, y_stop, pid, sess = build_tudelft_full(a.mat, FC.out_dir("base_label_shape", "tudelft_full_rows.npz"))
         base_fixed = None
         log(f"4TU 실제 보고 라벨 — A 양성 {yA4.mean():.3f} | B 양성 {yB4[wB4 > 0].mean():.3f}, B 학습 행 {int((wB4 > 0).sum())}/{len(wB4)}")
     log(f"4TU {len(X4)}행, 멈춤 양성 {y_stop.mean():.3f}")
