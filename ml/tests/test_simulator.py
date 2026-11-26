@@ -96,3 +96,29 @@ def test_dataset_is_deterministic(tmp_path):
     assert X.shape[1] == trip.NF
     assert np.isnan(X[:, [F["tol_display"], F["tol_phone"]]]).all()  # G8 비활성
     assert X[0, F["mssq"]] == pax[0]["mssq"] and X[0, F["sensitivity"]] == pax[0]["sens"]
+
+
+def test_ice_lift_off_matches_engine_braking():
+    # 내연기관 페달 뗌 감속 = 엔진 브레이크 + 구름·공기 저항: 50 km/h 약 0.5, 90~110 km/h 0.6~0.7 m/s2 (UNECE R13-H 논의의 0.7)
+    for kmh in (50, 90, 110):
+        assert 0.45 < sim.lift_decel_mps2(kmh / 3.6, None) < 0.75
+    assert sim.lift_decel_mps2(15, 3) > sim.lift_decel_mps2(15, 1) > sim.lift_decel_mps2(15, 0) >= sim.lift_decel_mps2(15, None)
+
+
+def test_accel_cap_is_power_limited_at_speed():
+    lo, hi = sim.accel_cap_mps2(5.0, 0.0, "ice"), sim.accel_cap_mps2(30.0, 0.0, "ice")
+    assert lo > 2.5 and hi < 2.0  # 저속은 토크 한계, 고속은 출력 한계 P/(m·v)
+    assert sim.accel_cap_mps2(30.0, 0.0, "ev") > hi
+    assert sim.accel_cap_mps2(10.0, 0.08, "ice") < sim.accel_cap_mps2(10.0, 0.0, "ice")  # 오르막
+
+
+def test_ev_deceleration_sets_in_faster():
+    # 회생은 페달을 떼면 바로 걸린다: 같은 경로·운전자에서 EV의 감속 시작 저크가 더 크고, 거리는 경로와 같다
+    rng = np.random.default_rng(11)
+    route, driver = sim.gen_route(rng), sim.gen_driver(rng)
+    ice = sim.drive(route, driver, None, np.random.default_rng(1))
+    ev = sim.drive(route, driver, 0, np.random.default_rng(1))
+    jerk = lambda m: np.percentile(np.gradient(m["a_long"], sim.DT)[m["a_long"] < -0.3], 1)
+    assert jerk(ev) < 1.3 * jerk(ice)
+    for m in (ice, ev):
+        assert abs(m["s"][-1] - route["length"]) < 5
