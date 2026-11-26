@@ -1,0 +1,38 @@
+{
+ "version": "v022",
+ "kind": "models",
+ "created": "2026-11-26T21:07:11",
+ "git": {
+  "commit": "d1090e6d9650013e6e4511ac0d0e7a11c93b5933",
+  "dirty": true
+ },
+ "feature_order_version": 5,
+ "note": "dataset v021 (simulator powertrain/pedal model), same settings as v018",
+ "inputs": {
+  "dataset": "ml/out/runs/v021/dataset.npz"
+ },
+ "params": {
+  "persons": 0,
+  "final": true,
+  "lgb": {
+   "objective": "binary",
+   "learning_rate": 0.03,
+   "num_leaves": 7,
+   "min_data_in_leaf": 1000,
+   "lambda_l2": 10.0,
+   "feature_fraction": 0.9,
+   "bagging_fraction": 0.8,
+   "bagging_freq": 1,
+   "verbosity": -1,
+   "seed": 0,
+   "deterministic": true,
+   "force_row_wise": true,
+   "num_threads": 8
+  },
+  "rounds": [
+   2000,
+   50,
+   100
+  ]
+ }
+}

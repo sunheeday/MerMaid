@@ -1,0 +1,38 @@
+{
+ "feature_order_version": 5,
+ "n_features": 52,
+ "k": [
+  2,
+  3,
+  4,
+  5,
+  6
+ ],
+ "models": {
+  "2": {
+   "file": "model_2.txt",
+   "trees": 100,
+   "sha256": "4847bcbcdc35bc33e44ac0b118e0a111ff7549d1f2b544bc9eb2f7de17555c8e"
+  },
+  "3": {
+   "file": "model_3.txt",
+   "trees": 249,
+   "sha256": "344e7d89e00146b50ba93e9f7c829ecb1cacc7dfc32f2564f395ef3a7d77789b"
+  },
+  "4": {
+   "file": "model_4.txt",
+   "trees": 273,
+   "sha256": "c2d8ccdc62ab7b9ff02ac3393b3709fb2979c506d02c5eb087d483248e9e24c6"
+  },
+  "5": {
+   "file": "model_5.txt",
+   "trees": 175,
+   "sha256": "3cb683787ca224583c5164755117c7297d72fff7fd4cfdebd7e8b3c7bffcfa0e"
+  },
+  "6": {
+   "file": "model_6.txt",
+   "trees": 116,
+   "sha256": "e05c6a76f548016be9483d3749b7e56d58bb68bf50f14410aab8a55cbfb2f197"
+  }
+ }
+}
