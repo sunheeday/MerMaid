@@ -32,7 +32,7 @@ public:
     // 이번 주행의 토큰을 뒤에 붙이고 한도에 맞춰 줄여 저장. 붙인 토큰이 없으면 아무것도 쓰지 않는다
     void append(const std::string& passenger, const std::vector<Token>& ride_tokens) const;
     // 문맥 행렬: 고른 토큰을 시간 순으로 [e ‖ 원핫 ‖ 라벨] (n × (summary_dim + 4))
-    std::vector<float> context(const std::vector<Token>& all, int k, int* n_out) const;
+    std::vector<float> context(const std::vector<Token>& all, int k, int* n_out, int quota = CtxModel::kQuota) const;
 
 private:
     std::string path(const std::string& passenger) const;

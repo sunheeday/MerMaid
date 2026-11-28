@@ -88,10 +88,10 @@ void History::append(const std::string& passenger, const std::vector<Token>& rid
     store::write_atomic(path(passenger), s);
 }
 
-std::vector<float> History::context(const std::vector<Token>& all, int k, int* n_out) const {
+std::vector<float> History::context(const std::vector<Token>& all, int k, int* n_out, int quota) const {
     std::vector<TokenMeta> meta;
     for (const Token& t : all) meta.push_back({t.device, t.label});
-    const std::vector<int> pick = select_tokens(meta, k);
+    const std::vector<int> pick = select_tokens(meta, k, quota);
     const int td = de_ + CtxModel::kHeads + 1;
     std::vector<float> c(pick.size() * static_cast<size_t>(td), 0.f);
     for (size_t r = 0; r < pick.size(); r++) {

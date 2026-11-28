@@ -62,6 +62,19 @@ cd ml/out && zip -r v6_results.zip v6 -i '*.md' '*.csv' '*.json' '*.log' '*.png'
 C++ 구현은 `controller/common/ctx_model.cpp` (외부 라이브러리 없음, PyTorch 기본 `TransformerEncoderLayer`와 같은 계산).
 Pi에는 학습 결과 `.pt` 두 개를 내보낸 폴더(`models/`)만 올린다. 학습은 Mac이나 GPU 서버에서 한다.
 
+GPU 서버(Nebius VM)에서는 `nebius_attn.sh`가 이 순서를 묶어 둔다 (기본: 데이터 v023, 새 run v025, ft + attn):
+
+```bash
+NEBIUS=user@host bash ml/experiments/v6/nebius_attn.sh push      # Mac → VM ~/mermaid (코드 + npz 약 240 MB)
+ssh user@host 'cd ~/mermaid && bash ml/experiments/v6/nebius_attn.sh setup && bash ml/experiments/v6/nebius_attn.sh train'
+ssh user@host 'cd ~/mermaid && bash ml/experiments/v6/nebius_attn.sh status'   # "train rc=0 / done"이면 끝
+NEBIUS=user@host bash ml/experiments/v6/nebius_attn.sh fetch     # 결과 .pt 2개 + fleet_preds.npz + 로그 → Mac의 v025
+bash ml/experiments/v6/nebius_attn.sh finish                      # 내보내기 → ctx_check → 임계값 → run.json, 끝에 Pi로 보낼 명령
+```
+
+학습은 VM에서 nohup으로 돌아 ssh가 끊겨도 계속된다. 데이터·run 번호·구조는 `D=… V=… STAGE1=… STAGE2=…`로 바꾼다 (머리글 참고).
+손으로 할 때의 같은 순서:
+
 ```bash
 # 1) 학습 (GPU 서버: Nebius VM에서 ml/experiments/v7/gpu_setup.sh 한 번, 데이터 npz는 scp로)
 python3 ml/experiments/v6/context6.py --base $D/base.npz --fleet $D/fleet.npz --cache $V/cache --input v5 \
@@ -86,5 +99,21 @@ Pi 4B (QNX 8.0) 측정, 승객 1명·문맥 토큰 128개 (`ctx_check`):
 |---|---|---|
 | mlp + gru | 43 µs | 4.7 ms (GRU 128 스텝) |
 | ft + attn | 9.5 ms (어텐션은 지금 상황이 과거 토큰과 서로 보므로 매 주기 인코더) | 1.9 ms (토큰 투영 + 첫 층 Q·K·V) |
+| mlp + attn (v026, v7 enc) | 9.2 ms | 2.0 ms |
+| mlp + xattn (v027, v7 XAttn) | 0.18 ms (질의 한 줄만 토큰에 교차 어텐션) | 2.5 ms (층마다 토큰 K·V) |
 
 승객 9명이면 주기마다 그 9배 (ft + attn, 토큰 128개씩이면 약 86 ms). 10초 주기에는 여유가 있지만 V1의 주기 목표(10 ms)보다 크다.
+
+### 친구 v7 (context7.py) 학습 결과 내보내기
+
+v7 `--fleet` 실행(`ml/out/v7/v6_<world>/ctx7fl_*`)은 다시 학습하지 않고 그대로 내보낼 수 있다. 이름이 다르다: v7 `enc` = 여기 `attn`, v7 `attn`(XAttn) = 여기 `xattn`.
+시각 부호(`_time`, 토큰 38칸)·PLE·hybrid·d1 ≠ 32는 아직 C++에 없다. 데이터가 VM에 있으니 VM에서 내보내고 `models/`만 가져온다.
+
+```bash
+F=~/MerMaid/ml/out/v7/v6_strong     # VM, 읽기만
+python3 ml/experiments/v6/export_ctx.py --base ~/MerMaid/ml/out/v6/strong/base.npz --body $F/cache/body_mlp32_v5_fl.pt \
+    --ctx $F/ctx7fl_attn_k128_s0/ctx_attn_k128.pt --out ml/out/runs/v027/models --input v5 --stage2 xattn --k 128 \
+    --v7 ~/MerMaid/ml/experiments/v7 --val-persons 60 --e-cache $F/cache/E_mlp32_v5_fl.npy     # E 캐시 차이 0이면 표준화가 학습 때와 같다
+```
+
+`--v7`은 context7 분할로 표준화 통계를 만들고 manifest에 `token_quota: 0`(그냥 최근 k개, context7 방식)을 적는다. v7 실행은 플릿 예측을 남기지 않아 thresholds.json은 아직 없다.

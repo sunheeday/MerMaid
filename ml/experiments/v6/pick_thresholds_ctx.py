@@ -54,6 +54,8 @@ def main():
     p, Y, W, ride, t = d["p"], d["Y"], d["W"], d["ride_id"], d["t"]
     base, report = {}, {}
     for tier, j in TIER_HEAD.items():
+        if not (W[:, j] > 0).any():
+            print(f"WARNING tier {tier} ({HEADS[j]}): no eligible scoring rows in {a.preds}, threshold falls back to 0.99")
         pick = None
         for th in GRID:
             s = stats(p[:, j], Y[:, j], W[:, j], ride, t, th)

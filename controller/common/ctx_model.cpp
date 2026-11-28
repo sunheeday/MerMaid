@@ -184,7 +184,8 @@ void encode(const std::vector<CtxModel::EncLayer>& layers, std::vector<float>& x
 CtxModel::CtxModel(const std::string& dir) {
     const json::Value models = json::parse(read_text(dir + "/models.json"));
     const std::string kind = models.at("kind").string();
-    if (kind != "ctx_gru" && kind != "ctx_attn") throw std::runtime_error("ctx: models.json kind " + kind + " is not ctx_gru / ctx_attn");
+    if (kind != "ctx_gru" && kind != "ctx_attn" && kind != "ctx_xattn")
+        throw std::runtime_error("ctx: models.json kind " + kind + " is not ctx_gru / ctx_attn / ctx_xattn");
     if (models.at("feature_order_version").integer() != proto::kFeatureVersion)
         throw std::runtime_error("ctx: feature_order_version " + std::to_string(models.at("feature_order_version").integer()) +
                                  " != controller " + std::to_string(proto::kFeatureVersion));
@@ -195,7 +196,9 @@ CtxModel::CtxModel(const std::string& dir) {
     k_ = m.at("k").integer();
     s1_ = m.has("stage1") ? m.at("stage1").at("type").string() : "mlp";  // 처음 내보낸 형식은 mlp + gru뿐
     s2_ = m.has("stage2") ? m.at("stage2").at("type").string() : "gru";
-    if ((kind == "ctx_gru") != (s2_ == "gru")) throw std::runtime_error("ctx: kind " + kind + " but stage2 " + s2_);
+    if (kind != "ctx_" + s2_) throw std::runtime_error("ctx: kind " + kind + " but stage2 " + s2_);
+    if (m.has("token_quota")) quota_ = m.at("token_quota").integer();
+    if (quota_ < 0) throw std::runtime_error("ctx: token_quota < 0");
     if (m.at("n_heads").integer() != kHeads) throw std::runtime_error("ctx: n_heads != 3");
     if (m.at("dtype").string() != "float32-le") throw std::runtime_error("ctx: dtype");
 
@@ -283,6 +286,32 @@ CtxModel::CtxModel(const std::string& dir) {
         at_enc_ = enc("stage2.enc", d2_, m.at("stage2").at("heads").integer());
         at_head_ = lin("stage2.head");
         need(at_head_.in == d2_ && at_head_.out == kHeads, "stage2 head");
+    } else if (s2_ == "xattn") {
+        const int heads = m.at("stage2").at("heads").integer(), d = d2_;
+        if (heads <= 0 || d % heads) throw std::runtime_error("ctx: bad head count for stage2");
+        xa_null_ = tensor("stage2.null", {1, 1, d});
+        xa_lnc_ = norm("stage2.ln_c", d);
+        for (int i = 0; has("stage2.att." + std::to_string(i) + ".in_proj_weight"); i++) {
+            const std::string a = "stage2.att." + std::to_string(i), f = "stage2.ff." + std::to_string(i);
+            XLayer L;
+            L.d = d;
+            L.heads = heads;
+            L.lnq = norm("stage2.ln_q." + std::to_string(i), d);
+            L.qkv.in = d;
+            L.qkv.out = 3 * d;
+            L.qkv.W = tensor(a + ".in_proj_weight", {3 * d, d});
+            L.qkv.b = tensor(a + ".in_proj_bias", {3 * d});
+            L.out = lin(a + ".out_proj");
+            L.lnf = norm(f + ".0", d);
+            L.f1 = lin(f + ".1");
+            L.f2 = lin(f + ".4");
+            need(L.out.in == d && L.out.out == d && L.f1.in == d && L.f2.in == L.f1.out && L.f2.out == d, "stage2 xattn layer");
+            xa_.push_back(L);
+        }
+        if (xa_.empty()) throw std::runtime_error("ctx: no xattn layers under stage2.att");
+        xa_lnh_ = norm("stage2.head.0", d);
+        xa_head_ = lin("stage2.head.1");
+        need(xa_head_.in == d && xa_head_.out == kHeads, "stage2 head");
     } else {
         throw std::runtime_error("ctx: unknown stage2 " + s2_);
     }
@@ -336,6 +365,26 @@ void CtxModel::common(const float* e, float* p) const {
 void CtxModel::prepare(const float* tokens, int n, Ctx& c) const {
     const int H = d2_;
     c.n = n;
+    if (s2_ == "xattn") {
+        // m = LN_c([null, pc(c_i)]) 은 질의와 무관 → 층마다 K, V (in_proj의 둘째·셋째 블록)
+        const int rows = n + 1;
+        std::vector<float> mrow(static_cast<size_t>(rows) * H);
+        std::copy(xa_null_, xa_null_ + H, mrow.begin());
+        for (int t = 0; t < n; t++) pc_(tokens + static_cast<size_t>(t) * token_dim(), &mrow[static_cast<size_t>(t + 1) * H]);
+        for (int r = 0; r < rows; r++) layer_norm(xa_lnc_, &mrow[static_cast<size_t>(r) * H]);
+        c.v.clear();
+        c.qkv1.clear();
+        c.kv.assign(xa_.size() * rows * 2 * H, 0.f);
+        for (size_t li = 0; li < xa_.size(); li++) {
+            const XLayer& L = xa_[li];
+            for (int r = 0; r < rows; r++) {
+                const float* x = &mrow[static_cast<size_t>(r) * H];
+                float* o = &c.kv[(li * rows + r) * 2 * H];
+                for (int j = 0; j < 2 * H; j++) o[j] = L.qkv.b[H + j] + dot(L.qkv.W + static_cast<size_t>(H + j) * H, x, H);
+            }
+        }
+        return;
+    }
     if (s2_ == "attn") {
         // 토큰 투영과, 첫 층의 Q·K·V (토큰 자신의 입력에만 달려 있어 탑승 동안 같다)
         c.v.assign(static_cast<size_t>(n) * H, 0.f);
@@ -370,7 +419,52 @@ void CtxModel::prepare(const float* tokens, int n, Ctx& c) const {
 
 void CtxModel::predict(const float* e, const Ctx& c, float* p) const {
     const int H = d2_;
-    if (s2_ == "attn") {
+    if (s2_ == "xattn") {
+        const int rows = c.n + 1;
+        if (c.kv.size() != xa_.size() * rows * 2 * H) throw std::runtime_error("ctx: context not prepared");
+        std::vector<float> q(H), u(H), qq(H), att(H), o(H), s(rows), f(xa_.empty() ? 0 : xa_[0].f1.out);
+        pq_(e, q.data());
+        for (size_t li = 0; li < xa_.size(); li++) {
+            const XLayer& L = xa_[li];
+            const int dh = H / L.heads;
+            const float scale = 1.f / std::sqrt(static_cast<float>(dh));
+            const float* kv = &c.kv[li * rows * 2 * H];
+            u = q;
+            layer_norm(L.lnq, u.data());
+            for (int j = 0; j < H; j++) qq[j] = L.qkv.b[j] + dot(L.qkv.W + static_cast<size_t>(j) * H, u.data(), H);
+            for (int h = 0; h < L.heads; h++) {
+                float mx = -INFINITY;
+                for (int r = 0; r < rows; r++) {
+                    s[r] = dot(&qq[h * dh], kv + static_cast<size_t>(r) * 2 * H + h * dh, dh) * scale;
+                    mx = std::max(mx, s[r]);
+                }
+                float sum = 0.f;
+                for (int r = 0; r < rows; r++) {
+                    s[r] = std::exp(s[r] - mx);
+                    sum += s[r];
+                }
+                float* a = &att[h * dh];
+                std::fill(a, a + dh, 0.f);
+                for (int r = 0; r < rows; r++) {
+                    const float* v = kv + static_cast<size_t>(r) * 2 * H + H + h * dh;
+                    for (int i = 0; i < dh; i++) a[i] += s[r] * v[i];
+                }
+                const float inv = 1.f / sum;
+                for (int i = 0; i < dh; i++) a[i] *= inv;
+            }
+            L.out(att.data(), o.data());
+            for (int i = 0; i < H; i++) q[i] += o[i];
+            u = q;
+            layer_norm(L.lnf, u.data());
+            f.resize(L.f1.out);
+            L.f1(u.data(), f.data());
+            for (float& v : f) v = gelu(v);
+            L.f2(f.data(), o.data());
+            for (int i = 0; i < H; i++) q[i] += o[i];
+        }
+        layer_norm(xa_lnh_, q.data());
+        xa_head_(q.data(), p);
+    } else if (s2_ == "attn") {
         if (c.v.size() != static_cast<size_t>(c.n) * H) throw std::runtime_error("ctx: context not prepared");
         std::vector<float> x(static_cast<size_t>(c.n + 1) * H);
         pq_(e, x.data());

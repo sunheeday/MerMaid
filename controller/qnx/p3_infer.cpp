@@ -2,7 +2,7 @@
 //   p3_infer --models DIR [--ctx-state DIR] [--vehicle-type 0|1] [--once] [--prio P]
 // 모델 종류는 DIR/models.json의 "kind"로 고른다 (없으면 V1):
 //   misc5 (V1)   LightGBM 5개 → P(MISC>=2..6), 단조 보정, 개인 보정. RISK subtype RISK_MISC5
-//   ctx_gru / ctx_attn (V3) 문맥 모델: 요약(MLP 또는 FT) + 2단계(GRU 또는 어텐션) (ctx_model.hpp)
+//   ctx_gru / ctx_attn / ctx_xattn (V3) 문맥 모델: 요약(MLP 또는 FT) + 2단계(GRU, 인코더 어텐션 또는 교차 어텐션) (ctx_model.hpp)
 //                → [P(fan), P(ambient), P(dots), NaN, NaN]. RISK subtype RISK_RESPONSE3
 //                --ctx-state 아래에 승객별 과거 토큰(ctx_history.hpp). 승객이 주행에 처음 보일 때 그 토큰으로 문맥을
 //                한 번 준비하고(지난 주행들의 것이라 주행 안에서는 안 바뀐다. gru는 상태 h까지, attn은 토큰 투영까지),
@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
     try {
         ipc::set_priority(prio, "p3");
         const std::string kind = model_kind(models);
-        const bool ctx = kind == "ctx_gru" || kind == "ctx_attn";
+        const bool ctx = kind == "ctx_gru" || kind == "ctx_attn" || kind == "ctx_xattn";
 #ifdef MM_HAVE_LIGHTGBM
         std::unique_ptr<Inference> inf;
 #endif
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
             inf = std::make_unique<Inference>(models);  // 피처 수가 다르면 여기서 거부
             std::fprintf(stderr, "p3: models loaded in %.0f ms\n", inf->load_ms());
 #else
-            throw std::runtime_error("this p3 was built without LightGBM: only ctx_gru / ctx_attn models");
+            throw std::runtime_error("this p3 was built without LightGBM: only ctx_gru / ctx_attn / ctx_xattn models");
 #endif
         } else {
             throw std::runtime_error("unknown model kind " + kind);
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
             if (id != "default" && store::safe_name(id)) {
                 const uint64_t t0 = ipc::now_ns();
                 int n = 0;
-                const std::vector<float> c = hist->context(hist->load(id), cm->k(), &n);
+                const std::vector<float> c = hist->context(hist->load(id), cm->k(), &n, cm->quota());
                 cm->prepare(c.data(), n, h);
                 ctx_hist_ns_max = std::max(ctx_hist_ns_max, ipc::now_ns() - t0);
                 std::fprintf(stderr, "p3: %s history %d tokens\n", id.c_str(), n);

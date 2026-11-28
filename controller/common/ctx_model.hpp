@@ -1,7 +1,7 @@
 // V3 문맥 모델 추론. 학습은 ml/experiments/v6/context6.py, 내보내기는 export_ctx.py.
 // 외부 라이브러리 없이 표준 C++17만 쓴다 (lib_lightgbm 필요 없음). float32로 PyTorch와 같은 계산.
 //
-// 모델 폴더: models.json ("kind": "ctx_gru" 또는 "ctx_attn"), manifest.json (텐서 이름·모양·오프셋, 입력 열 이름,
+// 모델 폴더: models.json ("kind": "ctx_gru", "ctx_attn" 또는 "ctx_xattn"), manifest.json (텐서 이름·모양·오프셋, 입력 열 이름,
 //            stage1 / stage2 종류), weights.bin (float32 LE)
 //
 // 1단계 (요약 e, 32)   입력 z = clip((x - mu) / sd, -5, 5) (NaN → 0), m = isfinite(x)
@@ -12,12 +12,17 @@
 // 2단계
 //   gru   h = GRU(pc(c_1) … pc(c_n)) 의 마지막 은닉 (n = 0 이면 0),  p = sigmoid(head_1(gelu(head_0([pq(e) ‖ h]))))
 //   attn  [pq(e) + type_0, pc(c_1) + type_1, …] → 트랜스포머 인코더 → p = sigmoid(head(첫 칸))
+//   xattn (ml/experiments/v7/context7.py XAttn) 질의 하나가 토큰에 교차 어텐션, 층마다 Pre-LN:
+//         m = LN_c([null, pc(c_1) … pc(c_n)])   (null은 늘 보이는 빈 토큰)
+//         q = pq(e);  층 i: q += MHA_i(LN_q,i(q), m, m),  q += W2·gelu(W1·LN_f,i(q))
+//         p = sigmoid(head_1(LN_h(q)))
 // 트랜스포머 인코더 층 = PyTorch nn.TransformerEncoderLayer 기본값 (post-norm, ReLU, LayerNorm eps 1e-5):
 //   x = LN1(x + MHA(x)),  x = LN2(x + W2·relu(W1·x)).  마지막 층은 첫 칸만 계산한다 (나머지는 출력에 안 쓰임).
 //
 // 문맥은 지난 탑승들의 토큰이라 한 탑승 안에서는 바뀌지 않는다. prepare()를 탑승마다 승객별로 한 번 부른다.
 //   gru:  h를 여기서 다 계산한다 → 10초 주기는 summarize + 머리만.
 //   attn: 토큰 투영 pc(c)+type_1만 미리 둔다. 지금 상황 토큰이 과거 토큰과 서로 보므로 인코더는 주기마다 돈다.
+//   xattn: 토큰 쪽 m은 질의와 무관하다 → 층마다 K·V를 여기서 다 계산한다. 주기마다는 질의 한 줄의 어텐션만 (토큰 수에 선형).
 #pragma once
 #include <array>
 #include <cstdint>
@@ -33,10 +38,12 @@ public:
 
     // 한 승객의 문맥 (prepare가 채운다). gru: v = h (hidden_dim).
     // attn: v = n × hidden_dim 투영된 토큰, qkv1 = 그 토큰들의 첫 층 Q·K·V (n × 3·hidden_dim)
+    // xattn: kv = 층마다 (n + 1) × [K ‖ V] (2·hidden_dim), 첫 행은 null 토큰
     struct Ctx {
         int n = 0;
         std::vector<float> v;
         std::vector<float> qkv1;
+        std::vector<float> kv;
     };
 
     // dir/models.json, manifest.json, weights.bin. 입력 열이 protocol의 켜진 칸과 이름으로 맞지 않으면 예외
@@ -47,8 +54,9 @@ public:
     int token_dim() const { return de_ + kHeads + 1; }
     int hidden_dim() const { return d2_; }        // 64
     int k() const { return k_; }                  // 학습 때 문맥 길이 (128)
+    int quota() const { return quota_; }          // select_tokens 장치·라벨별 최소 개수 (context6 3, context7 0 = 그냥 최근 k개)
     const std::string& stage1() const { return s1_; }  // "mlp" | "ft"
-    const std::string& stage2() const { return s2_; }  // "gru" | "attn"
+    const std::string& stage2() const { return s2_; }  // "gru" | "attn" | "xattn"
     // 입력 i가 protocol 52칸 벡터의 몇 번째 칸인지
     const std::vector<int>& input_slots() const { return slot_; }
 
@@ -79,6 +87,11 @@ public:
         Lin qkv, out, l1, l2;  // qkv = in_proj (3d × d, 순서 q, k, v)
         Norm n1, n2;
     };
+    struct XLayer {
+        int d = 0, heads = 0;
+        Norm lnq, lnf;
+        Lin qkv, out, f1, f2;  // qkv = in_proj (3d × d), f1 d → 2d, f2 2d → d
+    };
 
 private:
     Lin lin(const std::string& prefix) const;
@@ -87,7 +100,7 @@ private:
     const float* tensor(const std::string& name, const std::vector<int>& shape) const;
 
     std::vector<float> w_;
-    int nf_ = 0, de_ = 0, d2_ = 0, k_ = 0;
+    int nf_ = 0, de_ = 0, d2_ = 0, k_ = 0, quota_ = kQuota;
     std::string s1_, s2_;
     std::vector<int> slot_;
     const float* mu_ = nullptr;
@@ -105,6 +118,11 @@ private:
     const float* type_ = nullptr;  // (2, d2)
     std::vector<EncLayer> at_enc_;
     Lin at_head_;
+    // 2단계 xattn
+    const float* xa_null_ = nullptr;  // (1, 1, d2)
+    Norm xa_lnc_, xa_lnh_;
+    std::vector<XLayer> xa_;
+    Lin xa_head_;
     struct Ref { size_t off = 0, n = 0; std::vector<int> shape; };
     std::vector<std::pair<std::string, Ref>> refs_;
     const Ref& ref(const std::string& name) const;

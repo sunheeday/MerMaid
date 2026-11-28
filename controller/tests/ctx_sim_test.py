@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""V3 문맥 모델(ctx_gru / ctx_attn)로 P1 재생 → P2 → 진짜 P3 → P4를 두 주행 돌리는 시험 (Pi 없이, qnxsim).
+"""V3 문맥 모델(ctx_gru / ctx_attn / ctx_xattn)로 P1 재생 → P2 → 진짜 P3 → P4를 두 주행 돌리는 시험 (Pi 없이, qnxsim).
 
-  python3 controller/tests/ctx_sim_test.py <build 폴더> <ctx_gru 또는 ctx_attn 모델 폴더>
+  python3 controller/tests/ctx_sim_test.py <build 폴더> <ctx_gru · ctx_attn · ctx_xattn 모델 폴더>
   (ctest의 ctx_sim: cmake -DMM_CTX_MODEL=<모델 폴더>일 때만)
 
 - 정책 설정은 controller/config를 복사하고 thresholds.json만 kind response3로 바꾼다. base_th: fan·ambient는 높게(꺼진 채로
@@ -64,7 +64,7 @@ def ride(tmp, env, cfg, state, trip, k):
     try:
         start("p4_policy", "--config", cfg, "--state", state, "--log", log, "--hud", "--phone", "phone-a:20:1.0", "--once")
         p3 = start("p3_infer", "--models", MODELS, "--ctx-state", os.path.join(state, "ctx"), "--once")
-        check(p3.wait_log(r"ctx_(gru|attn) model loaded", 0, 10), f"ride {k}: P3 loaded the context model")
+        check(p3.wait_log(r"ctx_(gru|attn|xattn) model loaded", 0, 10), f"ride {k}: P3 loaded the context model")
         start("p2_feat", "--once")
         start("p1_acq", trip, "--speed", str(SPEED), "--timeout-ms", "1000", "--ring", "none")  # Mac이 바쁠 때도 (실시간 OS 아님)
         for n, pr in procs.items():
@@ -82,7 +82,7 @@ def ride(tmp, env, cfg, state, trip, k):
 
 def main():
     if not MODELS or not os.path.exists(os.path.join(MODELS, "models.json")):
-        print("usage: ctx_sim_test.py <build> <ctx_gru / ctx_attn model dir>")
+        print("usage: ctx_sim_test.py <build> <ctx_gru / ctx_attn / ctx_xattn model dir>")
         return 2
     for b in ("p1_acq", "p2_feat", "p3_infer", "p4_policy"):
         if not os.path.exists(os.path.join(BUILD, b + "_sim")):
