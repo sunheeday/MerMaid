@@ -26,6 +26,8 @@ import numpy as np
 
 ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML)); sys.path.insert(0, str(ML / "train")); sys.path.insert(0, str(ML / "verify"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 import common as C            # noqa: E402
 import oman                   # noqa: E402
 import trip as tripio         # noqa: E402
@@ -70,8 +72,7 @@ def build_tudelft_stop(mat, cache, v0_kmh=50.0, seed=0):
                 path = pathlib.Path(td) / "trip.bin"
                 tripio.write_trip(path, TR.make_trip(acc, v0, rng))
                 t, Xv = tripio.featurize(path, pathlib.Path(td) / "features.bin")
-                X = np.full((len(t), 77), np.nan); X[:, :71] = Xv
-                X[:, 73], X[:, 74], X[:, 76] = mssq, float(oman.sensitivity(mssq)), 0.0
+                X = FC.full_row(Xv, mssq, float(oman.sensitivity(mssq)))
                 # 멈춤 시각: 자극 구간 안에서 MISC가 처음 STOP_MISC 에 닿은 보고 시각
                 stops = []
                 for (s, e) in seg:
@@ -154,7 +155,7 @@ def main():
     ap.add_argument("mat"); ap.add_argument("--dataset", required=True)
     ap.add_argument("--rows", type=int, default=300_000); ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--rounds", type=int, default=30, help="이어 학습 트리 수")
-    ap.add_argument("--out", default=str(ML / "out" / "stop_transfer"))
+    ap.add_argument("--out", default=str(FC.out_dir("stop_transfer")))
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     logf = open(out / "log.txt", "w")
