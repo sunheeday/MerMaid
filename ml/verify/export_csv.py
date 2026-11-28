@@ -20,7 +20,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "ml"))
 import runs  # noqa: E402
 
-DATA = runs.dataset_for(runs.current_models()).parent
+DATA = runs.dataset_for(runs.current_v1_models()).parent
 OUT = DATA / "csv"
 FO = json.loads((REPO / "protocol" / "feature_order.json").read_text())
 TRIP = json.loads((REPO / "protocol" / "trip_format.json").read_text())

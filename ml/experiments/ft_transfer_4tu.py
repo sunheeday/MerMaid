@@ -224,7 +224,7 @@ def main():
     rng = np.random.default_rng(0)
     T0 = time.time()
 
-    ds = a.dataset or runs.dataset_for(runs.current_models())
+    ds = a.dataset or runs.dataset_for(runs.current_v1_models())
     log(f"시뮬레이터 입력: {ds}")
     Xsim = load_sim_rows(ds, a.rows, rng)
     mu = np.nanmean(Xsim, 0); sd = np.nanstd(Xsim, 0); sd[~np.isfinite(sd) | (sd < 1e-6)] = 1.0

@@ -33,7 +33,7 @@ def load(path=None):
         import sys
         sys.path.insert(0, str(REPO / "ml"))
         import runs
-        path = runs.dataset_for(runs.current_models())
+        path = runs.dataset_for(runs.current_v1_models())
     d = dict(np.load(path, allow_pickle=False))
     assert int(d["feature_version"]) == FO["version"], "dataset이 다른 feature_order version으로 만들어짐"
     assert list(d["feature_names"]) == NAMES

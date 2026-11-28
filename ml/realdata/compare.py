@@ -46,7 +46,7 @@ def main():
     ap.add_argument("--real", help="실차 데이터셋 버전 (기본: 최신)")
     ap.add_argument("--sim", help="시뮬레이터 dataset.npz (기본: 그 모델의 학습 데이터셋)")
     a = ap.parse_args()
-    mrun = runs.resolve(a.models) if a.models else runs.current_models()
+    mrun = runs.resolve(a.models) if a.models else runs.current_v1_models()
     real = runs.resolve(a.real) / f"real_{a.source}.npz" if a.real else runs.latest_with(f"real_{a.source}.npz")
     a.sim = a.sim or runs.dataset_for(mrun)
     print(f"models {mrun.name}, real {real.parent.name}, sim {runs.rel(a.sim)}", file=sys.stderr)

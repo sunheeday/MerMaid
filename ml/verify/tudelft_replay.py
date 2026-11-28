@@ -123,7 +123,7 @@ def main():
     a_ = ap.parse_args()
     A = sio.loadmat(a_.mat, squeeze_me=True, struct_as_record=False)["ATDOMS"]
     persons = list(A._fieldnames)
-    run = runs.resolve(a_.models) if a_.models else runs.current_models()
+    run = runs.resolve(a_.models) if a_.models else runs.current_v1_models()
     models = {k: lgb.Booster(model_file=str(run / "models" / f"model_{k}.txt")) for k in KS}
     th = json.loads((run / "thresholds.json").read_text())["base_th"]
     tiers = json.loads((ML.parent / "controller" / "config" / "policy.json").read_text())["tiers"]

@@ -2,6 +2,7 @@
 
     python3 ml/runs.py list            # 버전, 종류, 설명
     python3 ml/runs.py current         # 배포 중인 모델 버전 폴더 (저장소 기준 경로)
+    python3 ml/runs.py current-v1      # V1(LightGBM) 도구의 기본 모델 (배포가 V3여도 V1)
     python3 ml/runs.py dataset         # 그 모델이 학습한 데이터셋 버전 폴더
     python3 ml/runs.py use v003        # 배포할 모델 버전 지정: CURRENT를 바꾸고 그 문턱을 controller/config/thresholds.json에 복사
 
@@ -11,6 +12,9 @@
   같은 입력이면 같은 내용이라 다시 만들어도 사라지는 정보가 없다.
 - 읽을 때 기본값: 모델은 CURRENT (없으면 모델이 있는 최신 버전), 데이터셋은 그 모델 run.json의 inputs.dataset,
   실차 데이터셋은 그 파일이 있는 최신 버전. 스크립트마다 인자로 바꿀 수 있다.
+- 모델 종류는 models.json의 kind (없으면 V1 LightGBM "misc5", V3는 ctx_gru / ctx_attn / ctx_xattn).
+  V1 전용 도구(train, verify, realdata, 4TU 실험)는 current_v1_models(): 배포가 V1이면 그것, 아니면 마지막으로 배포한 V1
+  (CURRENT_V1, use가 V1을 배포할 때 적는다), 그것도 없으면 V1 모델이 있는 최신 버전.
 - controller/config/thresholds.json은 배포 설정이라 `use`로만 바뀐다 (git으로 이력 관리).
 """
 import datetime
@@ -24,6 +28,7 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[1]
 ROOT = REPO / "ml" / "out" / "runs"
 CURRENT = ROOT / "CURRENT"
+CURRENT_V1 = ROOT / "CURRENT_V1"
 THRESHOLDS = REPO / "controller" / "config" / "thresholds.json"
 
 
@@ -94,6 +99,29 @@ def current_models():
     return latest_with("models/models.json").parents[1]
 
 
+def model_kind(run):
+    """모델 버전의 종류 (models.json kind, 없으면 V1 "misc5"). P3의 model_kind와 같은 규칙"""
+    f = pathlib.Path(run) / "models" / "models.json"
+    return json.loads(f.read_text()).get("kind", "misc5") if f.exists() else None
+
+
+def is_v1(run):
+    return model_kind(run) == "misc5"
+
+
+def current_v1_models():
+    """V1(LightGBM 5개) 도구의 기본 모델 버전: 배포가 V1이면 CURRENT, 아니면 CURRENT_V1, 아니면 V1 모델이 있는 최신 버전"""
+    for ptr in (CURRENT, CURRENT_V1):
+        if ptr.exists():
+            run = resolve(ptr.read_text().strip())
+            if is_v1(run):
+                return run
+    for run in reversed(versions()):
+        if is_v1(run):
+            return run
+    sys.exit("ml/out/runs 어디에도 V1 모델(models.json kind 없음 = misc5)이 없음")
+
+
 def dataset_for(run):
     """모델 버전이 학습에 쓴 데이터셋 (run.json inputs.dataset). 데이터셋 버전이면 그 안의 dataset.npz"""
     run = pathlib.Path(run)
@@ -109,20 +137,27 @@ def use(v):
     t = json.loads(th.read_text())
     t["run"] = run.name
     THRESHOLDS.write_text(json.dumps(t, indent=2) + "\n")
+    if is_v1(run):
+        CURRENT_V1.write_text(run.name + "\n")
+    elif CURRENT.exists() and is_v1(resolve(CURRENT.read_text().strip())) and not CURRENT_V1.exists():
+        CURRENT_V1.write_text(CURRENT.read_text())  # V1 → V3로 바꿀 때 마지막 V1을 기억
     CURRENT.write_text(run.name + "\n")
-    print(f"CURRENT = {run.name}, 문턱 {t['base_th']} -> {rel(THRESHOLDS)}")
+    print(f"CURRENT = {run.name} ({model_kind(run)}), 문턱 {t['base_th']} -> {rel(THRESHOLDS)}")
 
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "list"
     if cmd == "list":
         cur = CURRENT.read_text().strip() if CURRENT.exists() else None
+        v1 = current_v1_models().name if any(is_v1(r) for r in versions()) else None
         for run in versions():
             m = meta(run)
-            star = "*" if run.name == cur else " "
+            star = "*" if run.name == cur else ("1" if run.name == v1 else " ")
             print(f"{star} {run.name}  {m.get('kind', '?'):24s} {m.get('created', ''):19s}  {m.get('note', '')[:90]}")
     elif cmd == "current":
         print(rel(current_models()))
+    elif cmd == "current-v1":
+        print(rel(current_v1_models()))
     elif cmd == "dataset":
         print(rel(dataset_for(current_models()).parent))
     elif cmd == "use" and len(sys.argv) == 3:

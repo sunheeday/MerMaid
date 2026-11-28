@@ -23,7 +23,7 @@ import common as C  # noqa: E402
 sys.path.insert(0, str(REPO / "ml"))
 import runs  # noqa: E402
 
-RUN = runs.current_models()
+RUN = runs.current_v1_models()
 OUT = RUN / "parity"
 MODELS = RUN / "models"
 EPS = 1e-9

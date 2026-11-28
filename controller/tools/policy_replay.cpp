@@ -30,7 +30,9 @@ int main(int argc, char** argv) {
     pol.add_phone(phone);
     pol.on_screen(phone, true, true);
     const std::string device = tier == 1 ? mm::proto::kDeviceAirflow : tier == 2 ? mm::proto::kDeviceDisplay : phone;
-    const size_t col = static_cast<size_t>(cfg.tier[tier - 1].input_k - 2);
+    // 정책이 그 tier에 읽는 칸 (policy.cpp on_risk와 같음): V1 misc5는 P(>=input_k), V3 response3는 input_head
+    const auto& tc = cfg.tier[tier - 1];
+    const size_t col = static_cast<size_t>(cfg.kind == mm::RiskKind::Response3 ? tc.input_head : tc.input_k - 2);
 
     pol.on_ride_start();
     std::string line;

@@ -170,7 +170,7 @@ def main():
 
     if a.dataset is None:
         import runs
-        a.dataset = str(runs.dataset_for(runs.current_models()))
+        a.dataset = str(runs.dataset_for(runs.current_v1_models()))
     X4, fut, pid, sess = build_tudelft(a.mat, out / "tudelft_rows.npz")
     y4 = (fut >= a.k).astype(int)
     persons = np.unique(pid)
