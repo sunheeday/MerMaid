@@ -2,8 +2,9 @@
 # P4, P3, P2를 띄우고 P1으로 trip.bin 하나를 재생한 뒤 모두 끝날 때까지 기다린다 (저장소 루트에서 실행).
 #   controller/qnx/run_pipeline.sh <trip.bin> <out_dir> <speed> <vehicle_type> [ID:MSSQ:SENS0[:EV]]...
 # speed 1 = 실시간, 0 = 쉬지 않고. 결과: <out_dir>/cycles.csv, p1~p4.out(.err), state/
-# 매번 새 state로 시작한다 (허용도 0). 이어서 쓰려면 KEEP_STATE=1
-# 모델: MODELS (기본 ml/out/runs/<CURRENT>/models, ml/runs.py use로 정함)
+# 매번 새 state로 시작한다 (허용도 0, V3 승객 토큰 state/ctx 없음). 이어서 쓰려면 KEEP_STATE=1 (V3 문맥을 여러 주행에 쌓을 때)
+# 모델: MODELS (기본 ml/out/runs/<CURRENT>/models, ml/runs.py use로 정함). 정책 설정: CONFIG (기본 controller/config,
+#   V3 ctx_gru 모델이면 thresholds.json이 kind response3인 폴더)
 # RF=1: P6(UART, 기본 /dev/ser3 = SER)와 P5를 먼저 띄우고 P4는 --rf (P5 명부로 등록, TIER_CMD), P2는 --motion.
 #   폰·HUD는 브리지로 붙고 [phone]...은 비워도 된다. P5·P6은 주행이 끝나면 내린다. 결과: p5.out, p6.out 추가
 #   UART3는 root로 firmware/bridge/README.md의 순서대로 켜 둔다. ESP32 없이 P5만 보려면 RF=1 P6=0
@@ -34,12 +35,12 @@ if [ -n "$RF" ] && [ "$RF" != "0" ]; then
 fi
 
 hud="--hud"; [ -n "$rf4" ] && hud=""
-$B/p4_policy --config controller/config --state "$out/state" --log "$out/cycles.csv" $hud $rf4 $phones --once \
+$B/p4_policy --config "${CONFIG:-controller/config}" --state "$out/state" --log "$out/cycles.csv" $hud $rf4 $phones --once \
     > "$out/p4.out" 2> "$out/p4.err" &
 p4=$!
 # RF: P6이 기억해 둔 SCR·PROF를 P4에 다시 보낼 때까지 (못 보냈으면 1초마다). 빠른 재생은 첫 주기가 바로 오므로
 [ -n "$rf4" ] && sleep 2
-$B/p3_infer --models "$MODELS" --vehicle-type "$vt" --once > "$out/p3.out" 2> "$out/p3.err" &
+$B/p3_infer --models "$MODELS" --ctx-state "$out/state/ctx" --vehicle-type "$vt" --once > "$out/p3.out" 2> "$out/p3.err" &
 p3=$!
 $B/p2_feat --once $rf2 > "$out/p2.out" 2> "$out/p2.err" &
 p2=$!

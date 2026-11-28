@@ -8,6 +8,7 @@
 #   HUD=1          RF일 때도 HUD(송풍·앰비언트)가 연결돼 있다고 보고 P4에 --hud (HUD 기기 없이 Tier 1·2 시험)
 #   I2C=/dev/i2c1  IMU 버스                               MODELS=…      기본 ml/out/runs/<CURRENT>/models
 #   LOGS=DIR       P7 주행 로그 폴더 (기본 ~/mermaid/logs)  P7=0          로거 없이
+#   CONFIG=DIR     P4 정책 설정 폴더 (기본 controller/config. V3 모델은 thresholds.json kind response3인 폴더)
 # 시작 순서: P6 → P5 → P7 로거 → P4 → P3 → P2 → P1. LIVE는 센서 오류 뒤 새 주행이 이어질 수 있어서
 # P2~P4를 --once 없이 띄운다. 상태(state/)는 지우지 않는다 (자이로 바이어스, 허용도, 프로필이 이어짐).
 B=${BUILD:-build}
@@ -35,10 +36,11 @@ if [ "${P7:-1}" != "0" ] && [ -x "$B/p7_logger" ]; then
     $B/p7_logger --dir "${LOGS:-$HOME/mermaid/logs}" --config controller/config > "$out/p7.out" 2>&1 &
     p7pid=$!
 fi
-$B/p4_policy --config controller/config --state "$out/state" --log "$out/cycles.csv" $rf4 > "$out/p4.out" 2> "$out/p4.err" &
+$B/p4_policy --config "${CONFIG:-controller/config}" --state "$out/state" --log "$out/cycles.csv" $rf4 > "$out/p4.out" 2> "$out/p4.err" &
 pids="$pids $!"
 [ "$rf4" = "--rf" ] && sleep 2  # P6이 기억해 둔 SCR·PROF가 P4에 닿을 때까지
-$B/p3_infer --models "$MODELS" --vehicle-type "$vt" > "$out/p3.out" 2> "$out/p3.err" &
+# V3(ctx_gru): 승객별 과거 토큰은 state/ctx (V1 모델이면 P3가 쓰지 않음)
+$B/p3_infer --models "$MODELS" --ctx-state "$out/state/ctx" --vehicle-type "$vt" > "$out/p3.out" 2> "$out/p3.err" &
 pids="$pids $!"
 $B/p2_feat $rf2 > "$out/p2.out" 2> "$out/p2.err" &
 pids="$pids $!"
@@ -48,7 +50,7 @@ dur=""; [ -n "$DURATION_S" ] && dur="--duration-s $DURATION_S"
 echo "LIVE: Ctrl-C to end the ride"
 $B/p1_acq --live --i2c "${I2C:-/dev/i2c1}" --state "$out/state" $fake $dur > "$out/p1.out" 2> "$out/p1.err"
 r1=$?
-sleep 1  # RIDE_END가 P2 → P3 → P4로 지나가게
+sleep 2  # RIDE_END가 P2 → P3 → P4로 지나가고, V3면 P3가 주행 토큰을 저장하게
 for p in $pids; do kill "$p" 2>/dev/null; done
 if [ -n "$p7pid" ]; then
     sleep 2  # P7은 RIDE_END 뒤 2초 동안 늦은 로그를 받고 주행 파일을 닫는다

@@ -13,6 +13,10 @@
 // 정책 시각은 주행 시각(RISK의 t)을 쓴다. OVR는 마지막 RISK의 t로 처리한다.
 // RISK마다 폰별 확률 5개를 P5에 RISK_FWD로 (#19, 앱 대시보드 표시용. "default" 행은 빼고).
 // RISK를 처리한 뒤 P7에 LOG_DECISION (기기별 on, tier, 이번 주기에 바뀌었는지. 2 ms 시간 초과, 실패는 log_fail만).
+// 확률 5칸의 뜻은 thresholds.json "kind" (misc5 V1 / response3 V3). RISK의 subtype이 다르면 그 주기는 정책에 쓰지 않는다.
+// response3이면 V3 문맥 토큰 라벨도 여기서 고른다 (ctx_label.hpp): 주기마다 승객별 장치 자격(can_turn_on), 자동 명령,
+// 승객 OVR을 기록하고, RIDE_END에 고른 결과를 P3의 TOKENS 요청에 회신한다 (P3가 그 주기의 요약 e로 토큰을 저장).
+// --once + response3이면 TOKENS에 회신한 뒤 끝낸다.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -25,6 +29,7 @@
 #include <string>
 #include <vector>
 
+#include "ctx_label.hpp"
 #include "ipc.hpp"
 #include "log_messages.hpp"
 #include "messages.hpp"
@@ -39,6 +44,7 @@ union Inbox {
     msg::RiskMsg r;
     msg::RideEdge e;
     msg::ProfilesReq q;
+    msg::TokensReq tq;
     msg::CtxScreen scr;
     msg::CtxOvr ovr;
     msg::CtxProf prof;
@@ -233,6 +239,24 @@ int main(int argc, char** argv) {
         };
         double last_t = 0;
 
+        // ---- V3 문맥 토큰 라벨 (response3) ----
+        const bool v3 = pol.config().kind == RiskKind::Response3;
+        ctx::Labeler lab;
+        static msg::TokensReply tokens;  // RIDE_END에 정해 둔 회신 (6 KB)
+        bool kind_warned = false;
+        uint64_t kind_skip = 0;
+        auto ctx_device = [&](const std::string& d) {
+            if (d == proto::kDeviceAirflow) return ctx::kFan;
+            if (d == proto::kDeviceDisplay) return ctx::kAmbient;
+            return pol.tier_of(d) == 3 ? ctx::kDots : -1;  // 폰 화면 (Tier 3)
+        };
+        auto ctx_auto = [&](const std::vector<Command>& cs, double t) {
+            for (const Command& c : cs) {
+                const int j = ctx_device(c.device);
+                if (j >= 0) lab.on_auto(t, j, c.device, c.on);
+            }
+        };
+
         FILE* log = nullptr;
         if (!log_path.empty()) {
             log = std::fopen(log_path.c_str(), "w");
@@ -309,7 +333,24 @@ int main(int argc, char** argv) {
                 for (uint32_t i = 0; i < r.n && i < static_cast<uint32_t>(msg::kMaxPhones); i++)
                     risk[id_of(r.id[i])] = r.p[i];
                 last_t = r.t;
-                const std::vector<Command> cs = pol.on_risk(r.t, risk);
+                std::vector<Command> cs;
+                if (r.h.subtype != static_cast<uint16_t>(pol.config().kind)) {
+                    kind_skip++;
+                    if (!kind_warned)
+                        std::fprintf(stderr, "p4: RISK kind %u but policy is %s, ignoring these cycles\n", r.h.subtype,
+                                     risk_kind_name(pol.config().kind));
+                    kind_warned = true;
+                } else {
+                    if (v3)  // 이번 주기 결정 전의 자격 (꺼져 있고 켤 수 있나)
+                        for (const auto& kv : risk) {
+                            if (kv.first == "default" || kv.first.empty()) continue;
+                            const bool ok[ctx::kDevices] = {pol.can_turn_on(proto::kDeviceAirflow),
+                                                            pol.can_turn_on(proto::kDeviceDisplay), pol.can_turn_on(kv.first)};
+                            lab.record_cycle(r.seq, r.t, kv.first, ok);
+                        }
+                    cs = pol.on_risk(r.t, risk);
+                    if (v3) ctx_auto(cs, r.t);
+                }
                 cmds += emit(cs, r.t);
                 log_decision(r.seq, r.t, cs);
                 forward_risk(r);
@@ -337,10 +378,27 @@ int main(int argc, char** argv) {
                     for (const auto& id : rf_phones) load_cal(id);
                     std::fflush(stdout);
                     pol.on_ride_start();
-                    cycles = gaps = expect = cmds = log_fail = risk_fwd = risk_fwd_fail = 0;
+                    cycles = gaps = expect = cmds = log_fail = risk_fwd = risk_fwd_fail = kind_skip = 0;
+                    if (v3) {
+                        lab.ride_start(ipc::now_ns());
+                        tokens = msg::TokensReply{};
+                    }
                     lat_ms.clear();
                 } else {
                     saves += static_cast<uint64_t>(st.save_dirty(pol));
+                    int n_pos = 0;
+                    if (v3) {
+                        tokens = msg::TokensReply{};
+                        for (const ctx::Pick& k : lab.picks(last_t)) {
+                            if (tokens.n >= static_cast<uint32_t>(msg::kMaxTokens)) break;
+                            auto& e = tokens.e[tokens.n++];
+                            msg::copy_id(e.id, k.passenger);
+                            e.seq = k.seq;
+                            e.device = static_cast<uint8_t>(k.device);
+                            e.label = static_cast<uint8_t>(k.label);
+                            n_pos += k.label;
+                        }
+                    }
                     std::vector<double> s = lat_ms;
                     std::sort(s.begin(), s.end());
                     std::printf("{\"proc\": \"p4\", \"cycles\": %llu, \"risk_gaps\": %llu, \"commands\": %llu, "
@@ -355,9 +413,11 @@ int main(int argc, char** argv) {
                                     rf_phones.size(), rf_hud ? 1 : 0, (unsigned long long)sync_fail,
                                     (unsigned long long)cmd_fail, (unsigned long long)risk_fwd,
                                     (unsigned long long)risk_fwd_fail);
+                    if (kind_skip) std::printf(", \"risk_kind_skip\": %llu", (unsigned long long)kind_skip);
+                    if (v3) std::printf(", \"tokens\": %u, \"tokens_pos\": %d", tokens.n, n_pos);
                     std::printf("}\n");
                     std::fflush(stdout);
-                    if (once) {
+                    if (once && !v3) {
                         if (log) std::fclose(log);
                         return gaps ? 1 : 0;
                     }
@@ -369,8 +429,19 @@ int main(int argc, char** argv) {
             } else if (type == msg::CTX_OVR) {
                 const msg::CtxOvr m = in.ovr;
                 ipc::Server::reply(rcvid);
-                cmds += emit(pol.on_override(last_t, id_of(m.sender), id_of(m.device), m.on != 0), last_t);
+                const std::string dev = id_of(m.device);
+                if (v3) {
+                    const int j = ctx_device(dev);  // 폰 dots는 그 폰 주인의 것, 공용 기기는 누른 사람
+                    if (j >= 0) lab.on_user(last_t, j == ctx::kDots ? dev : id_of(m.sender), j, m.on != 0);
+                }
+                cmds += emit(pol.on_override(last_t, id_of(m.sender), dev, m.on != 0), last_t);
                 saves += static_cast<uint64_t>(st.save_dirty(pol));
+            } else if (type == msg::TOKENS) {
+                ipc::Server::reply(rcvid, &tokens, sizeof tokens);  // response3가 아니면 빈 회신
+                if (once && v3) {
+                    if (log) std::fclose(log);
+                    return gaps ? 1 : 0;
+                }
             } else if (type == msg::CTX_PROF) {
                 const msg::CtxProf m = in.prof;
                 ipc::Server::reply(rcvid);

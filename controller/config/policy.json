@@ -1,9 +1,9 @@
 {
   "version": 1,
   "tiers": {
-    "1": { "device": "airflow-01", "input_k": 3, "shared": true,  "hold_cycles": 1,  "gate": "none" },
-    "2": { "device": "display-01", "input_k": 4, "shared": true,  "hold_cycles": 6,  "gate": "hud_screen_on" },
-    "3": { "device": "phone",      "input_k": 4, "shared": false, "hold_cycles": 12, "gate": "screen_on_and_att" }
+    "1": { "device": "airflow-01", "input_k": 3, "input_head": "fan",     "shared": true,  "hold_cycles": 1,  "gate": "none" },
+    "2": { "device": "display-01", "input_k": 4, "input_head": "ambient", "shared": true,  "hold_cycles": 6,  "gate": "hud_screen_on" },
+    "3": { "device": "phone",      "input_k": 4, "input_head": "dots",    "shared": false, "hold_cycles": 12, "gate": "screen_on_and_att" }
   },
   "off_margin": 0.10,
   "off_hold_cycles": 6,

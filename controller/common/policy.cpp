@@ -12,11 +12,17 @@
 namespace mm {
 
 // ---------------------------------------------------------------- 설정
+const char* risk_kind_name(RiskKind k) { return k == RiskKind::Response3 ? "response3" : "misc5"; }
+
 PolicyConfig parse_policy_config(const std::string& policy_json, const std::string& thresholds_json) {
     const json::Value pol = json::parse(policy_json);
     const json::Value th = json::parse(thresholds_json);
     PolicyConfig c;
     const char* names[3] = {"1", "2", "3"};
+    const std::string kind = th.has("kind") ? th.at("kind").string() : "misc5";
+    if (kind == "misc5") c.kind = RiskKind::Misc5;
+    else if (kind == "response3") c.kind = RiskKind::Response3;
+    else throw std::runtime_error("thresholds.json: unknown kind " + kind);
     for (int t = 0; t < 3; t++) {
         const json::Value& x = pol.at("tiers").at(names[t]);
         c.tier[t].device = x.at("device").string();
@@ -26,6 +32,13 @@ PolicyConfig parse_policy_config(const std::string& policy_json, const std::stri
         c.tier[t].gate = x.at("gate").string();
         c.base_th[t] = th.at("base_th").at(names[t]).number();
         if (c.tier[t].input_k < 2 || c.tier[t].input_k > 6) throw std::runtime_error("policy.json: input_k must be 2..6");
+        if (x.has("input_head")) {
+            const std::string hd = x.at("input_head").string();
+            c.tier[t].input_head = hd == "fan" ? 0 : hd == "ambient" ? 1 : hd == "dots" ? 2 : -1;
+            if (c.tier[t].input_head < 0) throw std::runtime_error("policy.json: input_head must be fan, ambient or dots");
+        }
+        if (c.kind == RiskKind::Response3 && c.tier[t].input_head < 0)
+            throw std::runtime_error("policy.json: tier " + std::string(names[t]) + " needs input_head for a response3 model");
         if (c.tier[t].hold < 1) throw std::runtime_error("policy.json: hold_cycles must be >= 1");
         if (!(c.base_th[t] > 0 && c.base_th[t] < 1)) throw std::runtime_error("thresholds.json: base_th must be in (0, 1)");
     }
@@ -145,6 +158,11 @@ bool Policy::is_on(const std::string& device) const {
     return it != state_.end() && it->second.on;
 }
 
+bool Policy::can_turn_on(const std::string& device) const {
+    const int tier = tier_of(device);
+    return tier != 0 && !is_on(device) && is_enabled(device) && gate(device, tier);
+}
+
 bool Policy::is_enabled(const std::string& device) const {
     auto it = state_.find(device);
     return it == state_.end() || it->second.enabled;
@@ -162,7 +180,7 @@ std::vector<Command> Policy::on_risk(double now, const std::map<std::string, Ris
     for (const std::string& d : present()) {
         const int tier = tier_of(d);
         const TierCfg& tc = cfg_.tier[tier - 1];
-        const size_t col = static_cast<size_t>(tc.input_k - 2);
+        const size_t col = static_cast<size_t>(cfg_.kind == RiskKind::Response3 ? tc.input_head : tc.input_k - 2);
         double r = 0;  // 확률이 없으면 위험 낮음으로 본다 (켜지 않고, 켜져 있으면 꺼지는 쪽)
         if (tc.shared) {
             for (const auto& kv : p) r = std::max(r, kv.second[col]);

@@ -15,13 +15,19 @@ namespace mm {
 
 struct TierCfg {
     std::string device;  // tier 3은 폰마다 다르므로 "phone"
-    int input_k = 0;     // 3 또는 4
+    int input_k = 0;     // 3 또는 4 (V1: 확률 칸 P(>=k))
+    int input_head = -1; // V3 문맥 모델: 0 fan, 1 ambient, 2 dots (policy.json "input_head")
     bool shared = false; // 공용이면 등록된 폰 중 최대 확률
     int hold = 1;        // ON 전 연속 주기 수 (1주기 = 10초)
     std::string gate;    // none | hud_screen_on | screen_on_and_att
 };
 
+// 확률 5칸의 뜻 (thresholds.json "kind", RiskMsg.h.subtype와 같은 번호)
+enum class RiskKind : int { Misc5 = 0, Response3 = 1 };
+const char* risk_kind_name(RiskKind k);
+
 struct PolicyConfig {
+    RiskKind kind = RiskKind::Misc5;  // misc5: 칸 = P(>=2..6), tier는 input_k / response3: 칸 = fan, ambient, dots, tier는 input_head
     std::array<TierCfg, 3> tier;
     std::array<double, 3> base_th{};
     double off_margin = 0.10;
@@ -52,7 +58,8 @@ struct Command {
     bool on = false;
 };
 
-// 한 승객의 P(>=2) .. P(>=6), 단조 보정을 거친 값
+// 한 승객의 확률 5칸. V1(misc5): P(>=2) .. P(>=6), 단조 보정을 거친 값.
+// V3(response3): [P(fan), P(ambient), P(dots), NaN, NaN] (앞으로 5분 안에 켤 확률)
 using Risk = std::array<double, 5>;
 
 class Policy {
@@ -84,6 +91,8 @@ public:
     const Profile* profile(const std::string& phone) const;
     bool is_on(const std::string& device) const;
     bool is_enabled(const std::string& device) const;
+    // 승객이 지금 이 기기를 켤 수 있나: 등록됐고, 꺼져 있고, 게이트가 열림 (V3 라벨의 '자격', ctx_label.hpp)
+    bool can_turn_on(const std::string& device) const;
     int tier_of(const std::string& device) const;  // 등록되지 않은 기기는 0
     const PolicyConfig& config() const { return cfg_; }
 
