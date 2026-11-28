@@ -36,12 +36,14 @@ int main() {
     CHECK(h.speed(21 * S) == 11.0, "most accurate of the last 2 s (b)");
     h.put("phone-a", 21 * S, 12.5, 2.0);
     CHECK(h.speed(21 * S) == 12.5, "a is now more accurate");
+    CHECK(h.accuracy(21 * S) == 2.0, "accuracy of the chosen value");
     // a가 끊김: 2초가 지나면 a는 후보에서 빠지고 b의 새 값
     h.put("phone-b", 23 * S + 200 * MS, 13.0, 4.0);
     CHECK(h.speed(23 * S + 300 * MS) == 13.0, "a older than 2 s, b fresh");
     // 둘 다 2초 넘음 → 3초 안의 가장 최근 값
     CHECK(h.speed(25 * S + 600 * MS) == 13.0, "none in 2 s: newest within 3 s");
     CHECK(std::isnan(h.speed(26 * S + 300 * MS)), "all older than 3 s -> NaN");
+    CHECK(std::isnan(h.accuracy(26 * S + 300 * MS)), "no value -> accuracy NaN");
     // 정차: 0 m/s는 유효한 값
     h.put("phone-a", 30 * S, 0.0, 3.0);
     CHECK(h.speed(30 * S) == 0.0, "0 m/s is a speed");

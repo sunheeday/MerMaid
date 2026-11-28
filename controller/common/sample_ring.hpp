@@ -27,6 +27,9 @@ enum StartInfo : int {
     S_BIAS_X = 0, S_BIAS_Y = 1, S_BIAS_Z = 2,  // 이번 주행의 자이로 바이어스 (°/s, 센서 축)
     S_BIAS_UNCAL = 3,                          // 1: 정지 판정을 못 얻고 저장값도 없어 0을 씀
     S_ACCEL_RANGE_G = 4, S_GYRO_RANGE_DPS = 5,
+    S_LEVEL = 6,                               // 자동 수평 맞춤: NaN 꺼짐, 0 적용 안 함, 1 적용
+    S_MOUNT_R = 7,                             // 7~15: 이번 주행에 쓴 장착 행렬 (행 우선). 자동 수평 맞춤이 켜졌을 때만
+    S_ACAL_BIAS = 16, S_ACAL_SCALE = 19,       // 16~18, 19~21: 가속도 센서 오차 보정 (센서 축). 켰을 때만
 };
 inline Row start_info_unknown() {
     Row r;

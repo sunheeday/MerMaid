@@ -9,6 +9,10 @@
 #   I2C=/dev/i2c1  IMU 버스                               MODELS=…      기본 ml/out/runs/<CURRENT>/models
 #   LOGS=DIR       P7 주행 로그 폴더 (기본 ~/mermaid/logs)  P7=0          로거 없이
 #   CONFIG=DIR     P4 정책 설정 폴더 (기본 controller/config. V3 모델은 thresholds.json kind response3인 폴더)
+#   AUTO_LEVEL=1   P1이 첫 정지 2초로 장착 기울기를 재서 바로잡음 (기본 꺼짐, DATA_LOGGING.md §4-4)
+#   ACCEL_CAL=F    가속도 센서 오차 보정 파일 (6면 측정 결과, 기본 없음 = 보정 안 함, DATA_LOGGING.md §4-3)
+#   XSLOPE=1       P2가 ay에서 횡단 경사를 GPS로 빼고 1초 기록을 <out>/p2_xslope.csv에 (기본 꺼짐, FEATURES.md)
+#   XSLOPE_WINDOW=S  그 창 길이 [초] (기본 30)
 # 시작 순서: P6 → P5 → P7 로거 → P4 → P3 → P2 → P1. LIVE는 센서 오류 뒤 새 주행이 이어질 수 있어서
 # P2~P4를 --once 없이 띄운다. 상태(state/)는 지우지 않는다 (자이로 바이어스, 허용도, 프로필이 이어짐).
 B=${BUILD:-build}
@@ -42,13 +46,17 @@ pids="$pids $!"
 # V3(ctx_gru): 승객별 과거 토큰은 state/ctx (V1 모델이면 P3가 쓰지 않음)
 $B/p3_infer --models "$MODELS" --ctx-state "$out/state/ctx" --vehicle-type "$vt" > "$out/p3.out" 2> "$out/p3.err" &
 pids="$pids $!"
-$B/p2_feat $rf2 > "$out/p2.out" 2> "$out/p2.err" &
+xs=""; [ -n "$XSLOPE" ] && [ "$XSLOPE" != "0" ] && xs="--xslope --xslope-log $out/p2_xslope.csv"
+[ -n "$xs" ] && [ -n "$XSLOPE_WINDOW" ] && xs="$xs --xslope-window $XSLOPE_WINDOW"
+$B/p2_feat $rf2 $xs > "$out/p2.out" 2> "$out/p2.err" &
 pids="$pids $!"
 
 fake=""; [ -n "$FAKE_IMU" ] && [ "$FAKE_IMU" != "0" ] && fake="--fake-imu"
 dur=""; [ -n "$DURATION_S" ] && dur="--duration-s $DURATION_S"
+lvl=""; [ -n "$AUTO_LEVEL" ] && [ "$AUTO_LEVEL" != "0" ] && lvl="--auto-level"
+acal=""; [ -n "$ACCEL_CAL" ] && acal="--accel-cal $ACCEL_CAL"
 echo "LIVE: Ctrl-C to end the ride"
-$B/p1_acq --live --i2c "${I2C:-/dev/i2c1}" --state "$out/state" $fake $dur > "$out/p1.out" 2> "$out/p1.err"
+$B/p1_acq --live --i2c "${I2C:-/dev/i2c1}" --state "$out/state" $fake $dur $lvl $acal > "$out/p1.out" 2> "$out/p1.err"
 r1=$?
 sleep 2  # RIDE_END가 P2 → P3 → P4로 지나가고, V3면 P3가 주행 토큰을 저장하게
 for p in $pids; do kill "$p" 2>/dev/null; done
