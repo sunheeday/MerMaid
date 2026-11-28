@@ -30,6 +30,7 @@ static const std::string PB = "phone-b";
 
 static PolicyConfig repo_config() {
     PolicyConfig c = load_policy_config(MM_CONFIG_DIR "/policy.json", MM_CONFIG_DIR "/thresholds.json");
+    c.kind = RiskKind::Misc5;     // V1 칸 배치로 시험 (배포된 thresholds.json이 V3 response3여도)
     c.base_th = {0.5, 0.5, 0.5};  // 테스트는 학습 결과와 무관하게 고정 문턱으로
     return c;
 }

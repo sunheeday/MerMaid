@@ -17,7 +17,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rf_sim_test import Proc, check, failures  # noqa: E402
+from rf_sim_test import Proc, check, failures, v1_config  # noqa: E402
 
 BUILD = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "build")
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -41,13 +41,13 @@ def main():
         return procs[name]
 
     try:
-        start("p4_policy", "--config", os.path.join(REPO, "controller", "config"), "--state", state, "--log", log,
+        start("p4_policy", "--config", v1_config(), "--state", state, "--log", log,
               "--hud", "--phone", "phone-a:20:1.0", "--once")
         p3 = start("fake_p3", "--p", "0.95,0.9,0.5,0.2,0.1", "--once")
         check(p3.wait_log("fake_p3 up", 0, 10), "fake P3 up (P4 found)")
         start("p2_feat", "--once")
         p1 = start("p1_acq", "--live", "--fake-imu", "--state", state, "--duration-s", str(RIDE_S),
-                   "--mount", os.path.join(REPO, "controller", "config", "imu_mount.json"),
+                   "--mount", os.path.join(v1_config(), "imu_mount.json"),
                    "--timeout-ms", "200", "--ring", "none")
         check(p1.wait_log("RIDE_START", 0, 15), "RIDE_START after calibration")
         check(p1.wait_log("gyro bias", 0, 5), "gyro bias reported")

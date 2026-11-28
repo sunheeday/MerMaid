@@ -20,7 +20,7 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rf_sim_test import INT, MOT, Bridge, Proc, check, failures  # noqa: E402
+from rf_sim_test import INT, MOT, Bridge, Proc, check, failures, v1_config  # noqa: E402
 
 BUILD = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "build")
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -91,7 +91,7 @@ def main():
         check(p6.wait_log(r"cannot send to P4", 0, 3), "P6 cannot reach P4 yet")
 
         print("[2] P4 → P3 대역 → P2를 띄움. P6이 기억한 SCR·PROF를 1초 안에 다시 보냄")
-        p4 = start("p4_policy", "--config", os.path.join(REPO, "controller", "config"), "--state", state,
+        p4 = start("p4_policy", "--config", v1_config(), "--state", state,
                    "--log", log, "--rf", "--once")
         p3 = start("fake_p3", "--p", "0.95,0.95,0.95,0.95,0.95", "--once")
         check(p3.wait_log("fake_p3 up", 0, 10), "fake P3 up (P4 found)")

@@ -25,11 +25,11 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rf_sim_test import INT, Bridge, Proc, check, failures  # noqa: E402
+from rf_sim_test import INT, Bridge, Proc, check, failures, v1_config  # noqa: E402
 
 BUILD = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "build")
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-CONFIG = os.path.join(REPO, "controller", "config")
+CONFIG = v1_config()  # V1 정책 (배포된 모델과 무관)
 PHONE = "phone-a"
 OTHER = "phone-zz"
 RIDE_S = 32

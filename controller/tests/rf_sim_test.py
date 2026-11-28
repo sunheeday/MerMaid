@@ -24,10 +24,28 @@ import time
 import tty
 
 BUILD = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "build")
+_REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PHONE_A = "phone-a"
 PHONE_B = "phone-b"
 
 failures = []
+
+
+_V1_CONFIG = None
+
+
+def v1_config():
+    """V1(misc5) 정책 설정 폴더: controller/config 복사본에 thresholds.json만 tests/data/thresholds_v1.json으로.
+    가짜 P3·실제 V1 RISK를 쓰는 시험이 배포된 모델(ml/runs.py use, V3일 수 있음)과 상관없이 V1 경로를 시험하게. 프로세스당 한 번."""
+    global _V1_CONFIG
+    if _V1_CONFIG is None:
+        import atexit
+        d = tempfile.mkdtemp(prefix="mmcfg", dir="/tmp")
+        shutil.copytree(os.path.join(_REPO, "controller", "config"), d, dirs_exist_ok=True)
+        shutil.copy(os.path.join(_REPO, "controller", "tests", "data", "thresholds_v1.json"), os.path.join(d, "thresholds.json"))
+        atexit.register(shutil.rmtree, d, True)
+        _V1_CONFIG = d
+    return _V1_CONFIG
 
 
 def check(cond, what):
