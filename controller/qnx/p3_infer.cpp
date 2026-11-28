@@ -2,9 +2,11 @@
 //   p3_infer --models DIR [--ctx-state DIR] [--vehicle-type 0|1] [--once] [--prio P]
 // 모델 종류는 DIR/models.json의 "kind"로 고른다 (없으면 V1):
 //   misc5 (V1)   LightGBM 5개 → P(MISC>=2..6), 단조 보정, 개인 보정. RISK subtype RISK_MISC5
-//   ctx_gru (V3) 문맥 모델 MLP 요약 + GRU (ctx_model.hpp) → [P(fan), P(ambient), P(dots), NaN, NaN]. RISK subtype RISK_RESPONSE3
-//                --ctx-state 아래에 승객별 과거 토큰(ctx_history.hpp). 승객이 주행에 처음 보일 때 그 토큰으로 GRU 상태 h를
-//                한 번 계산하고(문맥은 지난 주행들의 것이라 주행 안에서는 안 바뀐다), 10초마다 요약 e와 h로 확률을 낸다.
+//   ctx_gru / ctx_attn (V3) 문맥 모델: 요약(MLP 또는 FT) + 2단계(GRU 또는 어텐션) (ctx_model.hpp)
+//                → [P(fan), P(ambient), P(dots), NaN, NaN]. RISK subtype RISK_RESPONSE3
+//                --ctx-state 아래에 승객별 과거 토큰(ctx_history.hpp). 승객이 주행에 처음 보일 때 그 토큰으로 문맥을
+//                한 번 준비하고(지난 주행들의 것이라 주행 안에서는 안 바뀐다. gru는 상태 h까지, attn은 토큰 투영까지),
+//                10초마다 요약 e와 그 문맥으로 확률을 낸다 (attn은 여기서 인코더가 돈다).
 //                주행 끝(RIDE_END를 P4에 넘긴 뒤) P4에 TOKENS를 물어 고른 주기의 e로 토큰을 만들어 붙인다.
 //                "default"(폰 없음) 행은 문맥 없이(h = 0) 추론하고 토큰을 남기지 않는다. 개인 보정은 MISC용이라 쓰지 않는다.
 // 주기마다 P4에 등록된 폰과 프로필을 묻는다 (PROFILES). 폰이 없으면 기본 프로필(PRD §P3:
@@ -75,44 +77,48 @@ int main(int argc, char** argv) {
     try {
         ipc::set_priority(prio, "p3");
         const std::string kind = model_kind(models);
-        const bool ctx = kind == "ctx_gru";
+        const bool ctx = kind == "ctx_gru" || kind == "ctx_attn";
 #ifdef MM_HAVE_LIGHTGBM
         std::unique_ptr<Inference> inf;
 #endif
         std::unique_ptr<CtxModel> cm;
         std::unique_ptr<ctx::History> hist;
         if (ctx) {
-            if (ctx_state.empty()) throw std::runtime_error("a ctx_gru model needs --ctx-state DIR");
+            if (ctx_state.empty()) throw std::runtime_error("a " + kind + " model needs --ctx-state DIR");
             const uint64_t t_load = ipc::now_ns();
             cm = std::make_unique<CtxModel>(models);  // 입력 열이 protocol과 다르면 여기서 거부
             hist = std::make_unique<ctx::History>(ctx_state, cm->summary_dim());
-            std::fprintf(stderr, "p3: ctx_gru model loaded in %.1f ms (%d inputs, k %d), history %s\n",
-                         (ipc::now_ns() - t_load) / 1e6, cm->n_inputs(), cm->k(), ctx_state.c_str());
+            std::fprintf(stderr, "p3: %s model loaded in %.1f ms (stage1 %s, stage2 %s, %d inputs, k %d), history %s\n",
+                         kind.c_str(), (ipc::now_ns() - t_load) / 1e6, cm->stage1().c_str(), cm->stage2().c_str(),
+                         cm->n_inputs(), cm->k(), ctx_state.c_str());
         } else if (kind == "misc5") {
 #ifdef MM_HAVE_LIGHTGBM
             inf = std::make_unique<Inference>(models);  // 피처 수가 다르면 여기서 거부
             std::fprintf(stderr, "p3: models loaded in %.0f ms\n", inf->load_ms());
 #else
-            throw std::runtime_error("this p3 was built without LightGBM: only ctx_gru models");
+            throw std::runtime_error("this p3 was built without LightGBM: only ctx_gru / ctx_attn models");
 #endif
         } else {
             throw std::runtime_error("unknown model kind " + kind);
         }
-        // V3 주행 상태: 승객별 GRU 상태 h, 주기별 요약 e (주행 끝 토큰용)
-        std::map<std::string, std::vector<float>> h_of;
+        // V3 주행 상태: 승객별 문맥 (gru: 상태 h, attn: 투영된 토큰), 주기별 요약 e (주행 끝 토큰용)
+        std::map<std::string, CtxModel::Ctx> h_of;
         std::map<std::string, std::map<uint64_t, std::vector<float>>> e_of;
         uint64_t ctx_hist_ns_max = 0, tokens_added = 0, tokens_fail = 0;
-        auto h_for = [&](const std::string& id) -> const std::vector<float>& {
+        auto h_for = [&](const std::string& id) -> const CtxModel::Ctx& {
             auto it = h_of.find(id);
             if (it != h_of.end()) return it->second;
-            std::vector<float> h(static_cast<size_t>(cm->hidden_dim()), 0.f);
+            CtxModel::Ctx h;
             if (id != "default" && store::safe_name(id)) {
                 const uint64_t t0 = ipc::now_ns();
                 int n = 0;
                 const std::vector<float> c = hist->context(hist->load(id), cm->k(), &n);
-                cm->history(c.data(), n, h.data());
+                cm->prepare(c.data(), n, h);
                 ctx_hist_ns_max = std::max(ctx_hist_ns_max, ipc::now_ns() - t0);
                 std::fprintf(stderr, "p3: %s history %d tokens\n", id.c_str(), n);
+            }
+            else {
+                cm->prepare(nullptr, 0, h);  // "default": 문맥 없음
             }
             return h_of.emplace(id, std::move(h)).first->second;
         };
@@ -163,7 +169,7 @@ int main(int argc, char** argv) {
                         const std::string id = pr.n > 0 ? std::string(pr.e[r].id, strnlen(pr.e[r].id, msg::kIdLen)) : "default";
                         cm->summarize(&X[static_cast<size_t>(r) * proto::kNumFeatures], e.data());
                         float p[CtxModel::kHeads];
-                        cm->predict(e.data(), h_for(id).data(), p);
+                        cm->predict(e.data(), h_for(id), p);
                         P[static_cast<size_t>(r)] = {p[0], p[1], p[2], nanv, nanv};
                         if (id != "default") e_of[id][v.seq] = e;
                         cal[r] = {};  // 개인 보정은 MISC 확률용

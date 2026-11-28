@@ -1,7 +1,12 @@
-"""MLP + GRU 문맥 모델을 C/C++ 런타임용 평면 파일로 내보내기.
+"""문맥 모델(1단계 MLP/FT + 2단계 GRU/어텐션)을 C/C++ 런타임용 평면 파일로 내보내기.
 
     python3 export_ctx.py --base ml/out/v6/weak/base.npz --body ml/out/v6/weak/axis_a/mlp_v6_s0.pt \
-        --ctx ml/out/v6/weak/context_v6_mlp-gru_k128_s0/ctx_gru_k128.pt --out ctx_mlp_gru_weak [--input v6]
+        --ctx ml/out/v6/weak/context_v6_mlp-gru_k128_s0/ctx_gru_k128.pt --out ctx_mlp_gru_weak [--input v6] \
+        [--stage1 mlp|ft] [--stage2 gru|attn]
+  models.json kind: 2단계 gru → ctx_gru, attn → ctx_attn. 컨트롤러 구현은 controller/common/ctx_model.cpp.
+  1단계 ft (common6.FT): 피처 토큰 t_i = present_i ? z_i·w_i + b_i : miss_i, [cls ‖ t] → nn.TransformerEncoder → 첫 칸
+  2단계 attn (context6.Attn): [pq(e) + tok_type0 ‖ pc(c_i) + tok_type1] → nn.TransformerEncoder (빈 칸은 key padding) → head(첫 칸)
+  인코더 층은 PyTorch 기본값 (post-norm, ReLU, LayerNorm eps 1e-5, 마지막 norm 없음). 헤드 수는 manifest stage1/stage2.heads.
 
 출력  <out>/manifest.json   텐서 이름·모양·오프셋, 표준화 통계, 입력 열 이름, 토큰 배치
       <out>/weights.bin     float32 little-endian, manifest 순서대로 이어 붙임
@@ -40,6 +45,7 @@ def main():
     ap.add_argument("--base", required=True); ap.add_argument("--body", required=True); ap.add_argument("--ctx", required=True)
     ap.add_argument("--out", required=True); ap.add_argument("--input", default="v6"); ap.add_argument("--val-persons", type=int, default=60)
     ap.add_argument("--d2", type=int, default=64); ap.add_argument("--k", type=int, default=128)
+    ap.add_argument("--stage1", choices=["mlp", "ft"], default="mlp"); ap.add_argument("--stage2", choices=["gru", "attn"], default="gru")
     a = ap.parse_args()
     torch, NETS = C6.make_torch(); out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
 
@@ -48,8 +54,13 @@ def main():
     is_val = C6.person_val_split(base["person_id"], a.val_persons, 0); mu, sd = C6.stats(Xb[~is_val])
     names = [C6.W6.NAMES[c] for c in cols] if hasattr(C6, "W6") else [str(c) for c in cols]
 
-    m0 = NETS["mlp"](len(cols)); m0.load_state_dict(torch.load(a.body, map_location="cpu")); m0.eval()
-    net = CX.make_net(torch, m0.dim, d=a.d2, stage2="gru"); net.load_state_dict(torch.load(a.ctx, map_location="cpu")); net.eval()
+    m0 = NETS[a.stage1](len(cols)); m0.load_state_dict(torch.load(a.body, map_location="cpu")); m0.eval()
+    net = CX.make_net(torch, m0.dim, d=a.d2, stage2=a.stage2); net.load_state_dict(torch.load(a.ctx, map_location="cpu")); net.eval()
+    heads1 = m0.enc.layers[0].self_attn.num_heads if a.stage1 == "ft" else 0
+    heads2 = net.enc.layers[0].self_attn.num_heads if a.stage2 == "attn" else 0
+    for enc in [m.enc for m in (m0, net) if hasattr(m, "enc")]:  # C++는 PyTorch 기본 층만 구현
+        L = enc.layers[0]
+        assert not L.norm_first and L.activation_relu_or_gelu == 1 and enc.norm is None, "encoder layer is not the default post-norm ReLU"
 
     tensors = [("mu", mu), ("sd", sd)]
     for prefix, mod in (("stage1.", m0), ("stage2.", net)):
@@ -57,6 +68,7 @@ def main():
             tensors.append((prefix + k_, v.detach().cpu().numpy().astype(np.float32)))
     off = 0; manifest = {"input": a.input, "n_features": len(cols), "feature_names": names, "d_summary": m0.dim, "d2": a.d2, "k": a.k,
                          "n_heads": C6.NH, "heads": list(C6.HEADS), "token_layout": "[summary(32) | onehot_device(3) | label(1)]",
+                         "stage1": {"type": a.stage1, "heads": heads1}, "stage2": {"type": a.stage2, "heads": heads2},
                          "gru_gate_order": "r,z,n", "dtype": "float32-le", "tensors": []}
     with open(out / "weights.bin", "wb") as f:
         for name, arr in tensors:
@@ -110,7 +122,7 @@ def write_models_json(out, a):
     fo = json.loads((pathlib.Path(__file__).resolve().parents[3] / "protocol" / "feature_order.json").read_text())
     sha = {n: hashlib.sha256((out / n).read_bytes()).hexdigest() for n in ("manifest.json", "weights.bin")}
     (out / "models.json").write_text(json.dumps({
-        "kind": "ctx_gru", "feature_order_version": int(fo["version"]), "n_features": len(fo["features"]),
+        "kind": "ctx_attn" if a.stage2 == "attn" else "ctx_gru", "stage1": a.stage1, "stage2": a.stage2, "feature_order_version": int(fo["version"]), "n_features": len(fo["features"]),
         "heads": list(C6.HEADS), "input": a.input, "k": a.k, "files": {"manifest": "manifest.json", "weights": "weights.bin"},
         "sha256": sha, "source": {"base": a.base, "body": a.body, "ctx": a.ctx}}, indent=1))
 

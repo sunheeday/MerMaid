@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""V3 문맥 모델(ctx_gru)로 P1 재생 → P2 → 진짜 P3 → P4를 두 주행 돌리는 시험 (Pi 없이, qnxsim).
+"""V3 문맥 모델(ctx_gru / ctx_attn)로 P1 재생 → P2 → 진짜 P3 → P4를 두 주행 돌리는 시험 (Pi 없이, qnxsim).
 
-  python3 controller/tests/ctx_sim_test.py <build 폴더> <ctx_gru 모델 폴더>
+  python3 controller/tests/ctx_sim_test.py <build 폴더> <ctx_gru 또는 ctx_attn 모델 폴더>
   (ctest의 ctx_sim: cmake -DMM_CTX_MODEL=<모델 폴더>일 때만)
 
 - 정책 설정은 controller/config를 복사하고 thresholds.json만 kind response3로 바꾼다. base_th: fan·ambient는 높게(꺼진 채로
@@ -29,6 +29,7 @@ MODELS = os.path.abspath(sys.argv[2]) if len(sys.argv) > 2 else ""
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 RIDE_S = 720  # 끝 5분은 음성 후보에서 빠지므로 7분 이상
 SPEED = 40
+KIND = json.load(open(os.path.join(MODELS, "models.json"))).get("kind") if MODELS and os.path.exists(os.path.join(MODELS, "models.json")) else ""
 
 
 def stats_of(proc, name):
@@ -63,7 +64,7 @@ def ride(tmp, env, cfg, state, trip, k):
     try:
         start("p4_policy", "--config", cfg, "--state", state, "--log", log, "--hud", "--phone", "phone-a:20:1.0", "--once")
         p3 = start("p3_infer", "--models", MODELS, "--ctx-state", os.path.join(state, "ctx"), "--once")
-        check(p3.wait_log("ctx_gru model loaded", 0, 10), f"ride {k}: P3 loaded the ctx_gru model")
+        check(p3.wait_log(r"ctx_(gru|attn) model loaded", 0, 10), f"ride {k}: P3 loaded the context model")
         start("p2_feat", "--once")
         start("p1_acq", trip, "--speed", str(SPEED), "--timeout-ms", "1000", "--ring", "none")  # Mac이 바쁠 때도 (실시간 OS 아님)
         for n, pr in procs.items():
@@ -81,7 +82,7 @@ def ride(tmp, env, cfg, state, trip, k):
 
 def main():
     if not MODELS or not os.path.exists(os.path.join(MODELS, "models.json")):
-        print("usage: ctx_sim_test.py <build> <ctx_gru model dir>")
+        print("usage: ctx_sim_test.py <build> <ctx_gru / ctx_attn model dir>")
         return 2
     for b in ("p1_acq", "p2_feat", "p3_infer", "p4_policy"):
         if not os.path.exists(os.path.join(BUILD, b + "_sim")):
@@ -105,7 +106,7 @@ def main():
         procs, rows = ride(tmp, env, cfg, state, trip, 1)
         s3, s4 = stats_of(procs["p3_infer"], "p3"), stats_of(procs["p4_policy"], "p4")
         n_cyc = RIDE_S // 10
-        check(s3.get("kind") == "ctx_gru" and s3.get("cycles", 0) >= n_cyc - 1, f"ride 1: P3 cycles {s3}")
+        check(s3.get("kind") == KIND and s3.get("cycles", 0) >= n_cyc - 1, f"ride 1: P3 cycles {s3}")
         check("risk_kind_skip" not in s4, f"ride 1: P4 used every cycle {s4}")
         check(len(rows) >= n_cyc - 1, f"ride 1: cycles in P4 log ({len(rows)})")
         bad = [r for r in rows if not all(0 <= float(r[c]) <= 1 for c in ("p2", "p3", "p4"))

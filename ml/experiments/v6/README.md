@@ -55,3 +55,36 @@ PHASES="b1 b2 sum" bash ml/experiments/v6/run_v6.sh
 ```bash
 cd ml/out && zip -r v6_results.zip v6 -i '*.md' '*.csv' '*.json' '*.log' '*.png' -x '*/cache/*'
 ```
+
+## 학습한 문맥 모델을 Pi(P3)에 올리기
+
+컨트롤러 P3는 `models.json`의 `kind`가 `ctx_gru`(2단계 GRU)나 `ctx_attn`(2단계 어텐션)이면 V3 경로를 탄다. 1단계는 `mlp`나 `ft`(피처 토큰 트랜스포머) 둘 다 된다.
+C++ 구현은 `controller/common/ctx_model.cpp` (외부 라이브러리 없음, PyTorch 기본 `TransformerEncoderLayer`와 같은 계산).
+Pi에는 학습 결과 `.pt` 두 개를 내보낸 폴더(`models/`)만 올린다. 학습은 Mac이나 GPU 서버에서 한다.
+
+```bash
+# 1) 학습 (GPU 서버: Nebius VM에서 ml/experiments/v7/gpu_setup.sh 한 번, 데이터 npz는 scp로)
+python3 ml/experiments/v6/context6.py --base $D/base.npz --fleet $D/fleet.npz --cache $V/cache --input v5 \
+    --stage1 ft --stage2 attn --k 128 --device cuda --out $V/train           # GRU는 --stage1 mlp --stage2 gru
+# 2) 서버에서 가져올 것: $V/cache/body_ft_v5.pt, $V/train/ctx_attn_k128.pt, $V/train/fleet_preds.npz
+# 3) 내보내기 + C++ 패리티 + 임계값 (Mac)
+python3 ml/experiments/v6/export_ctx.py --base $D/base.npz --body $V/cache/body_ft_v5.pt --ctx $V/train/ctx_attn_k128.pt \
+    --out $V/models --input v5 --stage1 ft --stage2 attn
+build/ctx_check $V/models                                                   # PASS여야 함 (차이 < 1e-5)
+python3 ml/experiments/v6/pick_thresholds_ctx.py --preds $V/train/fleet_preds.npz --out $V/thresholds.json --run $(basename $V)
+# 4) Pi: 보내고 빌드, 패리티·시간, 두 주행 (state/ctx에 토큰이 쌓임)
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf - controller protocol $V/models $V/thresholds.json | ssh qnxuser@192.168.2.2 'cd ~/mermaid/repo && tar xzf - && cmake --build build'
+ssh qnxuser@192.168.2.2 "cd ~/mermaid/repo && ./build/ctx_check $V/models"
+```
+
+정책 설정은 `ml/runs.py use $V`(배포: thresholds.json을 controller/config로 복사)나, 배포 없이 시험할 때는 controller/config를 복사한 폴더에
+그 thresholds.json을 넣고 `CONFIG=<폴더> MODELS=$V/models KEEP_STATE=1 controller/qnx/run_pipeline.sh ...`.
+
+Pi 4B (QNX 8.0) 측정, 승객 1명·문맥 토큰 128개 (`ctx_check`):
+
+| 모델 | 10초 주기 (요약 + 2단계) | 탑승 시작 (문맥 준비) |
+|---|---|---|
+| mlp + gru | 43 µs | 4.7 ms (GRU 128 스텝) |
+| ft + attn | 9.5 ms (어텐션은 지금 상황이 과거 토큰과 서로 보므로 매 주기 인코더) | 1.9 ms (토큰 투영 + 첫 층 Q·K·V) |
+
+승객 9명이면 주기마다 그 9배 (ft + attn, 토큰 128개씩이면 약 86 ms). 10초 주기에는 여유가 있지만 V1의 주기 목표(10 ms)보다 크다.

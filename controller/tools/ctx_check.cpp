@@ -1,7 +1,8 @@
 // V3 문맥 모델 패리티 + 시간: export_ctx.py가 쓴 check.bin을 C++ CtxModel로 다시 계산해 PyTorch 값과 비교한다.
 //   ctx_check <model_dir> [check.bin]       (기본 <model_dir>/check.bin)
 // 통과 기준: 요약 e, 공통 확률 p0, 문맥 확률 p 모두 최대 차이 < 1e-5. 실패면 종료 코드 1.
-// 시간: 10초 주기 한 번(summarize + predict)과 탑승 시작 한 번(history, 토큰 k개)의 중앙값·최대.
+// 시간: 10초 주기 한 번(summarize + predict, 문맥 토큰 k개)과 탑승 시작 한 번(prepare, 토큰 k개)의 중앙값·최대.
+// attn은 주기마다 인코더가 돌아 주기 시간이 문맥 길이에 따라 커진다. gru는 탑승 시작에 다 계산한다.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -52,7 +53,8 @@ int main(int argc, char** argv) {
         const int n = head[0], nf = head[1], de = head[2], k = head[3], ncase = head[4];
         const auto cases = rd<int32_t>(in, static_cast<size_t>(ncase));
         if (nf != m.n_inputs() || de != m.summary_dim()) throw std::runtime_error("check.bin does not match the model");
-        const int td = m.token_dim(), H = m.hidden_dim(), NH = mm::CtxModel::kHeads;
+        const int td = m.token_dim(), NH = mm::CtxModel::kHeads;
+        std::printf("model: stage1 %s, stage2 %s, %d inputs, k %d\n", m.stage1().c_str(), m.stage2().c_str(), m.n_inputs(), m.k());
         const auto X = rd<double>(in, static_cast<size_t>(n) * nf);
         const auto E = rd<float>(in, static_cast<size_t>(n) * de);
         const auto P0 = rd<float>(in, static_cast<size_t>(n) * NH);
@@ -75,10 +77,11 @@ int main(int argc, char** argv) {
             for (int i = 0; i < n; i++) {
                 int cnt = 0;  // 유효 토큰은 앞쪽에 몰려 있다 (context6.make_context)
                 while (cnt < k && pad[static_cast<size_t>(i) * k + cnt] == 0.f) cnt++;
-                std::vector<float> h(H), p(NH);
+                std::vector<float> p(NH);
+                mm::CtxModel::Ctx cx;
                 // PyTorch는 저장된 E로 질의한다. 요약 차이를 따로 재려고 여기서도 같은 E를 쓴다
-                m.history(&C[static_cast<size_t>(i) * k * td], cnt, h.data());
-                m.predict(&E[static_cast<size_t>(i) * de], h.data(), p.data());
+                m.prepare(&C[static_cast<size_t>(i) * k * td], cnt, cx);
+                m.predict(&E[static_cast<size_t>(i) * de], cx, p.data());
                 for (int j = 0; j < NH; j++) cmax = std::max(cmax, (double)std::fabs(p[j] - P[static_cast<size_t>(i) * NH + j]));
             }
             std::printf("case %3d tokens: max |p - torch| = %.2e\n", cases[c], cmax);
@@ -88,22 +91,26 @@ int main(int argc, char** argv) {
 
         // 시간
         Stat cyc, hist;
-        std::vector<float> h(H, 0.f), p(NH), ee(de);
-        for (int r = 0; r < 2000; r++) {
+        std::vector<float> p(NH), ee(de);
+        mm::CtxModel::Ctx full;
+        m.prepare(last_ctx.data(), k, full);
+        const int reps = m.stage2() == "attn" ? 300 : 2000;
+        for (int r = 0; r < reps; r++) {
             const auto t0 = Clock::now();
             m.summarize_inputs(&X[static_cast<size_t>(r % n) * nf], ee.data());
-            m.predict(ee.data(), h.data(), p.data());
+            m.predict(ee.data(), full, p.data());
             cyc.v.push_back(us(t0));
         }
         for (int r = 0; r < 200; r++) {
+            mm::CtxModel::Ctx cx;
             const auto t0 = Clock::now();
-            m.history(last_ctx.data(), k, h.data());
+            m.prepare(last_ctx.data(), k, cx);
             hist.v.push_back(us(t0));
         }
         const bool ok = de_max < 1e-5 && p0_max < 1e-5 && p_max < 1e-5;
         std::printf("summary e  max diff %.2e\ncommon p0  max diff %.2e\ncontext p  max diff %.2e\n", de_max, p0_max, p_max);
-        std::printf("load %.1f ms | cycle (summarize+predict) median %.1f us max %.1f us | ride start (history, %d tokens) median %.1f us max %.1f us\n",
-                    load_ms, cyc.med(), cyc.max(), k, hist.med(), hist.max());
+        std::printf("load %.1f ms | cycle (summarize+predict, %d tokens) median %.1f us max %.1f us | ride start (prepare, %d tokens) median %.1f us max %.1f us\n",
+                    load_ms, k, cyc.med(), cyc.max(), k, hist.med(), hist.max());
         std::printf("%s\n", ok ? "PASS" : "FAIL");
         return ok ? 0 : 1;
     } catch (const std::exception& ex) {
