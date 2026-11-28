@@ -85,7 +85,7 @@ def make_net(torch, de, d=64, layers=2, heads=4, dropout=0.1, stage2="attn"):
 
         def forward(self, q, c, mask):
             tq = self.pq(q).unsqueeze(1) + self.tok_type[0]; tc = self.pc(c) + self.tok_type[1]
-            x = torch.cat([tq, tc], 1); pad = torch.cat([torch.zeros(mask.shape[0], 1, dtype=torch.bool), mask], 1)
+            x = torch.cat([tq, tc], 1); pad = torch.cat([torch.zeros(mask.shape[0], 1, dtype=torch.bool, device=mask.device), mask], 1)
             return self.head(self.enc(x, src_key_padding_mask=pad)[:, 0])
 
     class Gru(nn.Module):

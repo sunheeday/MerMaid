@@ -15,7 +15,7 @@
 선택   recent: 최근 k개   uniform: 이력 전체에서 고르게 k개 (k 보다 적으면 전부)
 채점   시험 사람의 자격 행 전부.  전체 ROC · 이력 길이별 · 같은 모드 마지막 참고 거리별(먼 참고) · 모드 전환 직후 ·
        진단 empty/swap/nolabel/nosit + samemode(같은 모드 토큰만 주는 오라클 문맥) + 어텐션 같은 모드 가중치 비율
-출력   <out>/{summary.md, metrics.json, oneline.csv, log.txt, ctx_<stage2>_k<k>.pt}
+출력   <out>/{summary.md, metrics.json, oneline.csv, log.txt, ctx_<stage2>_k<k>.pt, fleet_preds.npz (--fleet) 또는 test_preds.npz}
 """
 import argparse
 import json
@@ -423,6 +423,9 @@ def main():
     if p_common is not None:
         preds["common"] = p_common[te]
     log(f"채점 끝 ({T():.0f}s) · 2단계 추론 {ms_row:.3f} ms/행 · 어텐션 같은 모드 가중치 비율 {same_ratio:.2f}")
+    # 채점 행 예측 (정책 임계값용, ml/experiments/v6/pick_thresholds_ctx.py --preds). context6 의 fleet_preds.npz 와 같은 열
+    np.savez_compressed(out / ("fleet_preds.npz" if a.fleet else "test_preds.npz"), p=preds["ctx"].astype(np.float32), p_empty=preds["empty"].astype(np.float32),
+                        Y=Yt, W=Wt, ride_id=rid[te], person_id=pid[te], t=t[te].astype(np.float64), ride_order=order[te])
 
     # ---- 버킷: 이력 길이, 같은 모드 마지막 참고 거리, 모드 전환
     ordt = order[te]; pidt = pid[te]; BIG = 10 ** 6

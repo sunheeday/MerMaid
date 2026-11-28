@@ -1,0 +1,4 @@
+tier 1 (fan): th 0.85  false_per_hour 0.9868  activations 681  precision 0.4802  recall_rows 0.2331  hours 358.7361
+tier 2 (ambient): th 0.93  false_per_hour 0.4274  activations 258  precision 0.5039  recall_rows 0.1872  hours 299.4806
+tier 3 (dots): th 0.94  false_per_hour 0.2451  activations 121  precision 0.6033  recall_rows 0.072  hours 195.8722
+wrote ml/out/runs/v029/thresholds.json

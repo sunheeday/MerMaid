@@ -7,7 +7,7 @@
     python3 ml/experiments/v6/make_world6.py fleet --vehicles 20 --trips 48 --habit weak --seed 5 --jobs 8 \
         --out ml/out/v6/fleet_weak.npz
 
---habit off|weak|strong : 상황 의존 습관의 세기 (world6.HABIT). 같은 --seed 면 습관 세기만 다른 쌍둥이 세계가 된다
+--habit off|weak|medium|strong : 상황 의존 습관의 세기 (world6.HABIT). 같은 --seed 면 습관 세기만 다른 쌍둥이 세계가 된다
   (사람·경로·운전은 같은 난수에서 나오지만, 사건이 달라지면 그 뒤 난수 소비가 달라져 완전히 같지는 않다).
 출력: npz (키: X, y, Y, W, t, misc, score, future_max, state, ride_id, trip_id, person_id, ride_order[, vehicle_id, trip_order],
       feature_names, feature_groups, feature_version="6exp", heads, world, habit, veh_cfg) + 옆에 *_rides.json, *_persons.json, *_report.json

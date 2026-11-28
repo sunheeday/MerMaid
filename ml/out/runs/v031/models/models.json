@@ -1,0 +1,27 @@
+{
+ "kind": "ctx_xattn",
+ "stage1": "mlp",
+ "stage2": "xattn",
+ "feature_order_version": 5,
+ "n_features": 52,
+ "heads": [
+  "fan",
+  "ambient",
+  "dots"
+ ],
+ "input": "v5",
+ "k": 128,
+ "files": {
+  "manifest": "manifest.json",
+  "weights": "weights.bin"
+ },
+ "sha256": {
+  "manifest.json": "4165fac9c4ee147f134e285e5eb0b7ea544aaeb03a51abc50e58858eb7e17510",
+  "weights.bin": "9e75d788097e56ad7e7fca76139a7869ad434f995d6b149f8559613f5b55396d"
+ },
+ "source": {
+  "base": "ml/out/runs/v028/base.npz",
+  "body": "ml/out/runs/v029/cache/body_mlp32_v5_fl.pt",
+  "ctx": "ml/out/runs/v031/train/s0/ctx_attn_k128.pt"
+ }
+}

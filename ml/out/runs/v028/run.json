@@ -1,0 +1,28 @@
+{
+ "version": "v028",
+ "kind": "dataset",
+ "created": "2026-11-28T23:33:32",
+ "git": {
+  "commit": "4c6cc1c71338c20277ade69389ba36dc7a0f8051",
+  "dirty": true
+ },
+ "feature_order_version": 5,
+ "note": "V3 context-model world (world6, habit medium = halfway between weak and strong): base 400 persons x 20 rides, fleet 20 vehicles x 48 trips, new powertrain simulator. Generated on the Nebius VM (Linux featurize in bin/, checked equal to the Mac build within 1e-8 on a small world)",
+ "inputs": {},
+ "params": {
+  "generator": "ml/experiments/v6/make_world6.py",
+  "habit": "medium",
+  "persons": 400,
+  "rides": 20,
+  "vehicles": 20,
+  "trips": 48,
+  "seed_base": 0,
+  "seed_fleet": 5,
+  "host": "nebius-gpu",
+  "jobs": 22,
+  "seconds": {
+   "base": 268,
+   "fleet": 89
+  }
+ }
+}

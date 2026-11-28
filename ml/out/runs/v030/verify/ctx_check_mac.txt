@@ -1,0 +1,9 @@
+model: stage1 mlp, stage2 attn, 49 inputs, k 128
+case   0 tokens: max |p - torch| = 8.94e-08
+case   5 tokens: max |p - torch| = 1.19e-07
+case 128 tokens: max |p - torch| = 1.79e-07
+summary e  max diff 2.38e-07
+common p0  max diff 5.96e-08
+context p  max diff 1.79e-07
+load 2.8 ms | cycle (summarize+predict, 128 tokens) median 1596.8 us max 10995.7 us | ride start (prepare, 128 tokens) median 307.7 us max 10168.0 us
+PASS

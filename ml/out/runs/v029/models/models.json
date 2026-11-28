@@ -1,0 +1,27 @@
+{
+ "kind": "ctx_gru",
+ "stage1": "mlp",
+ "stage2": "gru",
+ "feature_order_version": 5,
+ "n_features": 52,
+ "heads": [
+  "fan",
+  "ambient",
+  "dots"
+ ],
+ "input": "v5",
+ "k": 128,
+ "files": {
+  "manifest": "manifest.json",
+  "weights": "weights.bin"
+ },
+ "sha256": {
+  "manifest.json": "f32897ca604a6dbb5dfaf622374d0c51b2d77382221ed11a216290bfea300353",
+  "weights.bin": "e4fe3477486c908a93feeeee4bec7dd120e135f1e6197f5e93e90843bb39ed3d"
+ },
+ "source": {
+  "base": "ml/out/runs/v028/base.npz",
+  "body": "ml/out/runs/v029/cache/body_mlp32_v5_fl.pt",
+  "ctx": "ml/out/runs/v029/train/s0/ctx_gru_k128.pt"
+ }
+}

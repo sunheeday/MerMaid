@@ -117,3 +117,19 @@ python3 ml/experiments/v6/export_ctx.py --base ~/MerMaid/ml/out/v6/strong/base.n
 ```
 
 `--v7`은 context7 분할로 표준화 통계를 만들고 manifest에 `token_quota: 0`(그냥 최근 k개, context7 방식)을 적는다. v7 실행은 플릿 예측을 남기지 않아 thresholds.json은 아직 없다.
+
+### 네 조합을 한 세계에서 같이 (`v3_combos.sh`)
+
+같은 세계로 mlp + gru / mlp + attn / mlp + xattn (context7) 과 ft + attn (context6) 을 시드 2개씩 학습하고, 검증 ROC 로 시드를 골라 내보낸다.
+세계는 습관 `medium` (weak와 strong의 중간, `world6.HABIT`). 첫 실행: 세계 v028 → 모델 v029–v032.
+
+```bash
+# VM (~/mermaid): 세계 만들기는 ml/out/runs/v028/gen.sh (featurize는 그 폴더 bin/의 Linux 빌드)
+THREADS=8 bash ml/experiments/v6/v3_combos.sh train      # 백그라운드, 진행: status
+bash ml/experiments/v6/v3_combos.sh export               # 조합마다 시드 고르기 → <run>/models
+# Mac
+NEBIUS=nebius-gpu bash ml/experiments/v6/v3_combos.sh fetch
+bash ml/experiments/v6/v3_combos.sh finish               # ctx_check → thresholds.json → run.json → <세계>/combos.md
+```
+
+context7 은 `--fleet` 일 때 `fleet_preds.npz` 를 남긴다 (임계값용, context6 과 같은 열).

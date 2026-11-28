@@ -104,6 +104,7 @@ WORLD = {
 HABIT = {  # 상황 의존 습관의 세기 — 계수 상한 (사람마다 U(0, 상한))
     "off":    {"heat": 0.15, "highway": 0.0, "screen": 0.0, "game": 0.0, "habit_rate": 0.0},   # 4차 세계와 비슷
     "weak":   {"heat": 0.25, "highway": 0.5, "screen": 0.5, "game": 0.25, "habit_rate": 0.03},
+    "medium": {"heat": 0.375, "highway": 0.75, "screen": 0.75, "game": 0.375, "habit_rate": 0.03},  # weak와 strong의 중간
     "strong": {"heat": 0.50, "highway": 1.0, "screen": 1.0, "game": 0.50, "habit_rate": 0.03},
 }
 HABIT_CAP = 0.5            # 익숙해짐 문턱 상승 상한

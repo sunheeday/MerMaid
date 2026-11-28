@@ -1,0 +1,18 @@
+→ ml/out/runs/v028/base_check.png
+feature                      NaN%     mean       sd      min      max
+screen_on_share_5m           10.2    0.523    0.406    0.000    1.000
+app_fg_share_5m              10.2    0.094    0.148    0.000    1.000
+rx_rate_log_5m               10.2    1.243    0.811    0.029    3.166
+media_share_5m               10.2    0.475    0.409    0.000    1.000
+headphones_on                10.2    0.279    0.449    0.000    1.000
+landscape_share_5m           10.2    0.243    0.303    0.000    1.000
+fan_minutes_on                0.0    2.884    6.192    0.000   48.667
+ambient_minutes_on            0.0    1.154    4.041    0.000   39.667
+dots_minutes_on               0.0    1.358    4.307    0.000   39.833
+ops_count_ride                0.0    0.540    0.792    0.000    3.000
+min_since_last_op            62.3    8.674    6.981    0.000   42.000
+tod_sin                       0.0   -0.324    0.709   -1.000    0.996
+tod_cos                       0.0   -0.275    0.563   -1.000    1.000
+hours_since_last_ride         5.1   32.203   36.034    0.250  130.851
+rides_with_vehicle            0.0    9.515    5.775    0.000   19.000
+accel_decel_switch_5m         0.0    4.621    7.056    0.000   61.000

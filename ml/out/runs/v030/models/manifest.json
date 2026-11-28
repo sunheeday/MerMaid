@@ -1,0 +1,425 @@
+{
+ "input": "v5",
+ "n_features": 49,
+ "feature_names": [
+  "rms_x_10s",
+  "rms_x_1m",
+  "rms_x_5m",
+  "rms_y_10s",
+  "rms_y_1m",
+  "rms_y_5m",
+  "rms_z_10s",
+  "rms_z_1m",
+  "rms_z_5m",
+  "decel_rms_x_1m",
+  "decel_rms_x_5m",
+  "accel_rms_x_1m",
+  "accel_rms_x_5m",
+  "jerk_rms_x_10s",
+  "jerk_rms_x_1m",
+  "jerk_rms_y_10s",
+  "jerk_rms_y_1m",
+  "yaw_rms_10s",
+  "yaw_rms_1m",
+  "hard_accel_count_1m",
+  "hard_accel_count_5m",
+  "hard_brake_count_1m",
+  "hard_brake_count_5m",
+  "hard_turn_count_1m",
+  "hard_turn_count_5m",
+  "event_irregularity_5m",
+  "pitch_mean_1m",
+  "msdv",
+  "msdv_inc_5m",
+  "oman_score",
+  "oman_delta_2m",
+  "sensitization",
+  "speed_mean_10s",
+  "speed_mean_1m",
+  "speed_mean_5m",
+  "speed_std_1m",
+  "speed_std_5m",
+  "stop_ratio_5m",
+  "speed_max_5m",
+  "cabin_temp",
+  "fan_level",
+  "seat_row",
+  "ride_time",
+  "reexposure",
+  "time_since_rest",
+  "mssq",
+  "sensitivity",
+  "ev_experience",
+  "vehicle_type"
+ ],
+ "d_summary": 32,
+ "d2": 64,
+ "k": 128,
+ "n_heads": 3,
+ "heads": [
+  "fan",
+  "ambient",
+  "dots"
+ ],
+ "token_layout": "[summary(32) | onehot_device(3) | label(1)]",
+ "stage1": {
+  "type": "mlp",
+  "heads": 0
+ },
+ "stage2": {
+  "type": "attn",
+  "heads": 4
+ },
+ "token_select": "recent",
+ "token_quota": 0,
+ "trainer": "context7",
+ "gru_gate_order": "r,z,n",
+ "dtype": "float32-le",
+ "tensors": [
+  {
+   "name": "mu",
+   "shape": [
+    49
+   ],
+   "offset_floats": 0,
+   "n": 49
+  },
+  {
+   "name": "sd",
+   "shape": [
+    49
+   ],
+   "offset_floats": 49,
+   "n": 49
+  },
+  {
+   "name": "stage1.body.0.weight",
+   "shape": [
+    128,
+    98
+   ],
+   "offset_floats": 98,
+   "n": 12544
+  },
+  {
+   "name": "stage1.body.0.bias",
+   "shape": [
+    128
+   ],
+   "offset_floats": 12642,
+   "n": 128
+  },
+  {
+   "name": "stage1.body.3.weight",
+   "shape": [
+    64,
+    128
+   ],
+   "offset_floats": 12770,
+   "n": 8192
+  },
+  {
+   "name": "stage1.body.3.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 20962,
+   "n": 64
+  },
+  {
+   "name": "stage1.body.5.weight",
+   "shape": [
+    32,
+    64
+   ],
+   "offset_floats": 21026,
+   "n": 2048
+  },
+  {
+   "name": "stage1.body.5.bias",
+   "shape": [
+    32
+   ],
+   "offset_floats": 23074,
+   "n": 32
+  },
+  {
+   "name": "stage1.head.weight",
+   "shape": [
+    3,
+    32
+   ],
+   "offset_floats": 23106,
+   "n": 96
+  },
+  {
+   "name": "stage1.head.bias",
+   "shape": [
+    3
+   ],
+   "offset_floats": 23202,
+   "n": 3
+  },
+  {
+   "name": "stage2.tok_type",
+   "shape": [
+    2,
+    64
+   ],
+   "offset_floats": 23205,
+   "n": 128
+  },
+  {
+   "name": "stage2.pq.weight",
+   "shape": [
+    64,
+    32
+   ],
+   "offset_floats": 23333,
+   "n": 2048
+  },
+  {
+   "name": "stage2.pq.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 25381,
+   "n": 64
+  },
+  {
+   "name": "stage2.pc.weight",
+   "shape": [
+    64,
+    36
+   ],
+   "offset_floats": 25445,
+   "n": 2304
+  },
+  {
+   "name": "stage2.pc.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 27749,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.0.self_attn.in_proj_weight",
+   "shape": [
+    192,
+    64
+   ],
+   "offset_floats": 27813,
+   "n": 12288
+  },
+  {
+   "name": "stage2.enc.layers.0.self_attn.in_proj_bias",
+   "shape": [
+    192
+   ],
+   "offset_floats": 40101,
+   "n": 192
+  },
+  {
+   "name": "stage2.enc.layers.0.self_attn.out_proj.weight",
+   "shape": [
+    64,
+    64
+   ],
+   "offset_floats": 40293,
+   "n": 4096
+  },
+  {
+   "name": "stage2.enc.layers.0.self_attn.out_proj.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 44389,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.0.linear1.weight",
+   "shape": [
+    128,
+    64
+   ],
+   "offset_floats": 44453,
+   "n": 8192
+  },
+  {
+   "name": "stage2.enc.layers.0.linear1.bias",
+   "shape": [
+    128
+   ],
+   "offset_floats": 52645,
+   "n": 128
+  },
+  {
+   "name": "stage2.enc.layers.0.linear2.weight",
+   "shape": [
+    64,
+    128
+   ],
+   "offset_floats": 52773,
+   "n": 8192
+  },
+  {
+   "name": "stage2.enc.layers.0.linear2.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 60965,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.0.norm1.weight",
+   "shape": [
+    64
+   ],
+   "offset_floats": 61029,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.0.norm1.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 61093,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.0.norm2.weight",
+   "shape": [
+    64
+   ],
+   "offset_floats": 61157,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.0.norm2.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 61221,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.1.self_attn.in_proj_weight",
+   "shape": [
+    192,
+    64
+   ],
+   "offset_floats": 61285,
+   "n": 12288
+  },
+  {
+   "name": "stage2.enc.layers.1.self_attn.in_proj_bias",
+   "shape": [
+    192
+   ],
+   "offset_floats": 73573,
+   "n": 192
+  },
+  {
+   "name": "stage2.enc.layers.1.self_attn.out_proj.weight",
+   "shape": [
+    64,
+    64
+   ],
+   "offset_floats": 73765,
+   "n": 4096
+  },
+  {
+   "name": "stage2.enc.layers.1.self_attn.out_proj.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 77861,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.1.linear1.weight",
+   "shape": [
+    128,
+    64
+   ],
+   "offset_floats": 77925,
+   "n": 8192
+  },
+  {
+   "name": "stage2.enc.layers.1.linear1.bias",
+   "shape": [
+    128
+   ],
+   "offset_floats": 86117,
+   "n": 128
+  },
+  {
+   "name": "stage2.enc.layers.1.linear2.weight",
+   "shape": [
+    64,
+    128
+   ],
+   "offset_floats": 86245,
+   "n": 8192
+  },
+  {
+   "name": "stage2.enc.layers.1.linear2.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 94437,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.1.norm1.weight",
+   "shape": [
+    64
+   ],
+   "offset_floats": 94501,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.1.norm1.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 94565,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.1.norm2.weight",
+   "shape": [
+    64
+   ],
+   "offset_floats": 94629,
+   "n": 64
+  },
+  {
+   "name": "stage2.enc.layers.1.norm2.bias",
+   "shape": [
+    64
+   ],
+   "offset_floats": 94693,
+   "n": 64
+  },
+  {
+   "name": "stage2.head.weight",
+   "shape": [
+    3,
+    64
+   ],
+   "offset_floats": 94757,
+   "n": 192
+  },
+  {
+   "name": "stage2.head.bias",
+   "shape": [
+    3
+   ],
+   "offset_floats": 94949,
+   "n": 3
+  }
+ ],
+ "total_floats": 94952
+}

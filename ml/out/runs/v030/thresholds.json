@@ -1,0 +1,43 @@
+{
+  "placeholder": false,
+  "kind": "response3",
+  "feature_order_version": 5,
+  "source": "ml/experiments/v6/context6.py ctx_gru fleet scoring rows (ml/out/runs/v030/train/s0/fleet_preds.npz)",
+  "rule": {
+    "1": "smallest threshold with false auto-ons per hour <= 1.0 (head fan, row replay, grid 0.01)",
+    "2": "smallest threshold with false auto-ons per hour <= 0.5 (head ambient, row replay, grid 0.01)",
+    "3": "smallest threshold with false auto-ons per hour <= 0.25 (head dots, row replay, grid 0.01)"
+  },
+  "base_th": {
+    "1": 0.88,
+    "2": 0.94,
+    "3": 0.93
+  },
+  "fleet": {
+    "1": {
+      "head": "fan",
+      "false_per_hour": 0.9338,
+      "activations": 619,
+      "precision": 0.4588,
+      "recall_rows": 0.2452,
+      "hours": 358.7361
+    },
+    "2": {
+      "head": "ambient",
+      "false_per_hour": 0.3907,
+      "activations": 240,
+      "precision": 0.5125,
+      "recall_rows": 0.2281,
+      "hours": 299.4806
+    },
+    "3": {
+      "head": "dots",
+      "false_per_hour": 0.24,
+      "activations": 125,
+      "precision": 0.624,
+      "recall_rows": 0.093,
+      "hours": 195.8722
+    }
+  },
+  "run": "v030"
+}
