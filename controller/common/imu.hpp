@@ -58,6 +58,7 @@ constexpr int kCalibSamples = 200;                     // 정지 판정 창 2초
 constexpr double kStillAccSd = 0.05;                   // m/s², 가속도 크기의 표준편차
 constexpr double kStillGyroSdDps = 0.5;                // °/s, 자이로 각 축 표준편차
 constexpr uint64_t kCalibTimeoutNs = 30000000000ULL;   // 30초 안에 정지를 못 얻으면 저장된 바이어스
+constexpr double kAutoLevelMaxDeg = 10.0;               // 자동 수평 맞춤: 이보다 기울어 있으면 적용하지 않음 (장착 이상이나 경사로)
 constexpr int kHoldMax = 50;                           // 이만큼까지 빠진 샘플은 마지막 값을 반복해 채움 (0.5초)
 constexpr uint64_t kErrorRestartNs = 1000000000ULL;    // I2C 오류가 1초 계속되면 재초기화
 constexpr uint64_t kInitRetryNs = 1000000000ULL;       // 초기화 실패 뒤 다시 시도 간격
@@ -85,15 +86,33 @@ Raw decode(const uint8_t* p);  // 12바이트
 struct Mount {
     Mat3 R{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
 };
-Mount parse_mount(const std::string& json_text);  // {"version":1,"R":[[..],[..],[..]]}. 회전 행렬이 아니면 예외
+Mount parse_mount(const std::string& json_text);
+// 자동 수평 맞춤: 정지 때 차량 축 평균 가속도 m을 +z로 보내는 최단 회전 (로드리게스, 회전축이 수평이라 요는 그대로).
+// m이 +z에서 max_deg보다 벗어나 있으면(또는 크기가 0이면) false
+bool level_rotation(const Vec3& m_car, double max_deg, Mat3& L, double& tilt_deg);
+Mat3 matmul(const Mat3& A, const Mat3& B);  // {"version":1,"R":[[..],[..],[..]]}. 회전 행렬이 아니면 예외
 Mount load_mount(const std::string& path);
+
+// 가속도 센서 오차 (센서 축): 보정값 = (측정값 − bias) × scale. 6면 정지 측정으로 구한다
+// (ml/realdata/imu_calib/six_face.py → sensor_6face.json). 기본은 오차 없음 (bias 0, scale 1)
+struct AccelCal {
+    Vec3 bias{0, 0, 0};   // m/s²
+    Vec3 scale{1, 1, 1};
+};
+constexpr double kAccelCalMaxBias = 1.5;    // m/s². MPU-6050 영점 오차 사양(±80~150 mg)보다 넉넉히. 넘으면 파일이 틀린 것
+constexpr double kAccelCalMaxScaleErr = 0.1;  // |scale − 1|. 눈금 사양 ±3%
+// {"bias":[bx,by,bz],"scale":[sx,sy,sz], ...}. 다른 키(note 등)는 무시. 범위를 벗어나면 예외
+AccelCal parse_accel_cal(const std::string& json_text);
+AccelCal load_accel_cal(const std::string& path);
+Vec3 apply_accel_cal(const AccelCal& c, const Vec3& a_sensor);
 
 // 차량 축, a: m/s² (중력 포함, 수평 정지 시 z = +9.81), g: rad/s
 struct Sample {
     Vec3 a;
     Vec3 g;
 };
-Sample convert(const Raw& r, const Mount& m, const Vec3& gyro_bias_dps);
+// 순서: 센서 축에서 가속도 오차·자이로 바이어스를 뺀 뒤 R로 돌린다
+Sample convert(const Raw& r, const Mount& m, const Vec3& gyro_bias_dps, const AccelCal& cal = {});
 
 // trip_format.json 한 행: t = seq / 100, ax..gz, 나머지 25칸은 NaN (주행 전체 NaN 규칙)
 void fill_row(Row& row, uint64_t seq, const Sample& s);
@@ -103,6 +122,7 @@ struct Still {
     bool still = false;
     double acc_mag_mean = 0, acc_mag_sd = 0;  // m/s²
     Vec3 gyro_mean_dps{}, gyro_sd_dps{};
+    Vec3 acc_mean{};  // m/s², 센서 축 (자동 수평 맞춤용)
 };
 Still check_still(const Raw* w, size_t n);
 
@@ -134,6 +154,10 @@ struct Stats {
     uint64_t overflow = 0, misaligned = 0, i2c_error_ticks = 0;
     uint64_t restarts = 0, init_fails = 0, rides = 0;
     bool bias_uncalibrated = false;  // 정지 판정도 저장된 값도 없어 바이어스 0으로 주행
+    // 자동 수평 맞춤 (Config::auto_level): -1 꺼짐, 0 시도했지만 적용 안 함(정지 못 얻음·너무 기움), 1 적용
+    int level = -1;
+    double level_tilt_deg = 0;       // 정지 평균이 +z에서 벗어난 각도 (적용 여부와 상관없이, 판정했으면)
+    double level_pitch_deg = 0, level_roll_deg = 0;  // 적용 전 차량 축 기울기: atan2(ax, az), atan2(ay, az)
     double rate_hz = 0;              // 현재 주행의 실제 샘플률 (샘플 수 / 단조 시계)
 };
 
@@ -144,6 +168,13 @@ public:
         Mount mount;
         bool has_saved_bias = false;
         Vec3 saved_bias_dps{};
+        // 첫 시작 보정의 정지 2초로 장착 기울기를 재서 mount.R 앞에 곱한다 (P1 프로세스마다 한 번).
+        // 정지를 못 얻거나 max_deg보다 기울어 있으면 mount.R 그대로. 기본 꺼짐 (docs/controller/DATA_LOGGING.md §4-4)
+        bool auto_level = false;
+        double auto_level_max_deg = kAutoLevelMaxDeg;
+        // 가속도 센서 오차 보정. 켜면 모든 샘플과 자동 수평 맞춤의 정지 평균에 적용한다. 기본 꺼짐 (§4-3)
+        bool has_accel_cal = false;
+        AccelCal accel_cal;
     };
     Acquirer(Bus& bus, Config cfg, std::function<void(int ms)> sleep_ms);
 
@@ -158,6 +189,8 @@ public:
     const Stats& stats() const { return st_; }
     // 보정으로 새 바이어스를 얻었으면 한 번 true (P1이 state/imu_bias.json에 저장)
     bool take_new_bias(Vec3& dps);
+    // 지금 쓰는 장착 행렬 (자동 수평 맞춤을 적용했으면 L · mount.R)
+    const Mat3& mount_R() const { return mount_.R; }
 
 private:
     enum State { INIT, CALIB, RUN, FATAL };
@@ -165,6 +198,7 @@ private:
     void start_ride(uint64_t now, std::vector<Out>& out);
     void restart(std::vector<Out>& out);
     void emit(const Raw& r, uint32_t flags, std::vector<Out>& out);
+    void try_level(const Still* s);  // 첫 보정 때 한 번. s = nullptr이면 정지를 못 얻음
 
     Bus& bus_;
     Config cfg_;
@@ -178,6 +212,8 @@ private:
     std::vector<Raw> window_;
     Vec3 bias_{};
     bool new_bias_ = false;
+    Mount mount_;               // 실제로 쓰는 장착 행렬 (cfg_.mount 또는 자동 수평 맞춤 적용)
+    bool level_tried_ = false;
     uint64_t seq_ = 0;
     Raw last_{};
     bool has_last_ = false;

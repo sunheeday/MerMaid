@@ -77,8 +77,15 @@ static ring::Item start_item(uint64_t mono) {
     it.row[ring::S_BIAS_Y] = -0.5;
     it.row[ring::S_BIAS_Z] = 0.25;
     it.row[ring::S_BIAS_UNCAL] = 0;
+    it.row[ring::S_LEVEL] = 1;  // 자동 수평 맞춤 적용, 이번 주행 장착 행렬
+    for (int i = 0; i < 9; i++) it.row[ring::S_MOUNT_R + i] = (i % 4 == 0) ? 1.0 : (i == 2 ? 0.05 : 0.0);
     it.row[ring::S_ACCEL_RANGE_G] = 4;
     it.row[ring::S_GYRO_RANGE_DPS] = 250;
+    const double ab[3] = {0, 0.0263, -0.0003}, as[3] = {1, 0.99937, 0.98931};  // 가속도 센서 오차 보정
+    for (int i = 0; i < 3; i++) {
+        it.row[ring::S_ACAL_BIAS + i] = ab[i];
+        it.row[ring::S_ACAL_SCALE + i] = as[i];
+    }
     return it;
 }
 
@@ -279,6 +286,11 @@ static void test_normal_ride() {
     CHECK(meta("imu_bias_dps") == "[1, -0.5, 0.25]", "bias %s", meta("imu_bias_dps").c_str());
     CHECK(meta("accel_range_g") == "4" && meta("gyro_range_dps") == "250", "ranges");
     CHECK(meta("bias_uncalibrated") == "0", "bias calibrated");
+    CHECK(meta("auto_level") == "1", "auto_level %s", meta("auto_level").c_str());
+    CHECK(meta("imu_mount_applied") == "[[1, 0, 0.05], [0, 1, 0], [0, 0, 1]]", "imu_mount_applied %s",
+          meta("imu_mount_applied").c_str());
+    CHECK(meta("accel_cal") == "{\"bias\": [0, 0.0263, -0.0003], \"scale\": [1, 0.99937, 0.98931]}", "accel_cal %s",
+          meta("accel_cal").c_str());
     CHECK(meta("model_version") == "v007", "model version from LOG_INFER");
     CHECK(meta("git_commit") == "abc1234", "static meta");
     CHECK(meta("closed_reason") == "ride_end", "closed_reason");

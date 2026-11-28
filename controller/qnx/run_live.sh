@@ -8,6 +8,8 @@
 #   HUD=1          RF일 때도 HUD(송풍·앰비언트)가 연결돼 있다고 보고 P4에 --hud (HUD 기기 없이 Tier 1·2 시험)
 #   I2C=/dev/i2c1  IMU 버스                               MODELS=…      기본 ml/out/runs/<CURRENT>/models
 #   LOGS=DIR       P7 주행 로그 폴더 (기본 ~/mermaid/logs)  P7=0          로거 없이
+#   AUTO_LEVEL=1   P1이 첫 정지 2초로 장착 기울기를 재서 바로잡음 (기본 꺼짐, DATA_LOGGING.md §4-4)
+#   ACCEL_CAL=F    가속도 센서 오차 보정 파일 (6면 측정 결과, 기본 없음 = 보정 안 함, DATA_LOGGING.md §4-3)
 # 시작 순서: P6 → P5 → P7 로거 → P4 → P3 → P2 → P1. LIVE는 센서 오류 뒤 새 주행이 이어질 수 있어서
 # P2~P4를 --once 없이 띄운다. 상태(state/)는 지우지 않는다 (자이로 바이어스, 허용도, 프로필이 이어짐).
 B=${BUILD:-build}
@@ -45,8 +47,10 @@ pids="$pids $!"
 
 fake=""; [ -n "$FAKE_IMU" ] && [ "$FAKE_IMU" != "0" ] && fake="--fake-imu"
 dur=""; [ -n "$DURATION_S" ] && dur="--duration-s $DURATION_S"
+lvl=""; [ -n "$AUTO_LEVEL" ] && [ "$AUTO_LEVEL" != "0" ] && lvl="--auto-level"
+acal=""; [ -n "$ACCEL_CAL" ] && acal="--accel-cal $ACCEL_CAL"
 echo "LIVE: Ctrl-C to end the ride"
-$B/p1_acq --live --i2c "${I2C:-/dev/i2c1}" --state "$out/state" $fake $dur > "$out/p1.out" 2> "$out/p1.err"
+$B/p1_acq --live --i2c "${I2C:-/dev/i2c1}" --state "$out/state" $fake $dur $lvl $acal > "$out/p1.out" 2> "$out/p1.err"
 r1=$?
 sleep 1  # RIDE_END가 P2 → P3 → P4로 지나가게
 for p in $pids; do kill "$p" 2>/dev/null; done
