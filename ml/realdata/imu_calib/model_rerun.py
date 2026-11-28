@@ -307,7 +307,7 @@ def plot(t, P, still_until, path, labels=None, note=""):
     import matplotlib.pyplot as plt
     plt.rcParams["font.family"] = "Apple SD Gothic Neo"
     plt.rcParams["axes.unicode_minus"] = False
-    col = {"A": "#999", "B": "#e67e22", "C": "#c0392b", "D": "#1f6fb2", "E": "#27ae60", "F": "#8e44ad"}
+    col = {"A": "#999", "B": "#e67e22", "C": "#c0392b", "D": "#1f6fb2", "E": "#27ae60", "F": "#8e44ad", "G": "#16a085", "H": "#7f8c8d"}
     fig, ax = plt.subplots(2, 1, figsize=(13, 7), sharex=True)
     for i, k in enumerate([3, 4]):  # Tier1 입력 k=3, Tier2·3 입력 k=4
         for name, p in P.items():

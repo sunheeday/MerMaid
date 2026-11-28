@@ -47,8 +47,16 @@ def axes_rotation(forward, left):
     return np.vstack([f, l, np.cross(f, l)])
 
 
+def undo_accel_cal(meta, acc_sensor):
+    """Pi가 가속도 센서 오차 보정(P1 --accel-cal)을 켜고 기록했으면 되돌린다: 원래 값 = 보정값 / scale + bias"""
+    if "accel_cal" not in meta:
+        return acc_sensor
+    c = json.loads(meta["accel_cal"])
+    return acc_sensor / np.asarray(c["scale"], float) + np.asarray(c["bias"], float)
+
+
 def load_sensor(path):
-    """기록 → (t, 센서 축 가속도, 센서 축 자이로, 기록 당시 R)"""
+    """기록 → (t, 센서 축 가속도(센서 오차 보정 전 원래 값), 센서 축 자이로, 기록 당시 R)"""
     db = path if path.endswith(".sqlite") else sorted(glob.glob(os.path.join(path, "logs", "rides", "*.sqlite")))[0]
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     meta = dict(con.execute("select key, value from meta").fetchall())
@@ -57,7 +65,7 @@ def load_sensor(path):
     d = np.concatenate([np.frombuffer(b, "<f4").reshape(n, 6) for n, b in rows]).astype(float)
     R_rec = np.array(json.loads(meta.get("imu_mount", '{"R": [[1,0,0],[0,1,0],[0,0,1]]}'))["R"], float)
     t = np.arange(len(d)) / 100.0
-    return db, t, d[:, :3] @ R_rec, d[:, 3:] @ R_rec, R_rec    # 각 행 v 에 Rᵀ·v → 센서 축
+    return db, t, undo_accel_cal(meta, d[:, :3] @ R_rec), d[:, 3:] @ R_rec, R_rec    # 각 행 v 에 Rᵀ·v → 센서 축
 
 
 def still_mean(t, acc, gyro, window):
@@ -84,22 +92,32 @@ def main():
     ap.add_argument("--left", default="+y", choices=AXES, help="차 왼쪽을 보는 센서 축")
     ap.add_argument("--window", type=float, nargs=2, help="정지 구간 [초] (기본: 가장 긴 정지 구간)")
     ap.add_argument("--window-turned", type=float, nargs=2)
+    ap.add_argument("--accel-cal", help="Pi가 P1 --accel-cal(ACCEL_CAL)로 달릴 때 쓸 센서 오차 파일 (sensor_6face.json). "
+                                        "주면 그 보정을 한 값으로 기울기를 잰다 (Pi와 같은 순서: 센서 오차 → R)")
     ap.add_argument("--max-deg", type=float, default=10.0, help="기울기가 이보다 크면 멈춘다 (차가 서 있지 않았거나 센서가 눕혀 붙은 경우)")
     ap.add_argument("--out", default="imu_mount.json")
     a = ap.parse_args()
 
     R_axes = axes_rotation(a.forward, a.left)
+    cal = None
+    if a.accel_cal:
+        c = json.load(open(a.accel_cal))
+        cal = (np.asarray(c["bias"], float), np.asarray(c["scale"], float))
+    fix = (lambda x: (x - cal[0]) * cal[1]) if cal else (lambda x: x)
     db1, t, acc, gyro, R_rec = load_sensor(a.record)
+    acc = fix(acc)
     m1_s, w1 = still_mean(t, acc, gyro, a.window)
     m1 = R_axes @ m1_s
     lines = [f"기록 1: {db1}", f"  기록 당시 Pi R = {R_rec.tolist()}",
-             f"  정지 구간 {w1[0]:.0f}~{w1[1]:.0f}초, Pi가 낸 값(기록 그대로) 평균 {np.round(R_rec @ m1_s, 3).tolist()}",
+             f"  정지 구간 {w1[0]:.0f}~{w1[1]:.0f}초" + (f", 센서 오차 보정 {a.accel_cal} 적용" if cal else "")
+             + (f", Pi가 낸 값(기록 그대로) 평균 {np.round(R_rec @ m1_s, 3).tolist()}" if not cal else ""),
              f"  센서 축 평균 {np.round(m1_s, 3).tolist()}, 크기 {np.linalg.norm(m1_s):.3f}",
              f"  축만 맞춘 차 축 평균 {np.round(m1, 3).tolist()} → 앞뒤 {angles(m1)[0]:+.2f}도, 좌우 {angles(m1)[1]:+.2f}도"]
     m = m1
     floor = None
     if a.record_turned:
         db2, t2, acc2, gyro2, R_rec2 = load_sensor(a.record_turned)
+        acc2 = fix(acc2)
         m2_s, w2 = still_mean(t2, acc2, gyro2, a.window_turned)
         m2 = R_axes @ m2_s
         lines += [f"기록 2 (180도 돌림): {db2}",
@@ -125,7 +143,8 @@ def main():
     out = {"version": 1, "R": [[round(float(x), 6) for x in row] for row in R],
            "note": f"차량 축(x 앞, y 왼쪽, z 위) = R · 센서 축. make_mount.py {datetime.date.today().isoformat()}: "
                    f"축 forward={a.forward} left={a.left}, 기울기 앞뒤 {angles(m)[0]:+.2f}도 좌우 {angles(m)[1]:+.2f}도"
-                   + (" (180도 돌린 두 기록 평균)" if a.record_turned else " (기록 1개, 바닥 기울기 포함)"),
+                   + (" (180도 돌린 두 기록 평균)" if a.record_turned else " (기록 1개, 바닥 기울기 포함)")
+                   + (f", 센서 오차 보정 후 ({os.path.basename(a.accel_cal)}) — Pi에서 ACCEL_CAL과 함께 쓴다" if cal else ""),
            "source": [os.path.basename(db1)] + ([os.path.basename(db2)] if a.record_turned else [])}
     rows = ",\n        ".join("[" + ", ".join(f"{x:.6f}" for x in r) + "]" for r in out["R"])
     text = ("{\n  \"version\": 1,\n  \"R\": [" + rows + "],\n  \"note\": " + json.dumps(out["note"], ensure_ascii=False)
