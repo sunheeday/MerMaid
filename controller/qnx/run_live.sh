@@ -10,6 +10,8 @@
 #   LOGS=DIR       P7 주행 로그 폴더 (기본 ~/mermaid/logs)  P7=0          로거 없이
 #   AUTO_LEVEL=1   P1이 첫 정지 2초로 장착 기울기를 재서 바로잡음 (기본 꺼짐, DATA_LOGGING.md §4-4)
 #   ACCEL_CAL=F    가속도 센서 오차 보정 파일 (6면 측정 결과, 기본 없음 = 보정 안 함, DATA_LOGGING.md §4-3)
+#   XSLOPE=1       P2가 ay에서 횡단 경사를 GPS로 빼고 1초 기록을 <out>/p2_xslope.csv에 (기본 꺼짐, FEATURES.md)
+#   XSLOPE_WINDOW=S  그 창 길이 [초] (기본 30)
 # 시작 순서: P6 → P5 → P7 로거 → P4 → P3 → P2 → P1. LIVE는 센서 오류 뒤 새 주행이 이어질 수 있어서
 # P2~P4를 --once 없이 띄운다. 상태(state/)는 지우지 않는다 (자이로 바이어스, 허용도, 프로필이 이어짐).
 B=${BUILD:-build}
@@ -42,7 +44,9 @@ pids="$pids $!"
 [ "$rf4" = "--rf" ] && sleep 2  # P6이 기억해 둔 SCR·PROF가 P4에 닿을 때까지
 $B/p3_infer --models "$MODELS" --vehicle-type "$vt" > "$out/p3.out" 2> "$out/p3.err" &
 pids="$pids $!"
-$B/p2_feat $rf2 > "$out/p2.out" 2> "$out/p2.err" &
+xs=""; [ -n "$XSLOPE" ] && [ "$XSLOPE" != "0" ] && xs="--xslope --xslope-log $out/p2_xslope.csv"
+[ -n "$xs" ] && [ -n "$XSLOPE_WINDOW" ] && xs="$xs --xslope-window $XSLOPE_WINDOW"
+$B/p2_feat $rf2 $xs > "$out/p2.out" 2> "$out/p2.err" &
 pids="$pids $!"
 
 fake=""; [ -n "$FAKE_IMU" ] && [ "$FAKE_IMU" != "0" ] && fake="--fake-imu"

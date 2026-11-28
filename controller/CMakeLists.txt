@@ -55,6 +55,10 @@ add_executable(test_gps_speed tests/test_gps_speed.cpp)
 target_link_libraries(test_gps_speed mmcommon)
 add_test(NAME gps_speed COMMAND test_gps_speed)
 
+add_executable(test_cross_slope tests/test_cross_slope.cpp)
+target_link_libraries(test_cross_slope mmcommon)
+add_test(NAME cross_slope COMMAND test_cross_slope)
+
 # P7 로거 코어 (SQLite). controller/third_party/sqlite/sqlite3.c(공식 amalgamation)가 있으면 함께 빌드하고 (보드),
 # 없으면 시스템 SQLite를 쓴다 (Mac SDK). 둘 다 없으면 P7을 빌드하지 않는다
 set(MM_SQLITE "")

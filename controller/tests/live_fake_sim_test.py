@@ -6,6 +6,7 @@
 - P1은 `--live --fake-imu`: 실제와 같은 imu::Acquirer 경로 (초기화 → 정지 2초 보정 → RIDE_START → FIFO 읽기)
 - 확인: 보정 뒤 RIDE_START, 21초 주행에 100 Hz 샘플이 빠짐 없이 P2로, 10초 주기 2번이 P4까지,
   자이로 바이어스가 state/imu_bias.json에 저장, --duration-s로 RIDE_END, 전송 실패 0
+- P2는 `--xslope`(횡단 경사 제거)를 켠다: GPS가 없으니 뺀 값 0, 1초 기록이 주행 길이만큼 (켜도 경로가 안 깨지는지)
 - 약 30초 걸린다. Mac은 실시간 OS가 아니라 시간 측정은 하지 않는다 (Pi에서 확인)
 """
 import csv
@@ -45,7 +46,8 @@ def main():
               "--hud", "--phone", "phone-a:20:1.0", "--once")
         p3 = start("fake_p3", "--p", "0.95,0.9,0.5,0.2,0.1", "--once")
         check(p3.wait_log("fake_p3 up", 0, 10), "fake P3 up (P4 found)")
-        start("p2_feat", "--once")
+        xs_log = os.path.join(tmp, "p2_xslope.csv")
+        start("p2_feat", "--once", "--xslope", "--xslope-log", xs_log)
         p1 = start("p1_acq", "--live", "--fake-imu", "--state", state, "--duration-s", str(RIDE_S),
                    "--mount", os.path.join(REPO, "controller", "config", "imu_mount.json"),
                    "--timeout-ms", "200", "--ring", "none")
@@ -69,6 +71,15 @@ def main():
         check(abs(s1.get("samples", 0) - RIDE_S * 100) <= 2, f"100 Hz samples: {s1.get('samples')}")
         check(s1.get("send_fail") == 0 and s1.get("edge_fail") == 0, "no send failures")
         check(s1.get("hold") == 0 and s1.get("overflow") == 0, "no hold, no overflow")
+
+        for line in procs["p2_feat"].text().splitlines():
+            if line.startswith("{"):
+                stats["p2_feat"] = json.loads(line)
+        s2 = stats.get("p2_feat", {})
+        check(abs(s2.get("xslope_s", 0) - RIDE_S) <= 1 and s2.get("xslope_used_s") == 0 and s2.get("xslope_last") == 0,
+              f"P2 cross-slope: no GPS -> nothing removed: {s2}")
+        xs_rows = list(csv.DictReader(open(xs_log))) if os.path.exists(xs_log) else []
+        check(abs(len(xs_rows) - RIDE_S) <= 1 and all(r["use"] == "0" for r in xs_rows), f"xslope log lines ({len(xs_rows)})")
 
         bias_path = os.path.join(state, "imu_bias.json")
         bias = json.load(open(bias_path))["gyro_bias_dps"] if os.path.exists(bias_path) else None
