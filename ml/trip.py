@@ -1,6 +1,7 @@
 """trip.bin / features.bin 읽기와 쓰기, featurize 실행 (protocol/trip_format.json)."""
 import json
 import pathlib
+import os
 import subprocess
 
 import numpy as np
@@ -14,7 +15,8 @@ FIDX = {f["name"]: f["index"] for f in FEATURES["features"]}  # 피처 이름 �
 NF = FEATURES["n_features"]                  # 모델 입력 칸 수
 NV = FEATURES["vehicle_range"][1] + 1        # 차량 피처 수 (featurize와 P2가 만드는 앞쪽 칸)
 FS = 100.0
-FEATURIZE = REPO / "build" / "featurize"
+# MM_FEATURIZE: 긴 데이터 생성 중에 build/를 다시 빌드해도 안 깨지게 복사본을 쓸 때
+FEATURIZE = pathlib.Path(os.environ["MM_FEATURIZE"]) if os.environ.get("MM_FEATURIZE") else REPO / "build" / "featurize"
 
 
 def empty(n):
