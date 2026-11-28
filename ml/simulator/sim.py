@@ -113,9 +113,54 @@ def gen_driver(rng):
 
 
 # ---------------------------------------------------------------- 운전
+def resist_mps2(v, grade=0.0):
+    """구름 저항 + 공기 저항 + 경사 (감속 방향 +)."""
+    V = CFG["vehicle"]
+    return V["rolling"] * G + 0.5 * 1.2 * V["cda_m2"] * v ** 2 / V["mass_kg"] + G * np.sin(np.arctan(grade))
+
+
+def accel_cap_mps2(v, grade, powertrain):
+    """동력계가 낼 수 있는 가속: min(토크 한계, 출력 한계 P/(m·v)) − 저항. 경사에서 멈추지 않게 0.1 이상."""
+    P = CFG["powertrain"][powertrain]
+    cap = min(P["max_accel_mps2"], P["power_kw"] * 1000 / (CFG["vehicle"]["mass_kg"] * max(v, 1.0)))
+    return max(cap - resist_mps2(v, grade), 0.1)
+
+
+def lift_decel_mps2(v, regen_level):
+    """페달을 뗐을 때의 감속: 엔진 브레이크(ICE) 또는 회생(EV) + 구름·공기 저항 (평지)."""
+    if regen_level is None:
+        r = CFG["vehicle"]["ice_engine_brake_mps2"]
+    else:
+        r = CFG["regen"]["max_decel_mps2"][regen_level]
+    return r + resist_mps2(v)
+
+
+def onset_blend(v_raw, f_acc, f_dec):
+    """가속 구간과 감속 구간의 시작 빠르기를 다르게 (EV 회생은 감속이 빨리 걸림).
+    속도를 f_acc로 거른 v_acc가 기본이고, 감속 구간에서만 f_dec로 거른 가속도와의 차이를 더한다.
+    가중치 w는 가속도에 곱하므로(속도가 아니라) 바꾸는 순간 튀지 않고, 적분해 생긴 느린 어긋남은
+    0.02 Hz 아래를 빼서 없앤다 (거리가 경로와 어긋나지 않게). f_acc == f_dec면 한 번 거른 것과 같다."""
+    b, a = butter(2, f_acc, fs=FS)
+    v_acc = filtfilt(b, a, v_raw)
+    if f_dec == f_acc:
+        return v_acc
+    b, a = butter(2, f_dec, fs=FS)
+    v_dec = filtfilt(b, a, v_raw)
+    a_acc, a_dec = np.gradient(v_acc, DT), np.gradient(v_dec, DT)
+    w = np.clip(-a_acc / 0.1, 0, 1)                 # 감속 0.1 m/s2부터 감속 구간
+    b, a = butter(1, 1.0, fs=FS)                    # 가중치도 약 1초에 걸쳐 바뀌게
+    w = np.clip(filtfilt(b, a, w), 0, 1)
+    E = np.cumsum(w * (a_dec - a_acc)) * DT
+    b, a = butter(1, 0.02, fs=FS)
+    return v_acc + E - filtfilt(b, a, E)
+
+
 def drive(route, driver, regen_level, rng):
-    """속도 프로파일 → 100 Hz 운동학 (회생 단계가 높을수록 감속이 세짐)."""
-    d, rg = CFG["driver"], CFG["regen"]
+    """속도 프로파일 → 100 Hz 운동학. regen_level None = 내연기관, 0~3 = EV 회생 단계.
+    가속은 운전자 성향과 동력계 한계 중 작은 값, 감속은 운전자 성향과 페달 뗌 감속(×lift_share) 중 큰 값.
+    EV는 감속이 더 빨리 걸린다 (회생, powertrain.ev.decel_onset_hz)."""
+    d, PT = CFG["driver"], CFG["powertrain"]
+    pt = "ice" if regen_level is None else "ev"
     n = len(route["kappa"])
     s = np.arange(n) * DS
     # 목표 속도의 느린 흔들림 (운전자 변동)
@@ -131,12 +176,13 @@ def drive(route, driver, regen_level, rng):
     stop_idx = [min(n - 1, int(round(ss / DS))) for ss, _ in route["stops"]]
     vlim[stop_idx] = 0.0
     vlim[0] = vlim[-1] = 0.0
-    a_dec = driver["decel_mps2"] + (regen_level * rg["extra_driver_decel_per_level"] if regen_level is not None else 0)
-    a_acc = driver["accel_mps2"]
+    grade = route["grade"]
     v2 = vlim ** 2
     for i in range(n - 2, -1, -1):
+        a_dec = max(driver["decel_mps2"], PT["lift_share"] * lift_decel_mps2(math.sqrt(v2[i + 1]), regen_level))
         v2[i] = min(v2[i], v2[i + 1] + 2 * a_dec * DS)
     for i in range(1, n):
+        a_acc = min(driver["accel_mps2"], accel_cap_mps2(math.sqrt(v2[i - 1]), grade[i - 1], pt))
         v2[i] = min(v2[i], v2[i - 1] + 2 * a_acc * DS)
     v = np.sqrt(v2)
     # 거리 → 시간 (정차 지점에서 대기 시간 추가)
@@ -155,9 +201,9 @@ def drive(route, driver, regen_level, rng):
         ts.append(t[i]); ss_.append(s[i]); vs.append(v[i])
     T = np.arange(0, ts[-1], DT)
     vt = np.interp(T, ts, vs)
-    # 저크 제한: 영위상 저역통과
-    b, a = butter(2, d["smoothing_hz"], fs=FS)
-    vt = np.maximum(filtfilt(b, a, vt), 0.0)
+    # 저크 제한: 영위상 저역통과. 가속과 감속의 시작 빠르기는 동력계마다 (EV 회생은 감속이 빨리 걸림)
+    f = lambda key: PT[pt][key] or d["smoothing_hz"]  # null = 운전자 저크 제한 (T-23 보정값)
+    vt = np.maximum(onset_blend(vt, f("accel_onset_hz"), f("decel_onset_hz")), 0.0)
     st = np.cumsum(vt) * DT
     along = np.gradient(vt, DT)
     kap = np.interp(st, s, route["kappa"])

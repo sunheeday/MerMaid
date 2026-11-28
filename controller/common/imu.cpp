@@ -59,19 +59,76 @@ Mount load_mount(const std::string& path) {
     return parse_mount(ss.str());
 }
 
+namespace {
+Vec3 vec3_at(const json::Value& v, const char* key) {
+    const json::Value& a = v.at(key);
+    if (a.type != json::Value::Array || a.arr.size() != 3) throw std::runtime_error(std::string("accel_cal: ") + key + " must have 3 numbers");
+    return {a.arr[0].number(), a.arr[1].number(), a.arr[2].number()};
+}
+}  // namespace
+
+AccelCal parse_accel_cal(const std::string& text) {
+    const json::Value v = json::parse(text);
+    AccelCal c;
+    c.bias = vec3_at(v, "bias");
+    c.scale = vec3_at(v, "scale");
+    for (int i = 0; i < 3; i++) {
+        if (!std::isfinite(c.bias[i]) || std::fabs(c.bias[i]) > kAccelCalMaxBias)
+            throw std::runtime_error("accel_cal: bias out of range (|b| <= 1.5 m/s^2)");
+        if (!std::isfinite(c.scale[i]) || std::fabs(c.scale[i] - 1.0) > kAccelCalMaxScaleErr)
+            throw std::runtime_error("accel_cal: scale out of range (0.9 .. 1.1)");
+    }
+    return c;
+}
+
+AccelCal load_accel_cal(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) throw std::runtime_error("accel_cal: cannot open " + path);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return parse_accel_cal(ss.str());
+}
+
+Vec3 apply_accel_cal(const AccelCal& c, const Vec3& a) {
+    return {(a[0] - c.bias[0]) * c.scale[0], (a[1] - c.bias[1]) * c.scale[1], (a[2] - c.bias[2]) * c.scale[2]};
+}
+
 static Vec3 rotate(const Mat3& R, const Vec3& v) {
     Vec3 o{};
     for (int i = 0; i < 3; i++) o[i] = R[i][0] * v[0] + R[i][1] * v[1] + R[i][2] * v[2];
     return o;
 }
 
-Sample convert(const Raw& r, const Mount& m, const Vec3& bias_dps) {
+Mat3 matmul(const Mat3& A, const Mat3& B) {
+    Mat3 C{};
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++) C[i][j] = A[i][0] * B[0][j] + A[i][1] * B[1][j] + A[i][2] * B[2][j];
+    return C;
+}
+
+bool level_rotation(const Vec3& m, double max_deg, Mat3& L, double& tilt_deg) {
+    const double n = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+    if (!(n > 0)) return false;
+    const Vec3 u{m[0] / n, m[1] / n, m[2] / n};
+    const double c = u[2];  // u · z
+    tilt_deg = std::acos(std::max(-1.0, std::min(1.0, c))) * 180.0 / kPi;
+    if (tilt_deg > max_deg) return false;
+    // v = u × z = (u_y, −u_x, 0),  L = I + [v]× + [v]×² / (1 + c)
+    const double vx = u[1], vy = -u[0];
+    const Mat3 K{{{0, 0, vy}, {0, 0, -vx}, {-vy, vx, 0}}};
+    const Mat3 K2 = matmul(K, K);
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++) L[i][j] = (i == j ? 1.0 : 0.0) + K[i][j] + K2[i][j] / (1.0 + c);
+    return true;
+}
+
+Sample convert(const Raw& r, const Mount& m, const Vec3& bias_dps, const AccelCal& cal) {
     Vec3 a{}, g{};
     for (int i = 0; i < 3; i++) {
         a[i] = r.a[i] / kAccelLsbPerG * kG;
         g[i] = (r.g[i] / kGyroLsbPerDps - bias_dps[i]) * kPi / 180.0;
     }
-    return {rotate(m.R, a), rotate(m.R, g)};
+    return {rotate(m.R, apply_accel_cal(cal, a)), rotate(m.R, g)};
 }
 
 void fill_row(Row& row, uint64_t seq, const Sample& s) {
@@ -89,12 +146,13 @@ Still check_still(const Raw* w, size_t n) {
     Still s;
     if (n < 2) return s;
     double m1 = 0, m2 = 0;
-    Vec3 g1{}, g2{};
+    Vec3 g1{}, g2{}, a1{};
     for (size_t k = 0; k < n; k++) {
         double sq = 0;
         for (int i = 0; i < 3; i++) {
             const double a = w[k].a[i] / kAccelLsbPerG * kG;
             sq += a * a;
+            a1[i] += a;
             const double g = w[k].g[i] / kGyroLsbPerDps;
             g1[i] += g;
             g2[i] += g * g;
@@ -111,6 +169,7 @@ Still check_still(const Raw* w, size_t n) {
     s.acc_mag_sd = sd(m1, m2);
     s.still = s.acc_mag_sd < kStillAccSd;
     for (int i = 0; i < 3; i++) {
+        s.acc_mean[i] = a1[i] / n;
         s.gyro_mean_dps[i] = g1[i] / n;
         s.gyro_sd_dps[i] = sd(g1[i], g2[i]);
         if (s.gyro_sd_dps[i] >= kStillGyroSdDps) s.still = false;
@@ -202,7 +261,21 @@ Tick read_fifo(Bus& bus) {
 // ---------------- Acquirer ----------------
 
 Acquirer::Acquirer(Bus& bus, Config cfg, std::function<void(int)> sleep_ms)
-    : bus_(bus), cfg_(std::move(cfg)), sleep_ms_(std::move(sleep_ms)) {}
+    : bus_(bus), cfg_(std::move(cfg)), sleep_ms_(std::move(sleep_ms)), mount_(cfg_.mount) {}
+
+void Acquirer::try_level(const Still* s) {
+    if (!cfg_.auto_level || level_tried_) return;
+    level_tried_ = true;  // 첫 보정에서만: 주행 중 재시작 때는 차가 경사로에 서 있을 수 있다
+    st_.level = 0;
+    if (!s) return;
+    const Vec3 m = rotate(cfg_.mount.R, apply_accel_cal(cfg_.accel_cal, s->acc_mean));  // 오차를 뺀 뒤 기울기를 잰다
+    st_.level_pitch_deg = std::atan2(m[0], m[2]) * 180.0 / kPi;
+    st_.level_roll_deg = std::atan2(m[1], m[2]) * 180.0 / kPi;
+    Mat3 L;
+    if (!level_rotation(m, cfg_.auto_level_max_deg, L, st_.level_tilt_deg)) return;
+    mount_.R = matmul(L, cfg_.mount.R);
+    st_.level = 1;
+}
 
 void Acquirer::begin_calib(uint64_t now) {
     state_ = CALIB;
@@ -227,6 +300,17 @@ void Acquirer::start_ride(uint64_t now, std::vector<Out>& out) {
     o.row[ring::S_BIAS_UNCAL] = st_.bias_uncalibrated ? 1 : 0;
     o.row[ring::S_ACCEL_RANGE_G] = 4;
     o.row[ring::S_GYRO_RANGE_DPS] = 250;
+    if (cfg_.auto_level) {
+        o.row[ring::S_LEVEL] = st_.level;
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++) o.row[ring::S_MOUNT_R + 3 * i + j] = mount_.R[i][j];
+    }
+    if (cfg_.has_accel_cal) {
+        for (int i = 0; i < 3; i++) {
+            o.row[ring::S_ACAL_BIAS + i] = cfg_.accel_cal.bias[i];
+            o.row[ring::S_ACAL_SCALE + i] = cfg_.accel_cal.scale[i];
+        }
+    }
     out.push_back(o);
 }
 
@@ -249,7 +333,7 @@ void Acquirer::emit(const Raw& r, uint32_t flags, std::vector<Out>& out) {
     o.kind = Out::SAMPLE;
     o.flags = flags;
     o.seq = seq_++;
-    fill_row(o.row, o.seq, convert(r, cfg_.mount, bias_));
+    fill_row(o.row, o.seq, convert(r, mount_, bias_, cfg_.accel_cal));
     out.push_back(o);
     last_ = r;
     has_last_ = true;
@@ -301,6 +385,7 @@ std::vector<Out> Acquirer::step(uint64_t now) {
         while (window_.size() >= static_cast<size_t>(kCalibSamples)) {
             const Still s = check_still(window_.data(), kCalibSamples);
             if (s.still) {
+                try_level(&s);
                 bias_ = s.gyro_mean_dps;
                 new_bias_ = true;
                 window_.clear();
@@ -310,6 +395,7 @@ std::vector<Out> Acquirer::step(uint64_t now) {
             window_.erase(window_.begin(), window_.begin() + kCalibSamples / 2);  // 1초씩 밀기
         }
         if (now - calib_start_ >= kCalibTimeoutNs) {
+            try_level(nullptr);
             if (cfg_.has_saved_bias) {
                 bias_ = cfg_.saved_bias_dps;
             } else {

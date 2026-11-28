@@ -26,6 +26,8 @@ import numpy as np
 
 ML = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML)); sys.path.insert(0, str(ML / "train")); sys.path.insert(0, str(ML / "experiments"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import fo_compat as FC  # noqa: E402  (피처 목록 v3 77칸 / v5 52칸 모두)
 import common as C  # noqa: E402
 
 FO = C.FO
@@ -141,12 +143,12 @@ def gbm_train(X, y, seed, base=None, rounds=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mat", help="캐시가 없을 때 ATDOMS.mat")
-    ap.add_argument("--cache", default=str(ML / "out" / "stop_transfer" / "tudelft_stop_rows.npz"))
+    ap.add_argument("--cache", default=str(FC.out_dir("stop_transfer", "tudelft_stop_rows.npz")))
     ap.add_argument("--rotations", type=int, default=3); ap.add_argument("--seeds", type=int, default=2)
     ap.add_argument("--base-steps", type=int, default=1500); ap.add_argument("--unlab-steps", type=int, default=2000)
     ap.add_argument("--ft-steps", type=int, default=200)
     ap.add_argument("--ablation", action="store_true")
-    ap.add_argument("--out", default=str(ML / "out" / "unlabeled_logs"))
+    ap.add_argument("--out", default=str(FC.out_dir("unlabeled_logs")))
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     logf = open(out / "log.txt", "w")

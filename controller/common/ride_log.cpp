@@ -397,6 +397,22 @@ void Logger::open_ride(const ring::Item& it, uint32_t col_mask, uint64_t now) {
         if (std::isfinite(r[ring::S_BIAS_UNCAL])) fl.meta("bias_uncalibrated", r[ring::S_BIAS_UNCAL] != 0 ? "1" : "0");
         if (std::isfinite(r[ring::S_ACCEL_RANGE_G])) fl.meta("accel_range_g", num_json(r[ring::S_ACCEL_RANGE_G]));
         if (std::isfinite(r[ring::S_GYRO_RANGE_DPS])) fl.meta("gyro_range_dps", num_json(r[ring::S_GYRO_RANGE_DPS]));
+        if (std::isfinite(r[ring::S_LEVEL])) fl.meta("auto_level", r[ring::S_LEVEL] != 0 ? "1" : "0");
+        if (std::isfinite(r[ring::S_MOUNT_R])) {  // 이번 주행에 실제로 쓴 장착 행렬 (imu_mount 설정 파일과 다를 수 있음)
+            std::string m = "[";
+            for (int i = 0; i < 3; i++) {
+                m += i ? ", [" : "[";
+                for (int j = 0; j < 3; j++) m += (j ? ", " : "") + num_json(r[ring::S_MOUNT_R + 3 * i + j]);
+                m += "]";
+            }
+            fl.meta("imu_mount_applied", m + "]");
+        }
+        if (std::isfinite(r[ring::S_ACAL_BIAS])) {  // 가속도 센서 오차 보정 (센서 축, 보정값 = (측정값 − bias) × scale)
+            auto v3 = [&](int k) {
+                return "[" + num_json(r[k]) + ", " + num_json(r[k + 1]) + ", " + num_json(r[k + 2]) + "]";
+            };
+            fl.meta("accel_cal", "{\"bias\": " + v3(ring::S_ACAL_BIAS) + ", \"scale\": " + v3(ring::S_ACAL_SCALE) + "}");
+        }
     }
     for (const auto& kv : cfg_.meta) fl.meta(kv.first, kv.second);
     // 주행 전에 받은 마지막 화면·프로필 상태 (mono_ns < mono_start_ns로 구분)
